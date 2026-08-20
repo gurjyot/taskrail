@@ -8,7 +8,7 @@ import { inspectChange } from './change.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
 import { runGate } from './gate.js';
-import { capabilityImpact, capabilityRootsFor, findAutomation, getCapability, listManagedAutomations, loadCapabilities } from './capabilities.js';
+import { capabilityImpact, capabilityRootsFor, findAutomation, getCapability, listManagedAutomations, loadCapabilities, workspaceCapabilityRoots } from './capabilities.js';
 
 const fallbackManifest: FrameworkManifest = {
   name: 'taskrail',
@@ -51,7 +51,7 @@ async function commandList() {
   output(await listManagedAutomations(process.cwd()));
 }
 
-async function commandInspect(nameOrPath: string | undefined) {
+async function commandInspect(nameOrPath: string | undefined, json = false) {
   if (!nameOrPath) {
     console.error('usage: taskrail inspect <automation>');
     process.exitCode = 1;
@@ -68,7 +68,7 @@ async function commandInspect(nameOrPath: string | undefined) {
   const registry = await loadCapabilities(roots);
   const used = (manifest.capabilities ?? []).map((name) => registry.capabilities.find((capability) => capability.name === name)).filter(Boolean);
   const status = await frameworkDoctor(manifest).catch(() => null);
-  output({
+  const payload = {
     name: manifest.name,
     manifestPath,
     sourceDir: manifest.sourceDir,
@@ -81,7 +81,48 @@ async function commandInspect(nameOrPath: string | undefined) {
     health: manifest.healthCheck ?? manifest.healthChecks ?? [],
     drift: status?.drift ?? null,
     status: status ? { latestHealthyRelease: status.latestHealthyRelease, lockState: status.lockState, lastDeploymentResult: status.lastDeploymentResult } : null,
-  });
+  };
+  output(json ? { name: payload.name, manifestPath: payload.manifestPath, capabilities: payload.capabilities, status: payload.status } : payload);
+}
+
+
+async function commandStatus(json = false) {
+  const automations = await listManagedAutomations(process.cwd());
+  const roots = await workspaceCapabilityRoots(process.cwd());
+  const registry = await loadCapabilities(roots);
+  const consumers = new Map<string, string[]>();
+  for (const automation of automations) {
+    for (const capability of automation.capabilities) {
+      const list = consumers.get(capability) ?? [];
+      if (!list.includes(automation.name)) list.push(automation.name);
+      consumers.set(capability, list);
+    }
+  }
+  const payload = {
+    version: TASKRAIL_VERSION,
+    automations: automations.map((automation) => ({
+      name: automation.name,
+      manifestPath: automation.manifestPath,
+      runtime: automation.runtime,
+      capabilities: automation.capabilities,
+      status: automation.status,
+    })),
+    capabilities: registry.capabilities.map((capability) => ({
+      name: capability.name,
+      version: capability.version,
+      description: capability.description,
+      canonicalPath: capability.canonicalPath,
+      consumers: consumers.get(capability.name) ?? [],
+    })),
+  };
+  if (json) {
+    output(payload);
+    return;
+  }
+  console.log(`TaskRail ${payload.version}`);
+  console.log(`automations: ${payload.automations.length}`);
+  for (const automation of payload.automations) console.log(`${automation.name} ${automation.status}`);
+  console.log(`capabilities: ${payload.capabilities.length}`);
 }
 
 async function commandCapabilities() {
@@ -120,13 +161,14 @@ async function commandCapability(name: string | undefined) {
   output({ ...result, consumers: (await capabilityImpact(name, process.cwd())).map((consumer) => consumer.name) });
 }
 
-async function commandCapabilityImpact(name: string | undefined) {
+async function commandImpact(name: string | undefined, json = false) {
   if (!name) {
     console.error('usage: taskrail capability-impact <name>');
     process.exitCode = 1;
     return;
   }
-  output(await capabilityImpact(name, process.cwd()));
+  const impact = await capabilityImpact(name, process.cwd());
+  output(json ? { name, consumers: impact.map((consumer) => consumer.name), details: impact } : impact);
 }
 
 async function main() {
@@ -135,14 +177,15 @@ async function main() {
   const cmd = args[0] ?? '--help';
   const rest = args.slice(1);
   if (cmd === '--help' || cmd === 'help') {
-    console.log('taskrail check|plan|doctor|test|deploy|health|rollback|gate|verify-change|list|inspect|capabilities|capability|capability-impact');
+    console.log('taskrail check|plan|doctor|test|deploy|health|rollback|gate|verify-change|list|status|inspect|capabilities|capability|impact');
     return;
   }
   if (cmd === 'list') return commandList();
-  if (cmd === 'inspect') return commandInspect(rest[0]);
+  if (cmd === 'status') return commandStatus(rest.includes('--json'));
+  if (cmd === 'inspect') return commandInspect(rest[0], rest.includes('--json'));
   if (cmd === 'capabilities') return commandCapabilities();
   if (cmd === 'capability') return commandCapability(rest[0]);
-  if (cmd === 'capability-impact') return commandCapabilityImpact(rest[0]);
+  if (cmd === 'impact' || cmd === 'capability-impact') return commandImpact(rest[0], rest.includes('--json'));
   if (cmd === 'check') {
     const result = await frameworkCheck(config.manifest);
     if (!result.ok) {

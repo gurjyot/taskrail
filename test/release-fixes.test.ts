@@ -74,7 +74,7 @@ test('deploy blocks protected changes before replacing target', async () => {
   execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
   await writeFile(path.join(base, 'src', 'secret.txt'), 'changed');
-  const result = await safeDeploy(baseManifest(base, { protectedPaths: ['src/secret.txt'] }));
+  const result = await safeDeploy(baseManifest(base, { protectedPaths: ['src/secret.txt'] }), undefined, { projectRoot: base });
   assert.equal(result.deployed, false);
   assert.equal(await readFile(path.join(base, 'deploy/index.txt'), 'utf8'), 'old');
   await rm(base, { recursive: true, force: true });
@@ -136,6 +136,76 @@ test('missing executable returns a clean gate failure', async () => {
   assert.equal(step?.command, 'definitely-not-a-real-command');
   assert.equal(step?.cwd, path.resolve(base, 'src'));
   assert.equal(step?.exitCode, null);
+  await rm(base, { recursive: true, force: true });
+});
+
+
+test('status emits automation and capability registry json', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'capabilities/telegram-send/capability.json': JSON.stringify({
+      name: 'telegram-send',
+      version: '1.0.0',
+      description: 'telegram',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'capabilities/telegram-send/index.js': 'export default {}',
+    'automations/alpha/automation.json': JSON.stringify({
+      name: 'alpha',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'true',
+      testCommand: 'true',
+      capabilities: ['telegram-send'],
+    }, null, 2),
+    'automations/beta/automation.json': JSON.stringify({
+      name: 'beta',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'true',
+      testCommand: 'true',
+      capabilities: ['telegram-send', 'meta-api'],
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'status', '--json'], { cwd: base, encoding: 'utf8' });
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.automations.length, 2);
+  const telegram = parsed.capabilities.find((item: any) => item.name === 'telegram-send');
+  assert.ok(telegram);
+  assert.deepEqual(telegram.consumers.sort(), ['alpha', 'beta']);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('impact aliases capability-impact and returns consumers', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'capabilities/telegram-send/capability.json': JSON.stringify({
+      name: 'telegram-send',
+      version: '1.0.0',
+      description: 'telegram',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'capabilities/telegram-send/index.js': 'export default {}',
+    'automations/alpha/automation.json': JSON.stringify({
+      name: 'alpha',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'true',
+      testCommand: 'true',
+      capabilities: ['telegram-send'],
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'impact', 'telegram-send', '--json'], { cwd: base, encoding: 'utf8' });
+  const parsed = JSON.parse(output);
+  assert.deepEqual(parsed.consumers, ['alpha']);
   await rm(base, { recursive: true, force: true });
 });
 
