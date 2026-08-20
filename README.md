@@ -1,4 +1,4 @@
-# TaskRail v1
+# TaskRail v0.2
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations. It provides structure and guardrails without requiring a heavy runtime or orchestration platform.
 
@@ -9,6 +9,8 @@ Core ideas:
 - Backup before replace.
 - Health check after deploy.
 - Roll back on failure.
+- Plan and doctor commands for dry-runs and diagnostics.
+- Locks, immutable releases, drift detection, and audit history.
 - Keep agent instructions local to each managed project.
 
 This repo is the public framework shell. It does not include organization-specific logic.
@@ -47,8 +49,9 @@ This repo is the public framework shell. It does not include organization-specif
 
 ## Commands
 
-- `taskrail init`
 - `taskrail check`
+- `taskrail plan`
+- `taskrail doctor`
 - `taskrail test`
 - `taskrail build`
 - `taskrail deploy`

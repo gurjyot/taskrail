@@ -11,6 +11,7 @@ Rules:
 - Rebuild complete source/candidate files instead of repeatedly patching corrupted production fragments.
 - Change source first.
 - Run `check`, `test`, `build`.
+- Use `plan` before `deploy`.
 - Deploy through framework tooling only.
 - Verify health after deploy.
 - Reuse existing plugins/modules before creating new ones.

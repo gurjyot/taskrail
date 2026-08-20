@@ -1,5 +1,6 @@
 {
   "name": "taskrail-example",
+  "taskrailCompatibility": "0.2.x",
   "runtime": "node",
   "managed": true,
   "sourceDir": "src",

@@ -11,6 +11,7 @@ export type Severity = 'debug' | 'info' | 'warn' | 'error';
 
 export interface FrameworkManifest {
   name: string;
+  taskrailCompatibility?: string;
   runtime: 'node';
   managed: boolean;
   sourceDir: string;
@@ -18,9 +19,13 @@ export interface FrameworkManifest {
   validationCommand: string;
   testCommand: string;
   buildCommand?: string;
+  releaseCommand?: string;
   healthCheck?: HealthCheckDefinition;
+  healthChecks?: HealthCheckDefinition[];
   backup?: BackupPolicy;
   plugins?: PluginReference[];
+  requiredEnv?: string[];
+  requiredFiles?: string[];
 }
 
 export type HealthCheckDefinition =
@@ -64,6 +69,29 @@ export interface DeployResult {
   rolledBack: boolean;
 }
 
+export interface ReleaseMeta {
+  releaseId: string;
+  project: string;
+  taskrailVersion: string;
+  sourceRevision?: string;
+  createdAt: string;
+  path: string;
+}
+
+export interface FailureReport {
+  project: string;
+  taskrailVersion: string;
+  stage: string;
+  failedCommand?: string;
+  exitCode?: number;
+  category: string;
+  message: string;
+  releaseId?: string;
+  rollbackAttempted: boolean;
+  rollbackResult?: 'success' | 'failed' | 'not-needed';
+  nextStep?: string;
+}
+
 export interface PluginContext {
   config: FrameworkConfig;
   log(event: LogEvent): void;
@@ -83,4 +111,12 @@ export interface DeploymentContext {
   deployDir: string;
   candidateDir: string;
   backupDir: string;
+}
+
+export type HealthTier = 'process' | 'integration' | 'end-to-end';
+
+export interface HealthCheckOutcome {
+  tier: HealthTier;
+  ok: boolean;
+  details?: string;
 }
