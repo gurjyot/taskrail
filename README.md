@@ -1,6 +1,7 @@
-# TaskRail v0.2
+# TaskRail v1.0.0
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations. It provides structure and guardrails without requiring a heavy runtime or orchestration platform.
+It provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
 
 Core ideas:
 - CLI first.
@@ -46,6 +47,10 @@ This repo is the public framework shell. It does not include organization-specif
 - dashboard
 - AI framework
 - org-specific adapters
+
+## Freeze policy
+
+After `v1.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Commands
 
