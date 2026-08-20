@@ -1,6 +1,6 @@
-# Lightweight Automation Framework v1
+# TaskRail v1
 
-Tiny TypeScript/Node.js framework for building and safely operating automations.
+TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations. It provides structure and guardrails without requiring a heavy runtime or orchestration platform.
 
 Core ideas:
 - CLI first.
@@ -47,15 +47,15 @@ This repo is the public framework shell. It does not include organization-specif
 
 ## Commands
 
-- `laf init`
-- `laf check`
-- `laf test`
-- `laf build`
-- `laf deploy`
-- `laf verify`
-- `laf run`
-- `laf rollback`
+- `taskrail init`
+- `taskrail check`
+- `taskrail test`
+- `taskrail build`
+- `taskrail deploy`
+- `taskrail verify`
+- `taskrail run`
+- `taskrail rollback`
 
 ## Suggested repo name
 
-`lightweight-automation-framework`
+`taskrail`

@@ -4,10 +4,10 @@ import { loadPlugins, readState, rollbackFromState, runHealthCheck, safeDeploy }
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
 
 const config: FrameworkConfig = {
-  projectName: 'example-automation',
+  projectName: 'taskrail-example',
   environment: process.env,
   manifest: {
-    name: 'example-automation',
+    name: 'taskrail-example',
     runtime: 'node',
     managed: true,
     sourceDir: 'src',
@@ -29,7 +29,7 @@ const plugin: AutomationPlugin = {
 async function main() {
   const cmd = process.argv[2] ?? '--help';
   if (cmd === '--help' || cmd === 'help') {
-    console.log('laf check|test|deploy|health|rollback');
+    console.log('taskrail check|test|deploy|health|rollback');
     return;
   }
   if (cmd === 'check') {
@@ -65,7 +65,7 @@ async function main() {
     return;
   }
   if (cmd === 'rollback') {
-    const stateFile = new URL('./example-automation.deploy-state.json', import.meta.url).pathname;
+    const stateFile = new URL('./taskrail-example.deploy-state.json', import.meta.url).pathname;
     const result = await rollbackFromState(stateFile, config.manifest.healthCheck, plugin);
     if (!result.ok) process.exitCode = 1;
     console.log(log({ level: result.ok ? 'info' : 'error', message: 'rollback', data: result }));

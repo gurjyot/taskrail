@@ -1,11 +1,11 @@
 {
-  "name": "lightweight-automation-framework",
+  "name": "taskrail",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Tiny CLI-first framework for safe automation lifecycle management.",
   "bin": {
-    "laf": "./dist/cli.js"
+    "taskrail": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -8,7 +8,7 @@ import { log } from '../src/logging.js';
 import { rollbackFromState, safeDeploy } from '../src/deployment.js';
 
 async function fixtureDir() {
-  return await mkdtemp(path.join(os.tmpdir(), 'laf-'));
+  return await mkdtemp(path.join(os.tmpdir(), 'taskrail-'));
 }
 
 async function writeFixture(base: string, files: Record<string, string>) {

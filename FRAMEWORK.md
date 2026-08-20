@@ -1,4 +1,4 @@
-# Framework Contract
+# TaskRail Contract
 
 ## Goal
 
