@@ -203,6 +203,15 @@ export async function listManagedAutomations(cwd = process.cwd()): Promise<Manag
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+
+export async function workspaceCapabilityRoots(cwd = process.cwd()) {
+  const roots = unique([
+    ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
+    path.join(cwd, 'capabilities'),
+  ]);
+  return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(cwd, root)));
+}
+
 export async function capabilityImpact(name: string, cwd = process.cwd()) {
   const manifests = await discoverAutomationManifests(cwd);
   const consumers: ManagedAutomation[] = [];

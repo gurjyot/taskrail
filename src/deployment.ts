@@ -31,6 +31,7 @@ export interface DeployOptions {
   historyFile?: string;
   lockDir?: string;
   sourceRevision?: string;
+  projectRoot?: string;
 }
 
 export interface DoctorResult {
@@ -184,8 +185,9 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
 }
 
 export async function safeDeploy(manifest: FrameworkManifest, plugin?: AutomationPlugin, options: DeployOptions = {}): Promise<DeployOutcome> {
+  const projectRoot = options.projectRoot || process.cwd();
   const target = path.resolve(manifest.deployDir);
-  const source = path.resolve(manifest.sourceDir);
+  const source = path.resolve(projectRoot, manifest.sourceDir);
   const workspace = path.dirname(target);
   const candidate = path.join(workspace, `${manifest.name}.candidate`);
   const backup = path.join(workspace, `${manifest.name}.backup-${Date.now()}`);
@@ -250,11 +252,11 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
 
     const controlsEnabled = Boolean(manifest.requiredChecks?.length || manifest.protectedPaths?.length);
     if (controlsEnabled) {
-      const liveGate = await runGate(manifest, workspace, plugin ? [plugin] : []);
+      const liveGate = await runGate(manifest, projectRoot, plugin ? [plugin] : []);
       if (liveGate.verdict !== 'PASS') {
         return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
       }
-      const changed = await inspectDeployChange(manifest, workspace);
+      const changed = await inspectDeployChange(manifest, projectRoot);
       if (!changed.allowed) {
         return { deployed: false, rolledBack: false, failure: `protected change blocked: ${changed.protected.join(', ') || 'unknown'}` };
       }
