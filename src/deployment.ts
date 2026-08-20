@@ -35,13 +35,17 @@ export interface DoctorResult {
   version: string;
   compatible: boolean;
   manifestValid: boolean;
+  project: string;
   runtimeVersion: string;
   requiredFiles: Array<{ file: string; ok: boolean }>;
   envPresence: Array<{ name: string; ok: boolean }>;
   lockState: { locked: boolean; holder?: string };
+  deployTarget: string;
+  plugins: string[];
   latestHealthyRelease?: string;
   drift?: { drifted: boolean; files: string[] };
   healthReady: boolean;
+  lastDeploymentResult?: string;
 }
 
 export interface CheckResult {
@@ -127,6 +131,7 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
   const stateFile = path.join(path.dirname(path.resolve(manifest.deployDir)), `${manifest.name}.deploy-state.json`);
   const state = await readState(stateFile);
   const latestHealthyRelease = state?.releasePath;
+  const pluginNames = await loadPlugins(manifest).then((plugins) => plugins.map((p) => p.name)).catch(() => []);
   const drift = state?.releasePath && (await pathExists(path.resolve(manifest.deployDir)))
     ? await detectDrift(path.resolve(manifest.deployDir), state.releasePath)
     : undefined;
@@ -134,13 +139,17 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
     version: TASKRAIL_VERSION,
     compatible: isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility),
     manifestValid: preflightResult.ok,
+    project: manifest.name,
     runtimeVersion: process.version,
     requiredFiles: (manifest.requiredFiles ?? []).map((file) => ({ file, ok: true })),
     envPresence: (manifest.requiredEnv ?? []).map((name) => ({ name, ok: Boolean(process.env[name]) })),
     lockState: lock.ok ? { locked: false } : { locked: true, holder: lock.holder },
+    deployTarget: manifest.deployDir,
+    plugins: pluginNames,
     latestHealthyRelease,
     drift,
     healthReady: Boolean(manifest.healthCheck || manifest.healthChecks?.length),
+    lastDeploymentResult: state ? 'deployed' : 'unknown',
   };
 }
 

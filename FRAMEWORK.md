@@ -3,6 +3,7 @@
 ## Goal
 
 Make automations hard to break.
+TaskRail provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
 
 ## Rules
 
@@ -30,6 +31,10 @@ Make automations hard to break.
 - audit history
 - structured failure reports
 - idempotency helper
+
+## Freeze policy
+
+After `v1.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Deployment sequence
 

@@ -10,14 +10,15 @@ const config: FrameworkConfig = {
   environment: process.env,
   manifest: {
     name: 'taskrail-example',
+    taskrailCompatibility: '1.0.x',
     runtime: 'node',
     managed: true,
     sourceDir: 'src',
-    deployDir: 'deploy',
+    deployDir: 'dist/src',
     validationCommand: 'node -e "process.exit(0)"',
     testCommand: 'node -e "process.exit(0)"',
     backup: { retain: 3 },
-    healthCheck: { type: 'command', command: 'node -e "process.exit(0)"' },
+    healthCheck: { type: 'file', path: 'index.js' },
   },
 };
 
@@ -51,7 +52,23 @@ async function main() {
   }
   if (cmd === 'doctor') {
     const result = await frameworkDoctor(config.manifest);
-    console.log(JSON.stringify(result, null, 2));
+    if (process.argv.includes('--json')) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log([
+        `TaskRail ${result.version}`,
+        `project: ${result.project}`,
+        `manifest: ${result.manifestValid ? 'ok' : 'invalid'}`,
+        `compatibility: ${result.compatible ? 'ok' : 'incompatible'}`,
+        `target: ${result.deployTarget}`,
+        `latest release: ${result.latestHealthyRelease || 'none'}`,
+        `drift: ${result.drift?.drifted ? result.drift.files.join(', ') : 'clean'}`,
+        `lock: ${result.lockState.locked ? `locked ${result.lockState.holder || ''}`.trim() : 'free'}`,
+        `health: ${result.healthReady ? 'ready' : 'not configured'}`,
+        `plugins: ${result.plugins.length ? result.plugins.join(', ') : 'none'}`,
+        `last deploy: ${result.lastDeploymentResult || 'unknown'}`,
+      ].join('\n'));
+    }
     if (!result.compatible || !result.manifestValid) process.exitCode = 1;
     return;
   }

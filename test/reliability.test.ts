@@ -137,7 +137,11 @@ test('failure report is structured', () => {
 test('doctor returns compatibility and health readiness', async () => {
   const base = await fixtureDir();
   await writeFixture(base, { 'source/check.js': 'process.exit(0)', 'deploy/index.txt': 'old' });
-  const result = await doctor(manifest(base));
+  await mkdir(path.join(base, 'deploy'), { recursive: true });
+  await mkdir(path.join(base, 'source'), { recursive: true });
+  await writeFile(path.join(base, 'deploy', 'index.txt'), 'old');
+  await writeFile(path.join(base, 'source', 'check.js'), 'process.exit(0)');
+  const result = await doctor(manifest(base, { taskrailCompatibility: '1.0.x' }));
   assert.equal(result.version, TASKRAIL_VERSION);
   assert.equal(result.compatible, true);
   await rm(base, { recursive: true, force: true });
