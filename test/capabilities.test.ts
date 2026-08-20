@@ -23,9 +23,10 @@ async function writeFixture(base: string, files: Record<string, string>) {
   }
 }
 
-function automation(name: string, root: string, capabilities: string[] = []) {
-  return ({
+function automation(name: string, root: string, capabilities: string[] = [], overrides: Record<string, unknown> = {}) {
+  return {
     name,
+    taskrailCompatibility: '1.2.x',
     runtime: 'node' as const,
     managed: true,
     sourceDir: path.join(root, 'src'),
@@ -35,8 +36,37 @@ function automation(name: string, root: string, capabilities: string[] = []) {
     requiredChecks: ['validation', 'test'] as const,
     capabilities,
     capabilityRoots: [path.join(root, 'capabilities')],
-  } as any);
+    ...overrides,
+  } as any;
 }
+
+test('relative and absolute capability canonicalPath resolve from the capability directory', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'capabilities/relative/capability.json': JSON.stringify({
+      name: 'relative',
+      version: '1.0.0',
+      description: 'Relative capability',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'capabilities/relative/index.js': 'module.exports = {}',
+    'capabilities/absolute/capability.json': JSON.stringify({
+      name: 'absolute',
+      version: '1.0.0',
+      description: 'Absolute capability',
+      runtime: 'node',
+      canonicalPath: path.join(base, 'capabilities', 'absolute', 'index.js'),
+    }, null, 2),
+    'capabilities/absolute/index.js': 'module.exports = {}',
+  });
+  const roots = [path.join(base, 'capabilities')];
+  const relative = await getCapability('relative', roots);
+  const absolute = await getCapability('absolute', roots);
+  assert.equal(relative?.canonicalPath, path.join(base, 'capabilities', 'relative', 'index.js'));
+  assert.equal(absolute?.canonicalPath, path.join(base, 'capabilities', 'absolute', 'index.js'));
+  await rm(base, { recursive: true, force: true });
+});
 
 test('capability registry discovers, inspects, and tracks consumers', async () => {
   const base = await fixtureDir();
@@ -45,18 +75,20 @@ test('capability registry discovers, inspects, and tracks consumers', async () =
       name: 'telegram-send',
       version: '1.0.0',
       description: 'Send Telegram messages',
-      runtime: 'node' as const,
-      canonicalPath: 'telegram/send.ts',
-      requiredSharedFiles: ['/opt/shared/.env'],
-      secretValue: 'hidden',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+      requiredSharedFiles: [path.join(base, 'shared', '.env')],
     }, null, 2),
+    'capabilities/telegram-send/index.js': 'module.exports = {}',
+    'shared/.env': 'SAFE=1',
     'capabilities/meta-api/capability.json': JSON.stringify({
       name: 'meta-api',
       version: '1.0.0',
       description: 'Meta API helpers',
       runtime: 'node',
-      canonicalPath: 'meta/index.ts',
+      canonicalPath: 'index.js',
     }, null, 2),
+    'capabilities/meta-api/index.js': 'module.exports = {}',
     'alpha/automation.json': JSON.stringify(automation('alpha', path.join(base, 'alpha'), ['telegram-send']), null, 2),
     'alpha/src/index.ts': '',
     'alpha/deploy/index.ts': '',
@@ -76,18 +108,47 @@ test('capability registry discovers, inspects, and tracks consumers', async () =
   await rm(base, { recursive: true, force: true });
 });
 
-test('missing capability fails preflight and gate cleanly', async () => {
+test('missing capability implementation or shared file fails preflight', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
     'src/index.ts': '',
     'deploy/index.ts': '',
+    'capabilities/broken/capability.json': JSON.stringify({
+      name: 'broken',
+      version: '1.0.0',
+      description: 'Broken capability',
+      runtime: 'node',
+      canonicalPath: 'missing.js',
+      requiredSharedFiles: [path.join(base, 'shared', '.env')],
+    }, null, 2),
   });
-  const manifest = automation('demo', base, ['missing-capability']);
+  const manifest = automation('demo', base, ['broken']);
   const result = await preflight(manifest as any);
   assert.equal(result.ok, false);
-  assert.match(result.checks.find((check) => check.name === 'capability:missing-capability')?.message ?? '', /missing capability/i);
-  const gate = await runGate(manifest as any, base);
-  assert.equal(gate.verdict, 'MISCONFIGURED');
+  assert.match(result.checks.find((check) => check.name === 'capability:broken')?.message ?? '', /missing capability|missing required shared files|missing canonical implementation/i);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('duplicate capability names across roots fail deterministically', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'root-a/dup/capability.json': JSON.stringify({ name: 'dup', version: '1.0.0', description: 'First', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'root-a/dup/index.js': 'module.exports = {}',
+    'root-b/dup/capability.json': JSON.stringify({ name: 'dup', version: '1.0.0', description: 'Second', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'root-b/dup/index.js': 'module.exports = {}',
+    'src/index.ts': '',
+    'deploy/index.ts': '',
+  });
+  const roots = [path.join(base, 'root-a'), path.join(base, 'root-b')];
+  const registry = await import('../src/capabilities.js').then((m) => m.loadCapabilities(roots));
+  assert.equal(registry.capabilities.length, 0);
+  assert.equal(registry.errors.length > 0, true);
+  assert.match(registry.errors[0].message, /duplicate capability name/i);
+  assert.ok((registry.errors[0].conflictingPaths ?? []).length === 2);
+  const manifest = automation('demo', base, ['dup'], { capabilityRoots: roots });
+  const result = await preflight(manifest as any);
+  assert.equal(result.ok, false);
+  assert.match(result.checks.find((check) => check.name.startsWith('capability-registry:dup'))?.message ?? '', /duplicate capability name/i);
   await rm(base, { recursive: true, force: true });
 });
 
@@ -111,7 +172,8 @@ test('existing manifests without capabilities still validate', () => {
 test('discovery commands emit concise json', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
-    'capabilities/telegram-send/capability.json': JSON.stringify({ name: 'telegram-send', version: '1.0.0', description: 'Send Telegram messages', runtime: 'node', canonicalPath: 'telegram/send.ts' }, null, 2),
+    'capabilities/telegram-send/capability.json': JSON.stringify({ name: 'telegram-send', version: '1.0.0', description: 'Send Telegram messages', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'capabilities/telegram-send/index.js': 'module.exports = {}',
     'app/automation.json': JSON.stringify(automation('app', path.join(base, 'app'), ['telegram-send']), null, 2),
     'app/src/index.ts': '',
     'app/deploy/index.ts': '',

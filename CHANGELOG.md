@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed capability canonical path resolution.
+- Validated capability implementation paths and required shared files.
+- Rejected duplicate capability names across roots.
+- Kept capability discovery deterministic and secret-free.
+
 ## 1.2.0
 
 - Added capability registry and discovery commands.

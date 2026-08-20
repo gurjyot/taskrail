@@ -8,9 +8,10 @@ Normal workflow:
 Rules:
 - inspect `automation.json` first
 - run `taskrail doctor` first for context
-- inspect existing modules and capabilities before adding new code
-- reuse existing integrations; do not duplicate them
-- if capability-aware, check `taskrail capabilities` and `taskrail inspect <automation>` before changing behavior
+- check existing capabilities before writing integration or infrastructure code
+- reuse an existing capability when its contract fits
+- create a new capability only for small generic technical functionality likely to help multiple automations
+- keep one-off business logic local to the automation
 - never patch managed production files directly
 - make clean source/candidate changes only
 - do not repair corrupted managed files with repeated line edits

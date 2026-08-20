@@ -1,4 +1,4 @@
-# TaskRail v1.2.0
+# TaskRail v1.2.1
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations.
 It gives coding agents a small, deterministic contract for structure, guardrails, deployment safety, and discovery.
@@ -25,7 +25,11 @@ It does not provide intelligence.
 - `taskrail capability <name>`
 - `taskrail capability-impact <name>`
 
-## v1.2.0 scope
+## Capability rule
+
+Check existing capabilities first, reuse when the contract fits, and create a new capability only for small generic technical functionality that is likely useful across multiple automations.
+
+## v1.2.1 scope
 
 - manifest/config contract
 - lifecycle
@@ -64,7 +68,7 @@ It does not provide intelligence.
 
 ## Freeze policy
 
-After `v1.2.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
+After `v1.2.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Commands
 
