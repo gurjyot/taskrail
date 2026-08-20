@@ -13,13 +13,23 @@ Make automations hard to break.
 5. Features live in plugins/adapters.
 6. Validation is enforced by tooling.
 7. Deploy through the framework, not ad-hoc edits.
-8. Deployment must support validate, test, build candidate, backup, atomic replace, health check, and rollback.
+8. Deployment must support validate, test, build candidate, backup, atomic replace, health check, drift detection, and rollback.
 9. Shared behavior belongs in framework code, not copied into each automation.
 10. Projects must stay free to use other frameworks internally.
 
 ## Lifecycle
 
 `create -> check -> test -> build -> deploy -> verify -> run`
+
+## v0.2 additions
+
+- `plan`
+- `doctor`
+- deployment locks
+- immutable releases
+- audit history
+- structured failure reports
+- idempotency helper
 
 ## Deployment sequence
 
