@@ -30,7 +30,7 @@ Changing an automation:
 
 Changing a shared capability:
 - `taskrail capability <name>`
-- `taskrail capability-impact <name>`
+- `taskrail impact <name>`
 - test the capability and relevant consumers after changing shared behavior
 
 Restraint:
