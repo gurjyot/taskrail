@@ -61,8 +61,32 @@ async function readJson<T>(file: string): Promise<T | null> {
   }
 }
 
-function resolveCapabilityPath(root: string, manifest: CapabilityManifest) {
-  return path.isAbsolute(manifest.canonicalPath) ? path.normalize(manifest.canonicalPath) : path.resolve(root, manifest.canonicalPath);
+export function projectDirForManifest(manifest: FrameworkManifest, cwd = process.cwd()) {
+  return path.dirname(path.resolve(cwd, manifest.sourceDir));
+}
+
+export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
+  const projectDir = manifest ? projectDirForManifest(manifest, cwd) : cwd;
+  const roots = unique([
+    ...(manifest?.capabilityRoots ?? []),
+    ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
+    path.join(projectDir, 'capabilities'),
+  ]);
+  return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root)));
+}
+
+export async function discoverCapabilityFiles(roots: string[]) {
+  const files: string[] = [];
+  for (const root of roots) {
+    if (!(await exists(root))) continue;
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const file = path.join(root, entry.name, 'capability.json');
+      if (await stat(file).then(() => true, () => false)) files.push(file);
+    }
+  }
+  return files.sort();
 }
 
 async function validateCapabilityFile(file: string): Promise<{ manifest?: CapabilityContract; error?: CapabilityLoadError }> {
@@ -70,12 +94,10 @@ async function validateCapabilityFile(file: string): Promise<{ manifest?: Capabi
   const manifest = manifestShape(raw);
   if (!manifest) return { error: { path: file, message: 'invalid capability manifest' } };
   const root = path.dirname(file);
-  const canonicalPath = resolveCapabilityPath(root, manifest);
-  if (!(await stat(canonicalPath).then(() => true, () => false))) {
-    return { error: { name: manifest.name, path: file, message: `missing canonical implementation: ${canonicalPath}` } };
-  }
+  const canonicalPath = path.isAbsolute(manifest.canonicalPath) ? path.normalize(manifest.canonicalPath) : path.resolve(root, manifest.canonicalPath);
+  if (!(await stat(canonicalPath).then(() => true, () => false))) return { error: { name: manifest.name, path: file, message: `missing canonical implementation: ${canonicalPath}` } };
   const requiredSharedFiles = manifest.requiredSharedFiles ?? [];
-  const missingSharedFiles = [] as string[];
+  const missingSharedFiles: string[] = [];
   for (const shared of requiredSharedFiles) {
     const resolved = path.isAbsolute(shared) ? path.normalize(shared) : path.resolve(root, shared);
     if (!(await stat(resolved).then(() => true, () => false))) missingSharedFiles.push(resolved);
@@ -97,29 +119,6 @@ async function validateCapabilityFile(file: string): Promise<{ manifest?: Capabi
       consumers: [],
     },
   };
-}
-
-export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
-  const roots = unique([
-    ...(manifest?.capabilityRoots ?? []),
-    ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
-    path.join(cwd, 'capabilities'),
-  ]);
-  return roots.filter((root) => root.trim());
-}
-
-export async function discoverCapabilityFiles(roots: string[]) {
-  const files: string[] = [];
-  for (const root of roots) {
-    if (!(await exists(root))) continue;
-    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const file = path.join(root, entry.name, 'capability.json');
-      if (await stat(file).then(() => true, () => false)) files.push(file);
-    }
-  }
-  return files.sort();
 }
 
 export async function loadCapabilities(roots: string[]): Promise<CapabilityLoadResult> {

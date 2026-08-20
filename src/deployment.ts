@@ -39,7 +39,7 @@ export interface DoctorResult {
   manifestValid: boolean;
   project: string;
   runtimeVersion: string;
-  requiredFiles: Array<{ file: string; ok: boolean; detail?: string }>;
+  requiredSharedFiles: Array<{ file: string; ok: boolean; detail?: string }>;
   envPresence: Array<{ name: string; ok: boolean }>;
   lockState: { locked: boolean; holder?: string };
   deployTarget: string;
@@ -171,7 +171,7 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
     manifestValid: preflightResult.ok,
     project: manifest.name,
     runtimeVersion: process.version,
-    requiredFiles: await Promise.all((manifest.requiredFiles ?? []).map(async (file) => ({ file, ok: await pathExists(file), detail: file }))),
+    requiredSharedFiles: await Promise.all((manifest.requiredSharedFiles ?? []).map(async (file) => ({ file, ok: await pathExists(file), detail: file }))),
     envPresence: (manifest.requiredEnv ?? []).map((name) => ({ name, ok: Boolean(process.env[name]) })),
     lockState: lock.ok ? { locked: false } : { locked: true, holder: lock.holder },
     deployTarget: manifest.deployDir,

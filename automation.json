@@ -1,18 +1,13 @@
 {
   "name": "taskrail-example",
-  "taskrailCompatibility": "1.1.x",
+  "taskrailCompatibility": "2.0.x",
   "runtime": "node",
   "managed": true,
   "sourceDir": "src",
   "deployDir": "dist/src",
   "validationCommand": "true",
   "testCommand": "true",
-  "healthCheck": {
-    "type": "file",
-    "path": "cli.js"
-  },
-  "backup": {
-    "retain": 3
-  },
+  "requiredSharedFiles": [],
+  "backup": { "retain": 3 },
   "plugins": []
 }

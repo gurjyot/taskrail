@@ -1,6 +1,6 @@
 {
   "name": "taskrail-template",
-  "taskrailCompatibility": "1.2.x",
+  "taskrailCompatibility": "2.0.x",
   "entry": "src/index.ts",
   "runtime": "node",
   "managed": true,
@@ -8,5 +8,6 @@
   "deployDir": "deploy",
   "validationCommand": "true",
   "testCommand": "true",
+  "requiredSharedFiles": [],
   "backup": { "retain": 3 }
 }

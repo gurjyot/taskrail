@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { validateConfig } from './validation.js';
 import { log } from './logging.js';
 import { check as frameworkCheck, doctor as frameworkDoctor, loadPlugins, rollbackFromManifest, runHealthCheck, safeDeploy } from './deployment.js';
@@ -10,8 +11,8 @@ import { runGate } from './gate.js';
 import { capabilityImpact, capabilityRootsFor, findAutomation, getCapability, listManagedAutomations, loadCapabilities } from './capabilities.js';
 
 const fallbackManifest: FrameworkManifest = {
-  name: 'taskrail-example',
-  taskrailCompatibility: '1.2.x',
+  name: 'taskrail',
+  taskrailCompatibility: '2.0.x',
   runtime: 'node',
   managed: true,
   sourceDir: 'src',
@@ -63,9 +64,9 @@ async function commandInspect(nameOrPath: string | undefined) {
     return;
   }
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
-  const roots = capabilityRootsFor(manifest, process.cwd());
-  const capabilities = await loadCapabilities(roots);
-  const used = (manifest.capabilities ?? []).map((name) => capabilities.capabilities.find((capability) => capability.name === name)).filter(Boolean);
+  const roots = capabilityRootsFor(manifest, path.dirname(manifestPath));
+  const registry = await loadCapabilities(roots);
+  const used = (manifest.capabilities ?? []).map((name) => registry.capabilities.find((capability) => capability.name === name)).filter(Boolean);
   const status = await frameworkDoctor(manifest).catch(() => null);
   output({
     name: manifest.name,
@@ -75,7 +76,7 @@ async function commandInspect(nameOrPath: string | undefined) {
     runtime: manifest.runtime,
     requiredChecks: manifest.requiredChecks ?? ['validation', 'test'],
     protectedPaths: manifest.protectedPaths ?? [],
-    requiredSharedFiles: manifest.requiredFiles ?? [],
+    requiredSharedFiles: manifest.requiredSharedFiles ?? [],
     capabilities: used.map((capability) => ({ name: capability!.name, version: capability!.version, canonicalPath: capability!.canonicalPath })),
     health: manifest.healthCheck ?? manifest.healthChecks ?? [],
     drift: status?.drift ?? null,
