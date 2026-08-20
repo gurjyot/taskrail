@@ -1,8 +1,7 @@
 # Changelog
 
-## 2.0.0
+## 2.0.1
 
-- Removed v1 compatibility aliases and legacy shared-file naming.
-- Normalized manifests to canonical v2 fields.
-- Resolved relative capability roots from the project directory.
-- Added the optional TaskRail agent skill.
+- Regenerated the package lockfile from `package.json`.
+- Added YAML frontmatter to `skills/taskrail/SKILL.md`.
+- Removed unused `LifecycleStep`.
