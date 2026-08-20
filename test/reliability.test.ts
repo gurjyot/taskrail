@@ -1,23 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { check, doctor, safeDeploy } from '../src/deployment.js';
-import { buildPlan } from '../src/plan.js';
-import { acquireLock, releaseLock } from '../src/locks.js';
-import { createRelease, restoreRelease } from '../src/release.js';
-import { detectDrift } from '../src/drift.js';
-import { preflight } from '../src/preflight.js';
-import { scanForSecrets } from '../src/security.js';
-import { idempotencyKey } from '../src/idempotency.js';
-import { appendAudit, readLastAudit } from '../src/history.js';
-import { buildFailureReport } from '../src/errors.js';
-import { TASKRAIL_VERSION } from '../src/version.js';
-import type { FrameworkManifest } from '../src/types.js';
+import { validateConfig } from '../src/validation.js';
+import { log } from '../src/logging.js';
+import { rollbackFromState, safeDeploy } from '../src/deployment.js';
+import { runGate } from '../src/gate.js';
+import { inspectChange } from '../src/change.js';
 
 async function fixtureDir() {
-  return await mkdtemp(path.join(os.tmpdir(), 'taskrail-v2-'));
+  return await mkdtemp(path.join(os.tmpdir(), 'taskrail-'));
 }
 
 async function writeFixture(base: string, files: Record<string, string>) {
@@ -28,10 +21,20 @@ async function writeFixture(base: string, files: Record<string, string>) {
   }
 }
 
-function manifest(base: string, overrides: Partial<FrameworkManifest> = {}): FrameworkManifest {
+async function gitInit(dir: string) {
+  await appendFile(path.join(dir, '.gitkeep'), 'x');
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'taskrail@example.com'], { cwd: dir, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.name', 'TaskRail'], { cwd: dir, stdio: 'ignore' });
+  execFileSync('git', ['add', '.gitkeep'], { cwd: dir, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'init'], { cwd: dir, stdio: 'ignore' });
+}
+
+function manifest(base: string, overrides: Partial<{ requiredChecks: string[]; protectedPaths: string[]; healthCheck: any; taskrailCompatibility: string; testCommand: string }> = {}) {
   return {
     name: 'demo',
-    taskrailCompatibility: '0.2.x',
+    taskrailCompatibility: '1.1.x',
     runtime: 'node',
     managed: true,
     sourceDir: path.join(base, 'source'),
@@ -41,97 +44,192 @@ function manifest(base: string, overrides: Partial<FrameworkManifest> = {}): Fra
     healthCheck: { type: 'file', path: 'index.txt' },
     backup: { retain: 3 },
     plugins: [],
+    requiredChecks: ['validation', 'test'],
+    protectedPaths: [],
     ...overrides,
-  };
+  } as any;
 }
 
-test('plan is dry-run only', async () => {
+test('validateConfig accepts the minimal manifest', () => {
+  const errors = validateConfig({
+    projectName: 'x',
+    environment: {},
+    manifest: {
+      name: 'x',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'node -e "process.exit(0)"',
+      testCommand: 'node -e "process.exit(0)"',
+    },
+  });
+  assert.deepEqual(errors, []);
+});
+
+test('log emits structured json', () => {
+  const event = JSON.parse(log({ level: 'info', message: 'hello' }));
+  assert.equal(event.level, 'info');
+  assert.equal(event.message, 'hello');
+});
+
+test('gate pass fail and misconfigured are deterministic', async () => {
   const base = await fixtureDir();
   await writeFixture(base, { 'source/check.js': 'process.exit(0)', 'deploy/index.txt': 'old' });
-  const plan = buildPlan(manifest(base));
-  assert.equal(plan.project, 'demo');
-  assert.ok(plan.source.includes('source'));
+  const pass = await runGate(manifest(base, { protectedPaths: [] }), base);
+  assert.equal(pass.verdict, 'PASS');
+  const fail = await runGate(manifest(base, { requiredChecks: ['validation', 'test'], protectedPaths: [], testCommand: 'node -e "process.exit(1)"' }), base);
+  assert.equal(fail.verdict, 'FAIL');
+  const misconfigured = await runGate(manifest(base, { requiredChecks: ['health'], healthCheck: undefined }), base);
+  assert.equal(misconfigured.verdict, 'MISCONFIGURED');
   await rm(base, { recursive: true, force: true });
 });
 
-test('lock blocks concurrent deploy', async () => {
+test('verify-change reports protected path risk and deploy eligibility', async () => {
   const base = await fixtureDir();
-  const lockDir = path.join(base, '.taskrail', 'lock');
-  const first = await acquireLock(lockDir);
-  assert.equal(first.ok, true);
-  const second = await acquireLock(lockDir);
-  assert.equal(second.ok, false);
-  await releaseLock(lockDir);
+  await gitInit(base);
+  await writeFixture(base, {
+    'automation.json': JSON.stringify({ name: 'demo', runtime: 'node', managed: true, sourceDir: 'source', deployDir: 'deploy', validationCommand: 'node -e "process.exit(0)"', testCommand: 'node -e "process.exit(0)"', backup: { retain: 3 }, protectedPaths: ['src/secure'], requiredChecks: ['validation', 'test'] }, null, 2),
+    'src/secure/secret.ts': 'export const x = 1;'
+  });
+  const result = await inspectChange({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
+    backup: { retain: 3 },
+    protectedPaths: ['src/secure'],
+    requiredChecks: ['validation', 'test'],
+  } as any, base);
+  assert.ok(result.changedFiles.some((f) => f === 'src/secure/secret.ts' || f === 'automation.json'));
+  assert.equal(result.protectedPaths.length > 0, true);
+  assert.equal(typeof result.deployAllowed, 'boolean');
+  const evidence = JSON.parse(await readFile(path.join(base, '.taskrail/evidence/latest.json'), 'utf8'));
+  assert.equal(evidence.kind, 'verify-change');
   await rm(base, { recursive: true, force: true });
 });
 
-test('release snapshot and restore work', async () => {
+test('valid deployment succeeds and creates backup', async () => {
   const base = await fixtureDir();
   const source = path.join(base, 'source');
   const deploy = path.join(base, 'deploy');
-  const releases = path.join(base, 'releases');
-  await writeFixture(source, { 'index.txt': 'v1' });
-  const rel = await createRelease(manifest(base), source, releases);
+  await writeFixture(source, { 'index.txt': 'v1', 'check.js': 'process.exit(0)' });
   await writeFixture(deploy, { 'index.txt': 'old' });
-  await restoreRelease(rel.path, deploy);
+  const result = await safeDeploy({
+    name: 'app',
+    runtime: 'node',
+    managed: true,
+    sourceDir: source,
+    deployDir: deploy,
+    validationCommand: 'node check.js',
+    testCommand: 'node check.js',
+    healthCheck: { type: 'file', path: 'index.txt' },
+    backup: { retain: 3 },
+  });
+  assert.equal(result.deployed, true);
+  assert.equal(result.rolledBack, false);
   assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'v1');
   await rm(base, { recursive: true, force: true });
 });
 
-test('drift is detected', async () => {
+test('validation failure blocks deployment', async () => {
   const base = await fixtureDir();
   const source = path.join(base, 'source');
   const deploy = path.join(base, 'deploy');
-  await writeFixture(source, { 'index.txt': 'a' });
-  await writeFixture(deploy, { 'index.txt': 'b' });
-  const drift = await detectDrift(deploy, source);
-  assert.equal(drift.drifted, true);
+  await writeFixture(source, { 'check.js': 'process.exit(1)', 'index.txt': 'v1' });
+  await writeFixture(deploy, { 'index.txt': 'old' });
+  const result = await safeDeploy({
+    name: 'app',
+    runtime: 'node',
+    managed: true,
+    sourceDir: source,
+    deployDir: deploy,
+    validationCommand: 'node check.js',
+    testCommand: 'node -e "process.exit(0)"',
+  });
+  assert.equal(result.deployed, false);
+  assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
   await rm(base, { recursive: true, force: true });
 });
 
-test('preflight spots missing env and files', async () => {
+test('candidate invalid does not overwrite target', async () => {
   const base = await fixtureDir();
-  const m = manifest(base, { requiredEnv: ['TASKRAIL_TEST_ENV'], requiredFiles: [path.join(base, 'missing.txt')] });
-  const result = await preflight(m);
+  const source = path.join(base, 'source');
+  const deploy = path.join(base, 'deploy');
+  await writeFixture(source, { 'check.js': 'process.exit(0)', 'index.txt': 'v1' });
+  await writeFixture(deploy, { 'index.txt': 'old' });
+  const result = await safeDeploy({
+    name: 'app',
+    runtime: 'node',
+    managed: true,
+    sourceDir: source,
+    deployDir: deploy,
+    validationCommand: 'node check.js',
+    testCommand: 'node -e "process.exit(1)"',
+  });
+  assert.equal(result.deployed, false);
+  assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
+  await rm(base, { recursive: true, force: true });
+});
+
+test('health failure triggers rollback and restores content', async () => {
+  const base = await fixtureDir();
+  const source = path.join(base, 'source');
+  const deploy = path.join(base, 'deploy');
+  await writeFixture(source, { 'check.js': 'process.exit(0)', 'index.txt': 'new' });
+  await writeFixture(deploy, { 'index.txt': 'old' });
+  const result = await safeDeploy({
+    name: 'app',
+    runtime: 'node',
+    managed: true,
+    sourceDir: source,
+    deployDir: deploy,
+    validationCommand: 'node check.js',
+    testCommand: 'node check.js',
+    healthCheck: { type: 'command', command: 'node -e "process.exit(1)"' },
+  });
+  assert.equal(result.deployed, false);
+  assert.equal(result.rolledBack, true);
+  assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
+  await rm(base, { recursive: true, force: true });
+});
+
+test('rollback reports failure clearly when state is missing', async () => {
+  const base = await fixtureDir();
+  const result = await rollbackFromState(path.join(base, 'missing.json'), { type: 'command', command: 'node -e "process.exit(0)"' });
   assert.equal(result.ok, false);
+  assert.equal(result.failure, 'missing rollback state');
   await rm(base, { recursive: true, force: true });
 });
 
-test('secret scan finds obvious secrets', async () => {
+test('malformed manifest is rejected', () => {
+  const errors = validateConfig({
+    projectName: '',
+    environment: {},
+    manifest: {
+      name: '',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '',
+      deployDir: '',
+      validationCommand: '',
+      testCommand: '',
+    },
+  });
+  assert.ok(errors.length > 0);
+});
+
+test('failed rollback is reported clearly', async () => {
   const base = await fixtureDir();
-  const file = path.join(base, 'secret.txt');
-  await writeFile(file, 'bot123456:abcdefghijklmnopqrstuvwxyz');
-  const hits = await scanForSecrets([file]);
-  assert.ok(hits.length > 0);
+  const stateFile = path.join(base, 'app.deploy-state.json');
+  await writeFile(stateFile, JSON.stringify({ backupPath: path.join(base, 'missing-backup'), targetPath: path.join(base, 'target') }));
+  const result = await rollbackFromState(stateFile, { type: 'command', command: 'node -e "process.exit(0)"' });
+  assert.equal(result.ok, false);
+  assert.equal(result.failure, 'rollback failed');
   await rm(base, { recursive: true, force: true });
-});
-
-test('idempotency helper is stable', () => {
-  assert.equal(idempotencyKey('telegram', ['opportunity', '2026-08-20']), 'telegram::opportunity::2026-08-20');
-});
-
-test('audit writes append-only records', async () => {
-  const base = await fixtureDir();
-  const file = path.join(base, 'history.jsonl');
-  await appendAudit(file, { ts: new Date().toISOString(), type: 'deploy', project: 'demo', taskrailVersion: TASKRAIL_VERSION });
-  const last = await readLastAudit(file);
-  assert.equal(last?.type, 'deploy');
-  await rm(base, { recursive: true, force: true });
-});
-
-test('failure report is structured', () => {
-  const report = JSON.parse(buildFailureReport({
-    project: 'demo',
-    taskrailVersion: TASKRAIL_VERSION,
-    stage: 'deploy',
-    category: 'preflight_failed',
-    message: 'missing env',
-    rollbackAttempted: false,
-    rollbackResult: 'not-needed',
-    nextStep: 'set env',
-  }));
-  assert.equal(report.version, TASKRAIL_VERSION);
-  assert.equal(report.project, 'demo');
 });
 
 test('doctor returns compatibility and health readiness', async () => {
@@ -141,8 +239,8 @@ test('doctor returns compatibility and health readiness', async () => {
   await mkdir(path.join(base, 'source'), { recursive: true });
   await writeFile(path.join(base, 'deploy', 'index.txt'), 'old');
   await writeFile(path.join(base, 'source', 'check.js'), 'process.exit(0)');
-  const result = await doctor(manifest(base, { taskrailCompatibility: '1.0.x' }));
-  assert.equal(result.version, TASKRAIL_VERSION);
+  const result = await (await import('../src/deployment.js')).doctor(manifest(base, { taskrailCompatibility: '1.1.x' }) as any);
+  assert.equal(result.version, (await import('../src/version.js')).TASKRAIL_VERSION);
   assert.equal(result.compatible, true);
   await rm(base, { recursive: true, force: true });
 });

@@ -26,6 +26,8 @@ export interface FrameworkManifest {
   plugins?: PluginReference[];
   requiredEnv?: string[];
   requiredFiles?: string[];
+  requiredChecks?: Array<'validation' | 'test' | 'build' | 'health' | 'drift'>;
+  protectedPaths?: string[];
 }
 
 export type HealthCheckDefinition =
@@ -104,7 +106,25 @@ export interface AutomationPlugin {
   healthCheck?(): Promise<HealthResult> | HealthResult;
   backup?(): Promise<BackupResult> | BackupResult;
   rollback?(): Promise<void> | void;
+  reviewChange?(change: ChangeReviewInput): Promise<ChangeReviewResult> | ChangeReviewResult;
 }
+
+export interface ChangeReviewInput {
+  changedFiles: string[];
+  protectedPaths: string[];
+  risk: ChangeRisk;
+  gate: GateVerdict;
+  deployAllowed: boolean;
+}
+
+export interface ChangeReviewResult {
+  ok: boolean;
+  summary?: string;
+}
+
+export type GateVerdict = 'PASS' | 'FAIL' | 'MISCONFIGURED';
+export type ChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
+export type DeployEligibility = 'allowed' | 'blocked';
 
 export interface DeploymentContext {
   sourceDir: string;

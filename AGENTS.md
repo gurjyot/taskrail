@@ -15,7 +15,7 @@ Read this first for normal automation work:
 - keep secrets out of git
 
 Normal workflow:
-`doctor -> source change -> check -> test -> plan -> deploy -> health`
+`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
 Do not read `FRAMEWORK.md` or deeper design docs unless changing TaskRail itself.
 

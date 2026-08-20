@@ -9,5 +9,7 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (!config.manifest.deployDir) errors.push('manifest.deployDir is required');
   if (!config.manifest.validationCommand) errors.push('manifest.validationCommand is required');
   if (!config.manifest.testCommand) errors.push('manifest.testCommand is required');
+  if (config.manifest.requiredChecks && !config.manifest.requiredChecks.every((check) => ['validation', 'test', 'build', 'health', 'drift'].includes(check))) errors.push('manifest.requiredChecks contains an unsupported value');
+  if (config.manifest.protectedPaths && !config.manifest.protectedPaths.every((p) => typeof p === 'string' && p.trim().length > 0)) errors.push('manifest.protectedPaths must contain non-empty strings');
   return errors;
 }

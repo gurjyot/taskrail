@@ -1,26 +1,40 @@
 import { validateConfig } from './validation.js';
 import { log } from './logging.js';
-import { check as frameworkCheck, doctor as frameworkDoctor, loadPlugins, rollbackFromState, runHealthCheck, safeDeploy } from './deployment.js';
+import { readFile } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { check as frameworkCheck, doctor as frameworkDoctor, gate as frameworkGate, loadPlugins, rollbackFromState, runHealthCheck, safeDeploy } from './deployment.js';
 import { buildPlan } from './plan.js';
+import { inspectChange } from './change.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
 
-const config: FrameworkConfig = {
-  projectName: 'taskrail-example',
-  environment: process.env,
-  manifest: {
-    name: 'taskrail-example',
-    taskrailCompatibility: '1.0.x',
-    runtime: 'node',
-    managed: true,
-    sourceDir: 'src',
-    deployDir: 'dist/src',
-    validationCommand: 'node -e "process.exit(0)"',
-    testCommand: 'node -e "process.exit(0)"',
-    backup: { retain: 3 },
-    healthCheck: { type: 'file', path: 'index.js' },
-  },
+const fallbackManifest: FrameworkManifest = {
+  name: 'taskrail-example',
+  taskrailCompatibility: '1.0.x',
+  runtime: 'node',
+  managed: true,
+  sourceDir: 'src',
+  deployDir: 'dist/src',
+  validationCommand: 'node -e "process.exit(0)"',
+  testCommand: 'node -e "process.exit(0)"',
+  backup: { retain: 3 },
+  healthCheck: { type: 'file', path: 'index.js' },
 };
+
+async function loadConfigManifest(): Promise<FrameworkManifest> {
+  try {
+    const candidate = JSON.parse(await readFile('automation.json', 'utf8')) as FrameworkManifest;
+    return candidate;
+  } catch {
+    return fallbackManifest;
+  }
+}
+
+async function loadConfig(): Promise<FrameworkConfig> {
+  const manifest = await loadConfigManifest();
+  return { projectName: manifest.name, environment: process.env, manifest };
+}
 
 const plugin: AutomationPlugin = {
   name: 'core',
@@ -30,9 +44,10 @@ const plugin: AutomationPlugin = {
 };
 
 async function main() {
+  const config = await loadConfig();
   const cmd = process.argv[2] ?? '--help';
   if (cmd === '--help' || cmd === 'help') {
-    console.log('taskrail check|plan|doctor|test|deploy|health|rollback');
+    console.log('taskrail check|plan|doctor|test|deploy|health|rollback|gate|verify-change');
     return;
   }
   if (cmd === 'check') {
@@ -43,6 +58,18 @@ async function main() {
       return;
     }
     console.log('ok');
+    return;
+  }
+  if (cmd === 'gate') {
+    const result = await frameworkGate(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
+    console.log(JSON.stringify(result, null, 2));
+    if (result.verdict !== 'PASS') process.exitCode = 1;
+    return;
+  }
+  if (cmd === 'verify-change') {
+    const result = await inspectChange(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.deployAllowed) process.exitCode = 1;
     return;
   }
   if (cmd === 'plan') {
