@@ -1,6 +1,6 @@
 {
   "name": "taskrail-template",
-  "taskrailCompatibility": "1.1.x",
+  "taskrailCompatibility": "1.2.x",
   "entry": "src/index.ts",
   "runtime": "node",
   "managed": true,

@@ -1,26 +1,26 @@
 # AGENTS.md
 
-Read this first for normal automation work:
-- inspect `automation.json`
-- run `taskrail doctor`
-- inspect existing modules/adapters before adding new code
-- reuse existing integrations
-- change source, not managed production files
-- use `taskrail check`
-- use `taskrail test`
-- use `taskrail plan`
-- deploy only through `taskrail deploy`
-- verify health after deployment
-- treat drift as a reconciliation signal, not something to patch by hand
-- keep secrets out of git
+Read this first.
 
 Normal workflow:
 `doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
-Do not read `FRAMEWORK.md` or deeper design docs unless changing TaskRail itself.
+Rules:
+- inspect `automation.json` first
+- run `taskrail doctor` first for context
+- inspect existing modules and capabilities before adding new code
+- reuse existing integrations; do not duplicate them
+- if capability-aware, check `taskrail capabilities` and `taskrail inspect <automation>` before changing behavior
+- never patch managed production files directly
+- make clean source/candidate changes only
+- do not repair corrupted managed files with repeated line edits
+- use `taskrail check`, `taskrail gate`, `taskrail verify-change`, `taskrail plan`, `taskrail deploy`, and `taskrail health`
+- treat drift as reconciliation, not silent overwrite
+- verify health after deployment
+- keep secrets out of git and docs
+- read `FRAMEWORK.md` only when changing TaskRail itself
 
 Never:
-- patch managed production files directly
-- duplicate an integration that already exists
+- add ad-hoc production edits
+- add duplicate integrations
 - add SMG-specific logic to public core
-- make ad-hoc deploys outside TaskRail

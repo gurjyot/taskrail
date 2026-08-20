@@ -1,16 +1,17 @@
+import { readFile } from 'node:fs/promises';
 import { validateConfig } from './validation.js';
 import { log } from './logging.js';
-import { readFile } from 'node:fs/promises';
 import { check as frameworkCheck, doctor as frameworkDoctor, loadPlugins, rollbackFromManifest, runHealthCheck, safeDeploy } from './deployment.js';
 import { buildPlan } from './plan.js';
 import { inspectChange } from './change.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
 import { runGate } from './gate.js';
+import { capabilityImpact, capabilityRootsFor, discoverAutomationManifests, findAutomation, getCapability, listManagedAutomations, loadCapabilities } from './capabilities.js';
 
 const fallbackManifest: FrameworkManifest = {
   name: 'taskrail-example',
-  taskrailCompatibility: '1.1.x',
+  taskrailCompatibility: '1.2.x',
   runtime: 'node',
   managed: true,
   sourceDir: 'src',
@@ -41,13 +42,102 @@ const plugin: AutomationPlugin = {
   },
 };
 
-async function main() {
-  const config = await loadConfig();
-  const cmd = process.argv[2] ?? '--help';
-  if (cmd === '--help' || cmd === 'help') {
-    console.log('taskrail check|plan|doctor|test|deploy|health|rollback|gate|verify-change');
+function output(value: unknown) {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+async function commandList() {
+  output(await listManagedAutomations(process.cwd()));
+}
+
+async function commandInspect(nameOrPath: string | undefined) {
+  if (!nameOrPath) {
+    console.error('usage: taskrail inspect <automation>');
+    process.exitCode = 1;
     return;
   }
+  const manifestPath = await findAutomation(nameOrPath, process.cwd());
+  if (!manifestPath) {
+    console.error(`automation not found: ${nameOrPath}`);
+    process.exitCode = 1;
+    return;
+  }
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
+  const roots = capabilityRootsFor(manifest, process.cwd());
+  const capabilities = await loadCapabilities(roots);
+  const used = (manifest.capabilities ?? []).map((name) => capabilities.find((capability) => capability.name === name)).filter(Boolean);
+  const status = await frameworkDoctor(manifest).catch(() => null);
+  output({
+    name: manifest.name,
+    manifestPath,
+    sourceDir: manifest.sourceDir,
+    deployDir: manifest.deployDir,
+    runtime: manifest.runtime,
+    requiredChecks: manifest.requiredChecks ?? ['validation', 'test'],
+    protectedPaths: manifest.protectedPaths ?? [],
+    requiredSharedFiles: manifest.requiredFiles ?? [],
+    capabilities: used.map((capability) => ({ name: capability!.name, version: capability!.version, canonicalPath: capability!.canonicalPath })),
+    health: manifest.healthCheck ?? manifest.healthChecks ?? [],
+    drift: status?.drift ?? null,
+    status: status ? { latestHealthyRelease: status.latestHealthyRelease, lockState: status.lockState, lastDeploymentResult: status.lastDeploymentResult } : null,
+  });
+}
+
+async function commandCapabilities() {
+  const manifest = await loadConfigManifest();
+  const roots = capabilityRootsFor(manifest, process.cwd());
+  const capabilities = await loadCapabilities(roots);
+  const automations = await listManagedAutomations(process.cwd());
+  output(capabilities.map((capability) => ({
+    name: capability.name,
+    version: capability.version,
+    description: capability.description,
+    canonicalPath: capability.canonicalPath,
+    consumers: automations.filter((automation) => automation.capabilities.includes(capability.name)).map((automation) => automation.name),
+  })));
+}
+
+async function commandCapability(name: string | undefined) {
+  if (!name) {
+    console.error('usage: taskrail capability <name>');
+    process.exitCode = 1;
+    return;
+  }
+  const manifest = await loadConfigManifest();
+  const roots = capabilityRootsFor(manifest, process.cwd());
+  const capability = await getCapability(name, roots);
+  if (!capability) {
+    console.error(`capability not found: ${name}`);
+    process.exitCode = 1;
+    return;
+  }
+  const consumers = await capabilityImpact(name, process.cwd());
+  output({ ...capability, consumers: consumers.map((consumer) => consumer.name) });
+}
+
+async function commandCapabilityImpact(name: string | undefined) {
+  if (!name) {
+    console.error('usage: taskrail capability-impact <name>');
+    process.exitCode = 1;
+    return;
+  }
+  output(await capabilityImpact(name, process.cwd()));
+}
+
+async function main() {
+  const config = await loadConfig();
+  const args = process.argv.slice(2);
+  const cmd = args[0] ?? '--help';
+  const rest = args.slice(1);
+  if (cmd === '--help' || cmd === 'help') {
+    console.log('taskrail check|plan|doctor|test|deploy|health|rollback|gate|verify-change|list|inspect|capabilities|capability|capability-impact');
+    return;
+  }
+  if (cmd === 'list') return commandList();
+  if (cmd === 'inspect') return commandInspect(rest[0]);
+  if (cmd === 'capabilities') return commandCapabilities();
+  if (cmd === 'capability') return commandCapability(rest[0]);
+  if (cmd === 'capability-impact') return commandCapabilityImpact(rest[0]);
   if (cmd === 'check') {
     const result = await frameworkCheck(config.manifest);
     if (!result.ok) {
@@ -60,25 +150,25 @@ async function main() {
   }
   if (cmd === 'gate') {
     const result = await runGate(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
-    console.log(JSON.stringify(result, null, 2));
+    output(result);
     if (result.verdict !== 'PASS') process.exitCode = 1;
     return;
   }
   if (cmd === 'verify-change') {
     const result = await inspectChange(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
-    console.log(JSON.stringify(result, null, 2));
+    output(result);
     if (!result.deployAllowed) process.exitCode = 1;
     return;
   }
   if (cmd === 'plan') {
     const plan = buildPlan(config.manifest, await loadPlugins(config.manifest).catch(() => []));
-    console.log(JSON.stringify({ version: TASKRAIL_VERSION, plan }, null, 2));
+    output({ version: TASKRAIL_VERSION, plan });
     return;
   }
   if (cmd === 'doctor') {
     const result = await frameworkDoctor(config.manifest);
     if (process.argv.includes('--json')) {
-      console.log(JSON.stringify(result, null, 2));
+      output(result);
     } else {
       console.log([
         `TaskRail ${result.version}`,
