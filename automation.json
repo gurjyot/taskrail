@@ -1,5 +1,5 @@
 {
-  "name": "example-automation",
+  "name": "taskrail-example",
   "runtime": "node",
   "managed": true,
   "sourceDir": "src",

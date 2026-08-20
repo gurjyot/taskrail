@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Read this first.
+Read TaskRail docs first.
 
 Rules:
 - Read `FRAMEWORK.md` before editing.
