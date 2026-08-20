@@ -28,10 +28,11 @@ Normal automation work usually needs only:
 - project manifest
 - `taskrail doctor`
 - CLI help when needed
+- `taskrail capabilities` and `taskrail inspect <automation>` when capability work is involved
 
 Read deeper framework docs only when changing TaskRail itself.
 
-## v1.2.0 surface
+## v1.2.1 surface
 
 - manifest/config contract
 - lifecycle
@@ -65,7 +66,8 @@ Read deeper framework docs only when changing TaskRail itself.
 - Use TaskRail validation and deployment tools.
 - Verify health after deployment.
 - Treat drift as reconciliation.
+- Check and reuse capabilities before inventing new integration code.
 
 ## Freeze policy
 
-After `v1.2.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.
+After `v1.2.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.

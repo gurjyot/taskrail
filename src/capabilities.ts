@@ -10,6 +10,23 @@ export interface ManagedAutomation {
   status: string;
 }
 
+export interface CapabilityLoadError {
+  name?: string;
+  path: string;
+  message: string;
+  conflictingPaths?: string[];
+}
+
+export interface CapabilityLoadResult {
+  capabilities: CapabilityContract[];
+  errors: CapabilityLoadError[];
+}
+
+export interface CapabilityResolutionResult {
+  capability?: CapabilityContract;
+  error?: CapabilityLoadError;
+}
+
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -31,6 +48,8 @@ function manifestShape(value: any): CapabilityManifest | null {
   if (typeof value.canonicalPath !== 'string' || !value.canonicalPath.trim()) return null;
   if (value.requiredSharedFiles && !Array.isArray(value.requiredSharedFiles)) return null;
   if (value.healthCheck && typeof value.healthCheck !== 'object') return null;
+  if (value.input && typeof value.input !== 'string') return null;
+  if (value.output && typeof value.output !== 'string') return null;
   return value as CapabilityManifest;
 }
 
@@ -40,6 +59,44 @@ async function readJson<T>(file: string): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+function resolveCapabilityPath(root: string, manifest: CapabilityManifest) {
+  return path.isAbsolute(manifest.canonicalPath) ? path.normalize(manifest.canonicalPath) : path.resolve(root, manifest.canonicalPath);
+}
+
+async function validateCapabilityFile(file: string): Promise<{ manifest?: CapabilityContract; error?: CapabilityLoadError }> {
+  const raw = await readJson<CapabilityManifest>(file);
+  const manifest = manifestShape(raw);
+  if (!manifest) return { error: { path: file, message: 'invalid capability manifest' } };
+  const root = path.dirname(file);
+  const canonicalPath = resolveCapabilityPath(root, manifest);
+  if (!(await stat(canonicalPath).then(() => true, () => false))) {
+    return { error: { name: manifest.name, path: file, message: `missing canonical implementation: ${canonicalPath}` } };
+  }
+  const requiredSharedFiles = manifest.requiredSharedFiles ?? [];
+  const missingSharedFiles = [] as string[];
+  for (const shared of requiredSharedFiles) {
+    const resolved = path.isAbsolute(shared) ? path.normalize(shared) : path.resolve(root, shared);
+    if (!(await stat(resolved).then(() => true, () => false))) missingSharedFiles.push(resolved);
+  }
+  if (missingSharedFiles.length) return { error: { name: manifest.name, path: file, message: `missing required shared files: ${missingSharedFiles.join(', ')}` } };
+  return {
+    manifest: {
+      name: manifest.name,
+      version: manifest.version,
+      description: manifest.description,
+      runtime: manifest.runtime,
+      canonicalPath,
+      requiredSharedFiles: manifest.requiredSharedFiles,
+      healthCheck: manifest.healthCheck,
+      input: manifest.input,
+      output: manifest.output,
+      root,
+      path: file,
+      consumers: [],
+    },
+  };
 }
 
 export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
@@ -65,33 +122,42 @@ export async function discoverCapabilityFiles(roots: string[]) {
   return files.sort();
 }
 
-export async function loadCapabilities(roots: string[], cwd = process.cwd()): Promise<CapabilityContract[]> {
+export async function loadCapabilities(roots: string[]): Promise<CapabilityLoadResult> {
   const files = await discoverCapabilityFiles(roots);
-  const items: CapabilityContract[] = [];
+  const capabilities: CapabilityContract[] = [];
+  const errors: CapabilityLoadError[] = [];
+  const byName = new Map<string, CapabilityContract[]>();
   for (const file of files) {
-    const manifest = manifestShape(await readJson<CapabilityManifest>(file));
-    if (!manifest) continue;
-    const root = path.dirname(path.dirname(file));
-    items.push({
-      name: manifest.name,
-      version: manifest.version,
-      description: manifest.description,
-      runtime: manifest.runtime,
-      canonicalPath: path.isAbsolute(manifest.canonicalPath) ? manifest.canonicalPath : path.resolve(root, manifest.canonicalPath),
-      requiredSharedFiles: manifest.requiredSharedFiles,
-      healthCheck: manifest.healthCheck,
-      input: manifest.input,
-      output: manifest.output,
-      root,
-      path: file,
-      consumers: [],
-    });
+    const result = await validateCapabilityFile(file);
+    if (result.error || !result.manifest) {
+      if (result.error) errors.push(result.error);
+      continue;
+    }
+    const list = byName.get(result.manifest.name) ?? [];
+    list.push(result.manifest);
+    byName.set(result.manifest.name, list);
   }
-  return items.sort((a, b) => a.name.localeCompare(b.name));
+  for (const [name, items] of byName) {
+    if (items.length > 1) {
+      errors.push({ name, path: items[0].path, message: `duplicate capability name: ${name}`, conflictingPaths: items.map((item) => item.path) });
+      continue;
+    }
+    capabilities.push(items[0]);
+  }
+  return { capabilities: capabilities.sort((a, b) => a.name.localeCompare(b.name)), errors };
+}
+
+export async function resolveCapability(name: string, roots: string[]): Promise<CapabilityResolutionResult> {
+  const loaded = await loadCapabilities(roots);
+  const duplicate = loaded.errors.find((error) => error.name === name && error.conflictingPaths?.length);
+  if (duplicate) return { error: duplicate };
+  const capability = loaded.capabilities.find((item) => item.name === name);
+  if (!capability) return { error: { name, path: '', message: `capability not found: ${name}` } };
+  return { capability };
 }
 
 export async function getCapability(name: string, roots: string[]) {
-  return (await loadCapabilities(roots)).find((capability) => capability.name === name) ?? null;
+  return (await resolveCapability(name, roots)).capability ?? null;
 }
 
 export async function discoverAutomationManifests(cwd = process.cwd(), limit = 4): Promise<string[]> {

@@ -7,7 +7,7 @@ import { inspectChange } from './change.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
 import { runGate } from './gate.js';
-import { capabilityImpact, capabilityRootsFor, discoverAutomationManifests, findAutomation, getCapability, listManagedAutomations, loadCapabilities } from './capabilities.js';
+import { capabilityImpact, capabilityRootsFor, findAutomation, getCapability, listManagedAutomations, loadCapabilities } from './capabilities.js';
 
 const fallbackManifest: FrameworkManifest = {
   name: 'taskrail-example',
@@ -65,7 +65,7 @@ async function commandInspect(nameOrPath: string | undefined) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
   const roots = capabilityRootsFor(manifest, process.cwd());
   const capabilities = await loadCapabilities(roots);
-  const used = (manifest.capabilities ?? []).map((name) => capabilities.find((capability) => capability.name === name)).filter(Boolean);
+  const used = (manifest.capabilities ?? []).map((name) => capabilities.capabilities.find((capability) => capability.name === name)).filter(Boolean);
   const status = await frameworkDoctor(manifest).catch(() => null);
   output({
     name: manifest.name,
@@ -86,9 +86,14 @@ async function commandInspect(nameOrPath: string | undefined) {
 async function commandCapabilities() {
   const manifest = await loadConfigManifest();
   const roots = capabilityRootsFor(manifest, process.cwd());
-  const capabilities = await loadCapabilities(roots);
+  const registry = await loadCapabilities(roots);
+  if (registry.errors.length) {
+    output({ ok: false, errors: registry.errors });
+    process.exitCode = 1;
+    return;
+  }
   const automations = await listManagedAutomations(process.cwd());
-  output(capabilities.map((capability) => ({
+  output(registry.capabilities.map((capability) => ({
     name: capability.name,
     version: capability.version,
     description: capability.description,
@@ -105,14 +110,13 @@ async function commandCapability(name: string | undefined) {
   }
   const manifest = await loadConfigManifest();
   const roots = capabilityRootsFor(manifest, process.cwd());
-  const capability = await getCapability(name, roots);
-  if (!capability) {
+  const result = await getCapability(name, roots);
+  if (!result) {
     console.error(`capability not found: ${name}`);
     process.exitCode = 1;
     return;
   }
-  const consumers = await capabilityImpact(name, process.cwd());
-  output({ ...capability, consumers: consumers.map((consumer) => consumer.name) });
+  output({ ...result, consumers: (await capabilityImpact(name, process.cwd())).map((consumer) => consumer.name) });
 }
 
 async function commandCapabilityImpact(name: string | undefined) {
