@@ -20,7 +20,7 @@
 Managed projects keep a local `AGENTS.md` and an `automation.json` manifest.
 The framework uses that manifest to decide how to validate, build, deploy, and verify.
 
-## v1 flow
+## v2 flow
 
 `doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
@@ -33,3 +33,9 @@ Deployment is always:
 - Core stays generic.
 - SMG-specific modules belong outside the public core.
 - Other frameworks can sit inside an automation later.
+
+## Maintenance notes
+
+- Validation and test commands run from `sourceDir`.
+- Health checks run from `deployDir`.
+- Pre-deploy `requiredChecks` should be used carefully: requiring `health` can block repair of an already-broken live target, while deploy still performs post-deploy health and rollback.
