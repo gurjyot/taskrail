@@ -126,6 +126,30 @@ test('rollback CLI uses the active manifest state file', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+test('deploy resolves relative deployDir from the project root', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'index.txt': 'v1',
+    'check.js': 'process.exit(0)',
+    'deploy/app/.keep': '',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: 'deploy/app',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+      healthCheck: { type: 'file', path: 'index.txt' },
+      backup: { retain: 1 },
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'deploy'], { cwd: base, encoding: 'utf8' });
+  assert.match(output, /"deployed":true/);
+  assert.equal(await readFile(path.join(base, 'deploy/app/index.txt'), 'utf8'), 'v1');
+  await rm(base, { recursive: true, force: true });
+});
+
 test('missing executable returns a clean gate failure', async () => {
   const base = await fixtureDir();
   await writeFixture(base, { 'src/index.txt': 'x', 'deploy/index.txt': 'y' });
@@ -157,8 +181,8 @@ test('status emits automation and capability registry json', async () => {
       managed: true,
       sourceDir: 'src',
       deployDir: 'deploy',
-      validationCommand: 'true',
-      testCommand: 'true',
+      validationCommand: '/bin/sh -c "exit 0"',
+      testCommand: '/bin/sh -c "exit 0"',
       capabilities: ['telegram-send'],
     }, null, 2),
     'automations/beta/automation.json': JSON.stringify({
@@ -167,8 +191,8 @@ test('status emits automation and capability registry json', async () => {
       managed: true,
       sourceDir: 'src',
       deployDir: 'deploy',
-      validationCommand: 'true',
-      testCommand: 'true',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
       capabilities: ['telegram-send', 'meta-api'],
     }, null, 2),
   });
@@ -198,8 +222,8 @@ test('impact aliases capability-impact and returns consumers', async () => {
       managed: true,
       sourceDir: 'src',
       deployDir: 'deploy',
-      validationCommand: 'true',
-      testCommand: 'true',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
       capabilities: ['telegram-send'],
     }, null, 2),
   });
@@ -220,8 +244,8 @@ test('template manifest validates', () => {
       managed: true,
       sourceDir: 'src',
       deployDir: 'deploy',
-      validationCommand: 'true',
-      testCommand: 'true',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
     },
   });
   assert.deepEqual(errors, []);
