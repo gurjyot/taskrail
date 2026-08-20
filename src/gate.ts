@@ -11,6 +11,11 @@ export interface GateStep {
   ok: boolean;
   required: boolean;
   message?: string;
+  command?: string;
+  cwd?: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
 }
 
 export interface GateResult {
@@ -29,9 +34,30 @@ function parseCommand(command: string) {
 
 function runCommand(command: string, cwd: string) {
   const [rawBin, ...args] = parseCommand(command);
-  const result = spawnSync(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, stdio: 'ignore' });
-  if (result.error) return { ok: false, message: (result.error as NodeJS.ErrnoException).code === 'ENOENT' ? `missing executable: ${rawBin}` : result.error.message || 'command failed' };
-  return { ok: result.status === 0, message: result.status === 0 ? 'ok' : `exit ${result.status ?? 1}` };
+  const result = spawnSync(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+  const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+  const exitCode = typeof result.status === 'number' ? result.status : result.signal ? 128 : null;
+  if (result.error) {
+    return {
+      ok: false,
+      command,
+      cwd,
+      exitCode,
+      stdout,
+      stderr,
+      message: (result.error as NodeJS.ErrnoException).code === 'ENOENT' ? `missing executable: ${rawBin}` : result.error.message || 'command failed',
+    };
+  }
+  return {
+    ok: exitCode === 0,
+    command,
+    cwd,
+    exitCode,
+    stdout,
+    stderr,
+    message: exitCode === 0 ? 'ok' : `exit ${exitCode ?? 1}`,
+  };
 }
 
 function stateFileFor(manifest: FrameworkManifest, cwd: string) {
@@ -46,21 +72,21 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
 
   if (required.has('validation')) {
     const result = runCommand(manifest.validationCommand, path.resolve(cwd, manifest.sourceDir));
-    steps.push({ name: 'validation', ok: result.ok, required: true, message: result.message });
+    steps.push({ name: 'validation', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'validation', ok: true, required: false, message: 'not required' });
   }
 
   if (required.has('test')) {
     const result = runCommand(manifest.testCommand, path.resolve(cwd, manifest.sourceDir));
-    steps.push({ name: 'test', ok: result.ok, required: true, message: result.message });
+    steps.push({ name: 'test', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'test', ok: true, required: false, message: 'not required' });
   }
 
   if (manifest.buildCommand) {
     const result = runCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
-    steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message });
+    steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   }
 
   const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];

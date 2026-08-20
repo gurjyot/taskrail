@@ -128,9 +128,34 @@ test('valid deployment succeeds and creates backup', async () => {
     testCommand: 'node check.js',
     healthCheck: { type: 'file', path: 'index.txt' },
     backup: { retain: 3 },
-  });
+  }, undefined, { projectRoot: base });
   assert.equal(result.deployed, true);
   assert.equal(result.rolledBack, false);
+  assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'v1');
+  await rm(base, { recursive: true, force: true });
+});
+
+
+
+test('safeDeploy resolves relative sourceDir from the project root', async () => {
+  const base = await fixtureDir();
+  const source = path.join(base, 'src');
+  const deploy = path.join(base, 'live', 'app');
+  await writeFixture(source, { 'main.js': 'process.exit(0)', 'index.txt': 'v1' });
+  await writeFixture(deploy, { 'index.txt': 'old' });
+  const result = await safeDeploy({
+    name: 'app',
+    runtime: 'node',
+    managed: true,
+    sourceDir: 'src',
+    deployDir: deploy,
+    validationCommand: 'node --check main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file', path: 'index.txt' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test', 'health'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, true);
   assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'v1');
   await rm(base, { recursive: true, force: true });
 });

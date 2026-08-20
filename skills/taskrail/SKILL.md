@@ -6,6 +6,11 @@ description: Operate TaskRail-managed automations with a minimal, capability-awa
 
 Use TaskRail for managed automations.
 
+Core v2.0.3 control-plane commands:
+- `taskrail status`
+- `taskrail inspect <automation> --json`
+- `taskrail impact <name> --json`
+
 Before meaningful work:
 - `taskrail doctor`
 - `taskrail list`
