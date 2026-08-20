@@ -1,9 +1,10 @@
 # Changelog
 
-## 1.1.0
+## 1.1.1
 
-- Added `taskrail gate` and `taskrail verify-change`.
-- Added optional `requiredChecks` and `protectedPaths`.
-- Added deterministic PASS / FAIL / MISCONFIGURED gating.
-- Wrote verification evidence to `.taskrail/evidence/latest.json`.
-- Fixed portable command resolution for direct CLI smoke tests.
+- Unified gate execution and enforced deploy-time verification.
+- Fixed protected-path matching for absolute and relative paths.
+- Ignored generated release metadata in drift detection.
+- Fixed rollback state resolution from the active manifest.
+- Hardened command execution failures.
+- Updated templates and docs to the 1.1.1 workflow.

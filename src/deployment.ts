@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, readFile, rename, rm, stat, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TASKRAIL_VERSION } from './version.js';
@@ -8,7 +8,6 @@ import type {
   FrameworkManifest,
   HealthCheckDefinition,
   FailureReport,
-  GateVerdict,
 } from './types.js';
 import { acquireLock, releaseLock } from './locks.js';
 import { appendAudit } from './history.js';
@@ -18,6 +17,7 @@ import { buildFailureReport } from './errors.js';
 import { detectDrift } from './drift.js';
 import { isCompatible } from './config.js';
 import { writeEvidence } from './evidence.js';
+import { runGate } from './gate.js';
 
 export interface DeployOutcome extends DeployResult {
   backupPath?: string;
@@ -39,7 +39,7 @@ export interface DoctorResult {
   manifestValid: boolean;
   project: string;
   runtimeVersion: string;
-  requiredFiles: Array<{ file: string; ok: boolean }>;
+  requiredFiles: Array<{ file: string; ok: boolean; detail?: string }>;
   envPresence: Array<{ name: string; ok: boolean }>;
   lockState: { locked: boolean; holder?: string };
   deployTarget: string;
@@ -53,13 +53,6 @@ export interface DoctorResult {
 export interface CheckResult {
   ok: boolean;
   checks: Array<{ name: string; ok: boolean; message?: string }>;
-}
-
-export interface GateResult {
-  verdict: GateVerdict;
-  requiredChecks: string[];
-  steps: Array<{ name: string; ok: boolean; required: boolean; message?: string }>;
-  deployAllowed: boolean;
 }
 
 async function pathExists(target: string) {
@@ -85,9 +78,9 @@ function parseCommand(command: string) {
 async function runCommand(command: string, cwd: string) {
   const { spawn } = await import('node:child_process');
   const [rawBin, ...args] = parseCommand(command);
-  const bin = rawBin === 'node' ? process.execPath : rawBin;
-  return await new Promise<{ ok: boolean; code: number }>((resolve) => {
-    const child = spawn(bin, args, { cwd, stdio: 'ignore' });
+  return await new Promise<{ ok: boolean; code: number; error?: string }>((resolve) => {
+    const child = spawn(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, stdio: 'ignore' });
+    child.on('error', (error: NodeJS.ErrnoException) => resolve({ ok: false, code: 1, error: error.code === 'ENOENT' ? `missing executable: ${rawBin}` : error.message }));
     child.on('exit', (code) => resolve({ ok: code === 0, code: code ?? 1 }));
   });
 }
@@ -108,7 +101,7 @@ export async function runHealthCheck(health: HealthCheckDefinition | undefined, 
   if (!health) return { ok: true, tier: 'process' as const };
   if (health.type === 'command') {
     const result = await runCommand(health.command, cwd);
-    return { ok: result.ok, tier: 'process' as const, details: `exit ${result.code}` };
+    return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
   }
   if (health.type === 'file') {
     return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
@@ -136,46 +129,28 @@ async function writeState(stateFile: string, state: { backupPath: string; target
   await writeFile(stateFile, JSON.stringify(state, null, 2));
 }
 
+async function pruneBackups(workspace: string, name: string, retain = 0) {
+  if (!retain) return;
+  const entries = await readdir(workspace, { withFileTypes: true }).catch(() => []);
+  const backups = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${name}.backup-`))
+    .map((entry) => path.join(workspace, entry.name));
+  if (backups.length <= retain) return;
+  const stats = [] as Array<{ backup: string; mtime: number }>;
+  for (const backup of backups) {
+    try {
+      stats.push({ backup, mtime: (await stat(backup)).mtimeMs });
+    } catch {
+      continue;
+    }
+  }
+  stats.sort((a, b) => b.mtime - a.mtime);
+  for (const old of stats.slice(retain)) await rm(old.backup, { recursive: true, force: true });
+}
+
 export async function check(manifest: FrameworkManifest): Promise<CheckResult> {
   const preflightResult = await preflight(manifest);
   return { ok: preflightResult.ok, checks: preflightResult.checks };
-}
-
-export async function gate(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<GateResult> {
-  const required = new Set(manifest.requiredChecks ?? ['validation', 'test']);
-  const preflightResult = await preflight(manifest);
-  const steps: GateResult['steps'] = [{ name: 'preflight', ok: preflightResult.ok, required: true, message: preflightResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ') || 'ok' }];
-  const checks = await check(manifest);
-  const preflightOk = checks.checks.every((c) => c.ok);
-  steps.push({ name: 'validation', ok: preflightOk, required: required.has('validation') });
-  steps.push({ name: 'test', ok: preflightOk, required: required.has('test') });
-  if (manifest.buildCommand) steps.push({ name: 'build', ok: true, required: required.has('build') });
-  const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];
-  if (healthDef) {
-    const health = await runHealthCheck(healthDef, path.resolve(cwd, manifest.deployDir), plugins[0]);
-    steps.push({ name: 'health', ok: health.ok, required: required.has('health'), message: health.details });
-  } else if (required.has('health')) {
-    steps.push({ name: 'health', ok: false, required: true, message: 'missing health check' });
-  }
-  if (required.has('drift')) {
-    const stateFile = path.join(path.dirname(path.resolve(cwd, manifest.deployDir)), `${manifest.name}.deploy-state.json`);
-    try {
-      const state = JSON.parse(await readFile(stateFile, 'utf8')) as { releasePath?: string };
-      if (!state.releasePath) throw new Error('missing release');
-      const drift = await detectDrift(path.resolve(cwd, manifest.deployDir), state.releasePath);
-      steps.push({ name: 'drift', ok: !drift.drifted, required: true, message: drift.files.join(', ') || 'clean' });
-    } catch {
-      steps.push({ name: 'drift', ok: false, required: true, message: 'missing release state' });
-    }
-  }
-  for (const plugin of plugins) {
-    const result = await plugin.validate?.({ projectName: manifest.name, environment: process.env, manifest });
-    if (result?.length) steps.push({ name: `plugin:${plugin.name}`, ok: false, required: false, message: result.join(', ') });
-  }
-  const missingRequired = steps.filter((step) => step.required && !step.ok);
-  const misconfigured = missingRequired.some((step) => /missing/i.test(step.message ?? ''));
-  const verdict: GateVerdict = missingRequired.length ? (misconfigured ? 'MISCONFIGURED' : 'FAIL') : 'PASS';
-  return { verdict, requiredChecks: [...required], steps, deployAllowed: verdict === 'PASS' };
 }
 
 export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult> {
@@ -196,7 +171,7 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
     manifestValid: preflightResult.ok,
     project: manifest.name,
     runtimeVersion: process.version,
-    requiredFiles: (manifest.requiredFiles ?? []).map((file) => ({ file, ok: true })),
+    requiredFiles: await Promise.all((manifest.requiredFiles ?? []).map(async (file) => ({ file, ok: await pathExists(file), detail: file }))),
     envPresence: (manifest.requiredEnv ?? []).map((name) => ({ name, ok: Boolean(process.env[name]) })),
     lockState: lock.ok ? { locked: false } : { locked: true, holder: lock.holder },
     deployTarget: manifest.deployDir,
@@ -263,27 +238,33 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     await copyDir(source, candidate);
 
     const validation = await runCommand(manifest.validationCommand, candidate);
-    if (!validation.ok) {
-      return { deployed: false, rolledBack: false, failure: 'candidate validation failed' };
-    }
+    if (!validation.ok) return { deployed: false, rolledBack: false, failure: validation.error || 'candidate validation failed' };
 
     const tests = await runCommand(manifest.testCommand, candidate);
-    if (!tests.ok) {
-      return { deployed: false, rolledBack: false, failure: 'candidate tests failed' };
-    }
+    if (!tests.ok) return { deployed: false, rolledBack: false, failure: tests.error || 'candidate tests failed' };
 
     if (manifest.buildCommand) {
       const build = await runCommand(manifest.buildCommand, candidate);
-      if (!build.ok) return { deployed: false, rolledBack: false, failure: 'candidate build failed' };
+      if (!build.ok) return { deployed: false, rolledBack: false, failure: build.error || 'candidate build failed' };
+    }
+
+    const controlsEnabled = Boolean(manifest.requiredChecks?.length || manifest.protectedPaths?.length);
+    if (controlsEnabled) {
+      const liveGate = await runGate(manifest, workspace, plugin ? [plugin] : []);
+      if (liveGate.verdict !== 'PASS') {
+        return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
+      }
+      const changed = await inspectDeployChange(manifest, workspace);
+      if (!changed.allowed) {
+        return { deployed: false, rolledBack: false, failure: `protected change blocked: ${changed.protected.join(', ') || 'unknown'}` };
+      }
     }
 
     if (await pathExists(target)) {
       const state = await readState(stateFile);
       if (state?.releasePath) {
         const drift = await detectDrift(target, state.releasePath);
-        if (drift.drifted) {
-          return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
-        }
+        if (drift.drifted) return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
       }
       await rename(target, backup);
     }
@@ -291,12 +272,13 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     await rename(candidate, target);
     const release = await createRelease(manifest, target, releaseDir, options.sourceRevision);
     await writeState(stateFile, { backupPath: backup, targetPath: target, releasePath: release.path });
+    await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
 
     const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], target, plugin);
     if (health.ok) {
       await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_succeeded', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId });
       await writeEvidence(workspace, { kind: 'deploy', project: manifest.name, verdict: 'PASS', deployAllowed: true });
-      return { deployed: true, rolledBack: false, backupPath: backup, releaseId: release.releaseId }; 
+      return { deployed: true, rolledBack: false, backupPath: backup, releaseId: release.releaseId };
     }
 
     await rm(target, { recursive: true, force: true });
@@ -305,15 +287,30 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     if (!restored.ok) {
       await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'rollback_failed', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId });
       await writeEvidence(workspace, { kind: 'deploy', project: manifest.name, verdict: 'FAIL', deployAllowed: false });
-      return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed and rollback failed', releaseId: release.releaseId, report: buildFailureReport({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually' } satisfies FailureReport) }; 
+      return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed and rollback failed', releaseId: release.releaseId, report: buildFailureReport({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually' } satisfies FailureReport) };
     }
 
     await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'rollback_succeeded', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId });
     await writeEvidence(workspace, { kind: 'deploy', project: manifest.name, verdict: 'FAIL', deployAllowed: false });
-    return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed; rollback succeeded', releaseId: release.releaseId, report: buildFailureReport({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy' } satisfies FailureReport) }; 
+    return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed; rollback succeeded', releaseId: release.releaseId, report: buildFailureReport({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy' } satisfies FailureReport) };
   } finally {
     await releaseLock(lockDir);
   }
+}
+
+async function inspectDeployChange(manifest: FrameworkManifest, cwd: string) {
+  const { execFileSync } = await import('node:child_process');
+  const git = (args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const status = git(['status', '--porcelain']);
+  const tracked = status ? status.split('\n').map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean) : [];
+  const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean);
+  const changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^"|"$/g, '')))).filter((file) => !file.startsWith('.taskrail/'));
+  const protectedPaths = (manifest.protectedPaths ?? []).filter((prefix) => changedFiles.some((file) => {
+    const abs = path.isAbsolute(file) ? path.normalize(file) : path.normalize(path.resolve(cwd, file));
+    const normalizedPrefix = path.normalize(prefix);
+    return abs === normalizedPrefix || abs.startsWith(`${normalizedPrefix}${path.sep}`) || path.normalize(file) === normalizedPrefix || path.normalize(file).startsWith(`${normalizedPrefix}${path.sep}`);
+  }));
+  return { allowed: protectedPaths.length === 0, protected: protectedPaths };
 }
 
 export async function rollbackFromState(stateFile: string, health: HealthCheckDefinition | undefined, plugin?: AutomationPlugin) {
@@ -328,4 +325,9 @@ export async function rollbackFromState(stateFile: string, health: HealthCheckDe
   } catch {
     return { ok: false, failure: 'rollback failed' };
   }
+}
+
+export async function rollbackFromManifest(manifest: FrameworkManifest, plugin?: AutomationPlugin) {
+  const stateFile = path.join(path.dirname(path.resolve(manifest.deployDir)), `${manifest.name}.deploy-state.json`);
+  return rollbackFromState(stateFile, manifest.healthCheck ?? manifest.healthChecks?.[0], plugin);
 }

@@ -2,13 +2,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { AutomationPlugin, FrameworkManifest, GateVerdict } from './types.js';
-
-function parseCommand(command: string) {
-  const parts: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  for (const match of command.matchAll(re)) parts.push(match[1] ?? match[2] ?? match[3]);
-  return parts;
-}
 import { runHealthCheck } from './deployment.js';
 import { preflight } from './preflight.js';
 import { detectDrift } from './drift.js';
@@ -27,6 +20,20 @@ export interface GateResult {
   deployAllowed: boolean;
 }
 
+function parseCommand(command: string) {
+  const parts: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  for (const match of command.matchAll(re)) parts.push(match[1] ?? match[2] ?? match[3]);
+  return parts;
+}
+
+function runCommand(command: string, cwd: string) {
+  const [rawBin, ...args] = parseCommand(command);
+  const result = spawnSync(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, stdio: 'ignore' });
+  if (result.error) return { ok: false, message: (result.error as NodeJS.ErrnoException).code === 'ENOENT' ? `missing executable: ${rawBin}` : result.error.message || 'command failed' };
+  return { ok: result.status === 0, message: result.status === 0 ? 'ok' : `exit ${result.status ?? 1}` };
+}
+
 function stateFileFor(manifest: FrameworkManifest, cwd: string) {
   return path.join(path.dirname(path.resolve(cwd, manifest.deployDir)), `${manifest.name}.deploy-state.json`);
 }
@@ -37,27 +44,23 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
   const preflightResult = await preflight(manifest);
   steps.push({ name: 'preflight', ok: preflightResult.ok, required: true, message: preflightResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ') || 'ok' });
 
-  const run = (command: string) => {
-    const [rawBin, ...args] = parseCommand(command);
-    const bin = rawBin === 'node' ? process.execPath : rawBin;
-    const result = spawnSync(bin, args, { cwd: path.resolve(cwd, manifest.sourceDir), stdio: 'ignore' });
-    return result.status === 0;
-  };
   if (required.has('validation')) {
-    const ok = run(manifest.validationCommand);
-    steps.push({ name: 'validation', ok, required: true, message: ok ? 'ok' : 'validation failed' });
+    const result = runCommand(manifest.validationCommand, path.resolve(cwd, manifest.sourceDir));
+    steps.push({ name: 'validation', ok: result.ok, required: true, message: result.message });
   } else {
     steps.push({ name: 'validation', ok: true, required: false, message: 'not required' });
   }
+
   if (required.has('test')) {
-    const ok = run(manifest.testCommand);
-    steps.push({ name: 'test', ok, required: true, message: ok ? 'ok' : 'test failed' });
+    const result = runCommand(manifest.testCommand, path.resolve(cwd, manifest.sourceDir));
+    steps.push({ name: 'test', ok: result.ok, required: true, message: result.message });
   } else {
     steps.push({ name: 'test', ok: true, required: false, message: 'not required' });
   }
+
   if (manifest.buildCommand) {
-    const ok = run(manifest.buildCommand);
-    steps.push({ name: 'build', ok, required: required.has('build'), message: ok ? 'ok' : 'build failed' });
+    const result = runCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
+    steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message });
   }
 
   const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];

@@ -20,7 +20,7 @@ TaskRail provides guardrails, structure, deployment safety, and operational repo
 
 ## Lifecycle
 
-`create -> check -> test -> build -> deploy -> verify -> run`
+`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
 ## v0.2 additions
 
@@ -34,7 +34,7 @@ TaskRail provides guardrails, structure, deployment safety, and operational repo
 
 ## Freeze policy
 
-After `v1.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
+After `v1.1.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Deployment sequence
 

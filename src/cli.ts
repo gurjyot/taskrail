@@ -1,17 +1,16 @@
 import { validateConfig } from './validation.js';
 import { log } from './logging.js';
 import { readFile } from 'node:fs/promises';
-import { access } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { check as frameworkCheck, doctor as frameworkDoctor, gate as frameworkGate, loadPlugins, rollbackFromState, runHealthCheck, safeDeploy } from './deployment.js';
+import { check as frameworkCheck, doctor as frameworkDoctor, loadPlugins, rollbackFromManifest, runHealthCheck, safeDeploy } from './deployment.js';
 import { buildPlan } from './plan.js';
 import { inspectChange } from './change.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkConfig, AutomationPlugin, FrameworkManifest } from './types.js';
+import { runGate } from './gate.js';
 
 const fallbackManifest: FrameworkManifest = {
   name: 'taskrail-example',
-  taskrailCompatibility: '1.0.x',
+  taskrailCompatibility: '1.1.x',
   runtime: 'node',
   managed: true,
   sourceDir: 'src',
@@ -24,8 +23,7 @@ const fallbackManifest: FrameworkManifest = {
 
 async function loadConfigManifest(): Promise<FrameworkManifest> {
   try {
-    const candidate = JSON.parse(await readFile('automation.json', 'utf8')) as FrameworkManifest;
-    return candidate;
+    return JSON.parse(await readFile('automation.json', 'utf8')) as FrameworkManifest;
   } catch {
     return fallbackManifest;
   }
@@ -61,7 +59,7 @@ async function main() {
     return;
   }
   if (cmd === 'gate') {
-    const result = await frameworkGate(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
+    const result = await runGate(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
     console.log(JSON.stringify(result, null, 2));
     if (result.verdict !== 'PASS') process.exitCode = 1;
     return;
@@ -122,15 +120,9 @@ async function main() {
     return;
   }
   if (cmd === 'rollback') {
-    const stateFile = new URL('./taskrail-example.deploy-state.json', import.meta.url).pathname;
-    const result = await rollbackFromState(stateFile, config.manifest.healthCheck, plugin);
+    const result = await rollbackFromManifest(config.manifest, plugin);
     if (!result.ok) process.exitCode = 1;
     console.log(log({ level: result.ok ? 'info' : 'error', message: 'rollback', data: result }));
-    return;
-  }
-  if (cmd === 'plugins') {
-    const plugins = await loadPlugins(config.manifest as FrameworkManifest);
-    console.log(plugins.map((p) => p.name).join('\n'));
     return;
   }
   console.error(`unknown command: ${cmd}`);

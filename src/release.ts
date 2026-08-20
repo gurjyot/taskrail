@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile, readdir, stat } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkManifest, ReleaseMeta } from './types.js';
