@@ -1,0 +1,6 @@
+{
+  "name": "example-automation",
+  "entry": "src/index.ts",
+  "runtime": "node",
+  "managed": true
+}

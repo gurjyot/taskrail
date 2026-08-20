@@ -1,0 +1,12 @@
+{
+  "name": "example-automation",
+  "runtime": "node",
+  "managed": true,
+  "sourceDir": "src",
+  "deployDir": "deploy",
+  "validationCommand": "node -e \"process.exit(0)\"",
+  "testCommand": "node -e \"process.exit(0)\"",
+  "healthCheck": { "type": "command", "command": "node -e \"process.exit(0)\"" },
+  "backup": { "retain": 3 },
+  "plugins": []
+}

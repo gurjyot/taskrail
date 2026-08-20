@@ -1,0 +1,19 @@
+{
+  "name": "lightweight-automation-framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny CLI-first framework for safe automation lifecycle management.",
+  "bin": {
+    "laf": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.js",
+    "check": "npm run build && node dist/cli.js --help"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.2"
+  }
+}
