@@ -26,7 +26,7 @@ async function writeFixture(base: string, files: Record<string, string>) {
 function automation(name: string, root: string, capabilities: string[] = [], overrides: Record<string, unknown> = {}) {
   return {
     name,
-    taskrailCompatibility: '1.2.x',
+    taskrailCompatibility: '2.0.x',
     runtime: 'node' as const,
     managed: true,
     sourceDir: path.join(root, 'src'),
@@ -68,6 +68,21 @@ test('relative and absolute capability canonicalPath resolve from the capability
   await rm(base, { recursive: true, force: true });
 });
 
+
+test('relative capability roots resolve from the project directory', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'caps/one/capability.json': JSON.stringify({ name: 'one', version: '1.0.0', description: 'One', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'caps/one/index.js': 'module.exports = {}',
+    'demo/src/index.ts': '',
+    'demo/deploy/index.ts': '',
+  });
+  const roots = capabilityRootsFor(automation('demo', path.join(base, 'demo'), ['one'], { capabilityRoots: ['../caps'] }), base);
+  const cap = await getCapability('one', roots);
+  assert.equal(cap?.canonicalPath, path.join(base, 'caps', 'one', 'index.js'));
+  await rm(base, { recursive: true, force: true });
+});
+
 test('capability registry discovers, inspects, and tracks consumers', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
@@ -89,15 +104,15 @@ test('capability registry discovers, inspects, and tracks consumers', async () =
       canonicalPath: 'index.js',
     }, null, 2),
     'capabilities/meta-api/index.js': 'module.exports = {}',
-    'alpha/automation.json': JSON.stringify(automation('alpha', path.join(base, 'alpha'), ['telegram-send']), null, 2),
+    'alpha/automation.json': JSON.stringify(automation('alpha', path.join(base, 'alpha'), ['telegram-send'], { capabilityRoots: ['../capabilities'] }), null, 2),
     'alpha/src/index.ts': '',
     'alpha/deploy/index.ts': '',
-    'beta/automation.json': JSON.stringify(automation('beta', path.join(base, 'beta'), ['telegram-send', 'meta-api']), null, 2),
+    'beta/automation.json': JSON.stringify(automation('beta', path.join(base, 'beta'), ['telegram-send', 'meta-api'], { capabilityRoots: ['../capabilities'] }), null, 2),
     'beta/src/index.ts': '',
     'beta/deploy/index.ts': '',
   });
 
-  const roots = capabilityRootsFor(automation('alpha', path.join(base, 'alpha'), ['telegram-send']), base);
+  const roots = capabilityRootsFor(automation('alpha', path.join(base, 'alpha'), ['telegram-send'], { capabilityRoots: ['../capabilities'] }), base);
   const capabilities = await getCapability('telegram-send', roots);
   assert.equal(capabilities?.name, 'telegram-send');
   assert.equal(capabilities?.description, 'Send Telegram messages');
@@ -122,7 +137,7 @@ test('missing capability implementation or shared file fails preflight', async (
       requiredSharedFiles: [path.join(base, 'shared', '.env')],
     }, null, 2),
   });
-  const manifest = automation('demo', base, ['broken']);
+  const manifest = automation('demo', path.join(base, 'demo'), ['broken'], { capabilityRoots: ['../capabilities'] });
   const result = await preflight(manifest as any);
   assert.equal(result.ok, false);
   assert.match(result.checks.find((check) => check.name === 'capability:broken')?.message ?? '', /missing capability|missing required shared files|missing canonical implementation/i);
@@ -145,7 +160,7 @@ test('duplicate capability names across roots fail deterministically', async () 
   assert.equal(registry.errors.length > 0, true);
   assert.match(registry.errors[0].message, /duplicate capability name/i);
   assert.ok((registry.errors[0].conflictingPaths ?? []).length === 2);
-  const manifest = automation('demo', base, ['dup'], { capabilityRoots: roots });
+  const manifest = automation('demo', path.join(base, 'demo'), ['dup'], { capabilityRoots: roots });
   const result = await preflight(manifest as any);
   assert.equal(result.ok, false);
   assert.match(result.checks.find((check) => check.name.startsWith('capability-registry:dup'))?.message ?? '', /duplicate capability name/i);
@@ -174,7 +189,7 @@ test('discovery commands emit concise json', async () => {
   await writeFixture(base, {
     'capabilities/telegram-send/capability.json': JSON.stringify({ name: 'telegram-send', version: '1.0.0', description: 'Send Telegram messages', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
     'capabilities/telegram-send/index.js': 'module.exports = {}',
-    'app/automation.json': JSON.stringify(automation('app', path.join(base, 'app'), ['telegram-send']), null, 2),
+    'app/automation.json': JSON.stringify(automation('app', path.join(base, 'app'), ['telegram-send'], { capabilityRoots: ['../capabilities'] }), null, 2),
     'app/src/index.ts': '',
     'app/deploy/index.ts': '',
   });
@@ -190,4 +205,23 @@ test('discovery commands emit concise json', async () => {
   const impact = JSON.parse(execFileSync(process.execPath, [cli, 'capability-impact', 'telegram-send'], { cwd: base, encoding: 'utf8' }));
   assert.equal(impact[0].name, 'app');
   await rm(base, { recursive: true, force: true });
+});
+
+
+test('obsolete requiredFiles is rejected', () => {
+  const errors = validateConfig({
+    projectName: 'demo',
+    environment: {},
+    manifest: {
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'node -e \"process.exit(0)\"',
+      testCommand: 'node -e \"process.exit(0)\"',
+      requiredFiles: ['shared/.env'],
+    } as any,
+  });
+  assert.match(errors.join('\n'), /requiredFiles is not supported/);
 });

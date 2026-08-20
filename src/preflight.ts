@@ -17,7 +17,7 @@ export async function preflight(manifest: FrameworkManifest): Promise<PreflightR
   push('sourceDir', await stat(manifest.sourceDir).then(() => true, () => false));
   push('deployDir', await stat(manifest.deployDir).then(() => true, () => false));
   push('deployWritable', await access(manifest.deployDir, constants.W_OK).then(() => true, () => false));
-  for (const file of manifest.requiredFiles ?? []) push(`file:${file}`, await access(file, constants.F_OK).then(() => true, () => false));
+  for (const file of manifest.requiredSharedFiles ?? []) push(`shared:${file}`, await access(file, constants.F_OK).then(() => true, () => false));
   for (const envName of manifest.requiredEnv ?? []) push(`env:${envName}`, Boolean(process.env[envName]));
   const roots = capabilityRootsFor(manifest);
   const registry = await loadCapabilities(roots);

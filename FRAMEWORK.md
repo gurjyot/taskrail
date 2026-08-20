@@ -27,12 +27,13 @@ Normal automation work usually needs only:
 - project `AGENTS.md`
 - project manifest
 - `taskrail doctor`
+- `taskrail list`
 - CLI help when needed
 - `taskrail capabilities` and `taskrail inspect <automation>` when capability work is involved
 
 Read deeper framework docs only when changing TaskRail itself.
 
-## v1.2.1 surface
+## v2.0.0 surface
 
 - manifest/config contract
 - lifecycle
@@ -55,6 +56,7 @@ Read deeper framework docs only when changing TaskRail itself.
 - lightweight audit history
 - idempotency helper
 - capability registry and discovery
+- optional agent skill
 
 ## Agent contract
 
@@ -70,4 +72,4 @@ Read deeper framework docs only when changing TaskRail itself.
 
 ## Freeze policy
 
-After `v1.2.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.
+After `v2.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.

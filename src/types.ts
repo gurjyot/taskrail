@@ -27,7 +27,7 @@ export interface FrameworkManifest {
   backup?: BackupPolicy;
   plugins?: PluginReference[];
   requiredEnv?: string[];
-  requiredFiles?: string[];
+  requiredSharedFiles?: string[];
   requiredChecks?: Array<'validation' | 'test' | 'build' | 'health' | 'drift'>;
   protectedPaths?: string[];
 }

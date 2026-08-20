@@ -34,7 +34,7 @@ async function gitInit(dir: string) {
 function manifest(base: string, overrides: Partial<{ requiredChecks: string[]; protectedPaths: string[]; healthCheck: any; taskrailCompatibility: string; testCommand: string }> = {}) {
   return {
     name: 'demo',
-    taskrailCompatibility: '1.2.x',
+    taskrailCompatibility: '2.0.x',
     runtime: 'node',
     managed: true,
     sourceDir: path.join(base, 'source'),
@@ -239,7 +239,7 @@ test('doctor returns compatibility and health readiness', async () => {
   await mkdir(path.join(base, 'source'), { recursive: true });
   await writeFile(path.join(base, 'deploy', 'index.txt'), 'old');
   await writeFile(path.join(base, 'source', 'check.js'), 'process.exit(0)');
-  const result = await (await import('../src/deployment.js')).doctor(manifest(base, { taskrailCompatibility: '1.2.x' }) as any);
+  const result = await (await import('../src/deployment.js')).doctor(manifest(base, { taskrailCompatibility: '2.0.x' }) as any);
   assert.equal(result.version, (await import('../src/version.js')).TASKRAIL_VERSION);
   assert.equal(result.compatible, true);
   await rm(base, { recursive: true, force: true });

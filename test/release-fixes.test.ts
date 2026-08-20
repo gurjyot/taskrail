@@ -34,7 +34,7 @@ async function gitInit(dir: string) {
 function baseManifest(base: string, overrides: Partial<FrameworkManifest> = {}): FrameworkManifest {
   return {
     name: 'demo',
-    taskrailCompatibility: '1.2.x',
+    taskrailCompatibility: '2.0.x',
     runtime: 'node',
     managed: true,
     sourceDir: path.join(base, 'src'),
@@ -138,7 +138,7 @@ test('template manifest validates', () => {
     environment: {},
     manifest: {
       name: 'taskrail-template',
-      taskrailCompatibility: '1.2.x',
+      taskrailCompatibility: '2.0.x',
       runtime: 'node',
       managed: true,
       sourceDir: 'src',
