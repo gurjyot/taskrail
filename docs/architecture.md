@@ -22,7 +22,7 @@ The framework uses that manifest to decide how to validate, build, deploy, and v
 
 ## v1 flow
 
-`create -> check -> test -> build -> deploy -> verify -> run`
+`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
 Deployment is always:
 

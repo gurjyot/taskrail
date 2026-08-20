@@ -1,4 +1,4 @@
-# TaskRail v1.1.0
+# TaskRail v1.1.1
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations. It provides structure and guardrails without requiring a heavy runtime or orchestration platform.
 It provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
@@ -50,7 +50,7 @@ This repo is the public framework shell. It does not include organization-specif
 
 ## Freeze policy
 
-After `v1.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
+After `v1.1.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Commands
 
@@ -66,7 +66,14 @@ After `v1.0.0`, add a new core feature only when a real managed application expo
 - `taskrail run`
 - `taskrail rollback`
 
-## 1.1.0
+## 1.1.1
+
+- Fixed the canonical `taskrail gate` and deploy-time verification path.
+- `taskrail deploy` now respects configured verification and protected paths.
+- Protected paths support absolute and relative paths.
+- Drift ignores generated release metadata.
+- `taskrail rollback` resolves state from the active manifest.
+- Command failures return clean TaskRail errors.
 
 - `taskrail gate`
 - `taskrail verify-change`

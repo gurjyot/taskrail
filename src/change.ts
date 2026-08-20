@@ -14,7 +14,7 @@ export interface VerifyChangeResult {
 }
 
 function git(args: string[], cwd: string) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).replace(/\r?\n$/, '');
 }
 
 function scoreRisk(files: string[], protectedPaths: string[]): ChangeRisk {
@@ -24,25 +24,37 @@ function scoreRisk(files: string[], protectedPaths: string[]): ChangeRisk {
   return 'medium';
 }
 
-function matchProtected(files: string[], protectedPaths: string[]) {
-  return files.filter((file) => protectedPaths.some((prefix) => file === prefix || file.startsWith(prefix.replace(/\/$/, '') + '/') || file.startsWith(prefix)));
+function normalizeProtectedPath(base: string, file: string) {
+  return path.isAbsolute(file) ? path.normalize(file) : path.normalize(path.resolve(base, file));
 }
 
 function isGeneratedTaskrailPath(file: string) {
   return file === '.taskrail' || file.startsWith('.taskrail/');
 }
 
+function matchProtected(files: string[], protectedPaths: string[], cwd: string) {
+  const normalizedProtected = protectedPaths.map((file) => path.normalize(file));
+  return files.filter((file) => {
+    const abs = normalizeProtectedPath(cwd, file);
+    const rel = path.normalize(file);
+    return normalizedProtected.some((prefix) => {
+      const normalizedPrefix = path.normalize(prefix);
+      return abs === normalizedPrefix || abs.startsWith(`${normalizedPrefix}${path.sep}`) || rel === normalizedPrefix || rel.startsWith(`${normalizedPrefix}${path.sep}`);
+    });
+  });
+}
+
 export async function inspectChange(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<VerifyChangeResult> {
   let changedFiles: string[] = [];
   try {
     const status = git(['status', '--porcelain'], cwd);
-    const tracked = status ? status.split('\n').map((line) => line.slice(3).trim()).filter(Boolean) : [];
-    const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd).split('\n').filter(Boolean);
-    changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^\"|\"$/g, '')))).filter((file) => !isGeneratedTaskrailPath(file)).sort();
+    const tracked = status ? status.split('\n').map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean) : [];
+    const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd).split('\n').map((line) => line.trim()).filter(Boolean);
+    changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^"|"$/g, '')))).filter((file) => !isGeneratedTaskrailPath(file)).sort();
   } catch {
     changedFiles = [];
   }
-  const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? []);
+  const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? [], cwd);
   const risk = scoreRisk(changedFiles, protectedPaths);
   const gate = await runGate(manifest, cwd, plugins);
   const deployAllowed = gate.verdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
