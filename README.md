@@ -1,4 +1,4 @@
-# TaskRail v1.0.0
+# TaskRail v1.1.0
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations. It provides structure and guardrails without requiring a heavy runtime or orchestration platform.
 It provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
@@ -18,7 +18,7 @@ This repo is the public framework shell. It does not include organization-specif
 
 ## Lifecycle
 
-`create -> check -> test -> build -> deploy -> verify -> run`
+`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
 ## v1 scope
 
@@ -55,6 +55,8 @@ After `v1.0.0`, add a new core feature only when a real managed application expo
 ## Commands
 
 - `taskrail check`
+- `taskrail gate`
+- `taskrail verify-change`
 - `taskrail plan`
 - `taskrail doctor`
 - `taskrail test`
@@ -63,6 +65,16 @@ After `v1.0.0`, add a new core feature only when a real managed application expo
 - `taskrail verify`
 - `taskrail run`
 - `taskrail rollback`
+
+## 1.1.0
+
+- `taskrail gate`
+- `taskrail verify-change`
+- optional `requiredChecks`
+- optional `protectedPaths`
+- deterministic PASS / FAIL / MISCONFIGURED gating
+- `.taskrail/evidence/latest.json`
+- portable command resolution for direct CLI smoke tests
 
 ## Suggested repo name
 

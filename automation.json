@@ -1,13 +1,18 @@
 {
   "name": "taskrail-example",
-  "taskrailCompatibility": "0.2.x",
+  "taskrailCompatibility": "1.1.x",
   "runtime": "node",
   "managed": true,
   "sourceDir": "src",
-  "deployDir": "deploy",
-  "validationCommand": "node -e \"process.exit(0)\"",
-  "testCommand": "node -e \"process.exit(0)\"",
-  "healthCheck": { "type": "command", "command": "node -e \"process.exit(0)\"" },
-  "backup": { "retain": 3 },
+  "deployDir": "dist/src",
+  "validationCommand": "true",
+  "testCommand": "true",
+  "healthCheck": {
+    "type": "file",
+    "path": "cli.js"
+  },
+  "backup": {
+    "retain": 3
+  },
   "plugins": []
 }
