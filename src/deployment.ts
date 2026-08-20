@@ -1,4 +1,4 @@
-import { cp, readFile, rename, rm, stat, writeFile, readdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TASKRAIL_VERSION } from './version.js';
@@ -65,8 +65,22 @@ async function pathExists(target: string) {
   }
 }
 
-async function copyDir(source: string, target: string) {
-  await cp(source, target, { recursive: true, preserveTimestamps: true, errorOnExist: false });
+async function copyDir(source: string, target: string, exclude: string[] = []) {
+  const excluded = exclude.map((item) => path.resolve(item));
+  async function walk(current: string, dest: string) {
+    const resolved = path.resolve(current);
+    if (excluded.some((item) => resolved === item || resolved.startsWith(`${item}${path.sep}`))) return;
+    const entryStat = await stat(current);
+    if (entryStat.isDirectory()) {
+      await mkdir(dest, { recursive: true });
+      const entries = await readdir(current, { withFileTypes: true });
+      for (const entry of entries) await walk(path.join(current, entry.name), path.join(dest, entry.name));
+      return;
+    }
+    await mkdir(path.dirname(dest), { recursive: true });
+    await copyFile(current, dest);
+  }
+  await walk(source, target);
 }
 
 function parseCommand(command: string) {
@@ -186,7 +200,7 @@ export async function doctor(manifest: FrameworkManifest): Promise<DoctorResult>
 
 export async function safeDeploy(manifest: FrameworkManifest, plugin?: AutomationPlugin, options: DeployOptions = {}): Promise<DeployOutcome> {
   const projectRoot = options.projectRoot || process.cwd();
-  const target = path.resolve(manifest.deployDir);
+  const target = path.resolve(projectRoot, manifest.deployDir);
   const source = path.resolve(projectRoot, manifest.sourceDir);
   const workspace = path.dirname(target);
   const candidate = path.join(workspace, `${manifest.name}.candidate`);
@@ -196,7 +210,8 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   const historyFile = options.historyFile || path.join(workspace, '.taskrail', 'history.jsonl');
   const lockDir = options.lockDir || path.join(workspace, '.taskrail', 'lock');
 
-  const preflightResult = await preflight(manifest);
+  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target };
+  const preflightResult = await preflight(resolvedManifest);
   if (!preflightResult.ok) {
     return {
       deployed: false,
@@ -237,7 +252,15 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   try {
     await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_attempted', project: manifest.name, taskrailVersion: TASKRAIL_VERSION });
     await rm(candidate, { recursive: true, force: true });
-    await copyDir(source, candidate);
+    const sourceExcludes = Array.from(new Set([
+      candidate,
+      backup,
+      stateFile,
+      releaseDir,
+      historyFile,
+      lockDir,
+    ]));
+    await copyDir(source, candidate, sourceExcludes);
 
     const validation = await runCommand(manifest.validationCommand, candidate);
     if (!validation.ok) return { deployed: false, rolledBack: false, failure: validation.error || 'candidate validation failed' };
