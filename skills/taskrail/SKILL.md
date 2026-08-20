@@ -1,6 +1,10 @@
+---
+name: taskrail
+description: Operate TaskRail-managed automations with a minimal, capability-aware workflow.
+---
 # TaskRail
 
-Use TaskRail when working on managed automations.
+Use TaskRail for managed automations.
 
 Before meaningful work:
 - `taskrail doctor`

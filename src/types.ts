@@ -1,12 +1,3 @@
-export type LifecycleStep =
-  | 'create'
-  | 'check'
-  | 'test'
-  | 'build'
-  | 'deploy'
-  | 'verify'
-  | 'run';
-
 export type Severity = 'debug' | 'info' | 'warn' | 'error';
 
 export interface FrameworkManifest {
