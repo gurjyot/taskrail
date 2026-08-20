@@ -55,6 +55,9 @@ test('gate fails closed when validation or test fails', async () => {
   await writeFixture(base, { 'src/index.txt': 'x', 'deploy/index.txt': 'y' });
   const result = await runGate(baseManifest(base, { validationCommand: 'false' }), base);
   assert.equal(result.verdict, 'FAIL');
+  const validation = result.steps.find((step) => step.name === 'validation');
+  assert.equal(validation?.command, 'false');
+  assert.equal(validation?.cwd, path.resolve(base, 'src'));
   const misconfigured = await runGate(baseManifest(base, { requiredChecks: ['health'], healthCheck: undefined }), base);
   assert.equal(misconfigured.verdict, 'MISCONFIGURED');
   await rm(base, { recursive: true, force: true });
@@ -127,8 +130,12 @@ test('missing executable returns a clean gate failure', async () => {
   const base = await fixtureDir();
   await writeFixture(base, { 'src/index.txt': 'x', 'deploy/index.txt': 'y' });
   const result = await runGate(baseManifest(base, { validationCommand: 'definitely-not-a-real-command' }), base);
+  const step = result.steps.find((step) => step.name === 'validation');
   assert.equal(result.verdict, 'MISCONFIGURED');
-  assert.match(result.steps.find((step) => step.name === 'validation')?.message ?? '', /missing executable/i);
+  assert.match(step?.message ?? '', /missing executable/i);
+  assert.equal(step?.command, 'definitely-not-a-real-command');
+  assert.equal(step?.cwd, path.resolve(base, 'src'));
+  assert.equal(step?.exitCode, null);
   await rm(base, { recursive: true, force: true });
 });
 
