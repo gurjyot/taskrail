@@ -55,6 +55,9 @@ test('gate fails closed when validation or test fails', async () => {
   await writeFixture(base, { 'src/index.txt': 'x', 'deploy/index.txt': 'y' });
   const result = await runGate(baseManifest(base, { validationCommand: 'false' }), base);
   assert.equal(result.verdict, 'FAIL');
+  const validation = result.steps.find((step) => step.name === 'validation');
+  assert.equal(validation?.command, 'false');
+  assert.equal(validation?.cwd, path.resolve(base, 'src'));
   const misconfigured = await runGate(baseManifest(base, { requiredChecks: ['health'], healthCheck: undefined }), base);
   assert.equal(misconfigured.verdict, 'MISCONFIGURED');
   await rm(base, { recursive: true, force: true });
@@ -71,7 +74,7 @@ test('deploy blocks protected changes before replacing target', async () => {
   execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
   await writeFile(path.join(base, 'src', 'secret.txt'), 'changed');
-  const result = await safeDeploy(baseManifest(base, { protectedPaths: ['src/secret.txt'] }));
+  const result = await safeDeploy(baseManifest(base, { protectedPaths: ['src/secret.txt'] }), undefined, { projectRoot: base });
   assert.equal(result.deployed, false);
   assert.equal(await readFile(path.join(base, 'deploy/index.txt'), 'utf8'), 'old');
   await rm(base, { recursive: true, force: true });
@@ -123,12 +126,110 @@ test('rollback CLI uses the active manifest state file', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+test('deploy resolves relative deployDir from the project root', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'index.txt': 'v1',
+    'check.js': 'process.exit(0)',
+    'deploy/app/.keep': '',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: 'deploy/app',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+      healthCheck: { type: 'file', path: 'index.txt' },
+      backup: { retain: 1 },
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'deploy'], { cwd: base, encoding: 'utf8' });
+  assert.match(output, /"deployed":true/);
+  assert.equal(await readFile(path.join(base, 'deploy/app/index.txt'), 'utf8'), 'v1');
+  await rm(base, { recursive: true, force: true });
+});
+
 test('missing executable returns a clean gate failure', async () => {
   const base = await fixtureDir();
   await writeFixture(base, { 'src/index.txt': 'x', 'deploy/index.txt': 'y' });
   const result = await runGate(baseManifest(base, { validationCommand: 'definitely-not-a-real-command' }), base);
+  const step = result.steps.find((step) => step.name === 'validation');
   assert.equal(result.verdict, 'MISCONFIGURED');
-  assert.match(result.steps.find((step) => step.name === 'validation')?.message ?? '', /missing executable/i);
+  assert.match(step?.message ?? '', /missing executable/i);
+  assert.equal(step?.command, 'definitely-not-a-real-command');
+  assert.equal(step?.cwd, path.resolve(base, 'src'));
+  assert.equal(step?.exitCode, null);
+  await rm(base, { recursive: true, force: true });
+});
+
+
+test('status emits automation and capability registry json', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'capabilities/telegram-send/capability.json': JSON.stringify({
+      name: 'telegram-send',
+      version: '1.0.0',
+      description: 'telegram',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'capabilities/telegram-send/index.js': 'export default {}',
+    'automations/alpha/automation.json': JSON.stringify({
+      name: 'alpha',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: '/bin/sh -c "exit 0"',
+      testCommand: '/bin/sh -c "exit 0"',
+      capabilities: ['telegram-send'],
+    }, null, 2),
+    'automations/beta/automation.json': JSON.stringify({
+      name: 'beta',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
+      capabilities: ['telegram-send', 'meta-api'],
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'status', '--json'], { cwd: base, encoding: 'utf8' });
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.automations.length, 2);
+  const telegram = parsed.capabilities.find((item: any) => item.name === 'telegram-send');
+  assert.ok(telegram);
+  assert.deepEqual(telegram.consumers.sort(), ['alpha', 'beta']);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('impact aliases capability-impact and returns consumers', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'capabilities/telegram-send/capability.json': JSON.stringify({
+      name: 'telegram-send',
+      version: '1.0.0',
+      description: 'telegram',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'capabilities/telegram-send/index.js': 'export default {}',
+    'automations/alpha/automation.json': JSON.stringify({
+      name: 'alpha',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
+      capabilities: ['telegram-send'],
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'impact', 'telegram-send', '--json'], { cwd: base, encoding: 'utf8' });
+  const parsed = JSON.parse(output);
+  assert.deepEqual(parsed.consumers, ['alpha']);
   await rm(base, { recursive: true, force: true });
 });
 
@@ -143,8 +244,8 @@ test('template manifest validates', () => {
       managed: true,
       sourceDir: 'src',
       deployDir: 'deploy',
-      validationCommand: 'true',
-      testCommand: 'true',
+      validationCommand: '/bin/true',
+      testCommand: '/bin/true',
     },
   });
   assert.deepEqual(errors, []);

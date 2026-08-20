@@ -1,4 +1,4 @@
-# TaskRail v2.0.0
+# TaskRail v2.0.3
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations.
 It gives coding agents a small, deterministic contract for structure, guardrails, deployment safety, and discovery.
@@ -7,6 +7,12 @@ It does not provide intelligence.
 ## Core workflow
 
 `doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
+
+## Runtime rules
+
+- Validation and test commands run from `sourceDir`.
+- Health checks run from `deployDir`.
+- Requiring `health` in pre-deploy `requiredChecks` can block repair of an already-broken live target. Deploy still performs post-deploy health and rollback.
 
 ## What TaskRail does
 
@@ -20,16 +26,17 @@ It does not provide intelligence.
 ## Discovery
 
 - `taskrail list`
+- `taskrail status`
 - `taskrail inspect <automation>`
 - `taskrail capabilities`
 - `taskrail capability <name>`
-- `taskrail capability-impact <name>`
+- `taskrail impact <name>`
 
 ## Capability rule
 
 Check existing capabilities first, reuse when the contract fits, and create a new capability only for small generic technical functionality that is likely useful across multiple automations.
 
-## v2.0.0 scope
+## v2.0.3 scope
 
 - manifest/config contract
 - lifecycle
@@ -37,6 +44,7 @@ Check existing capabilities first, reuse when the contract fits, and create a ne
 - plugins/adapters
 - structured logs/errors
 - `doctor` and `doctor --json`
+- `status --json` and `inspect --json`
 - `plan`
 - `gate` and `verify-change`
 - deployment locks
@@ -69,7 +77,7 @@ Check existing capabilities first, reuse when the contract fits, and create a ne
 
 ## Freeze policy
 
-After `v2.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
+After `v2.0.3`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Commands
 
