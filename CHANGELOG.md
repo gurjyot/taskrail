@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Added capability registry and discovery commands.
+- Added optional `capabilities` and `capabilityRoots` manifest fields.
+- Validated declared capabilities during preflight.
+- Kept capability output deterministic and secret-free.
+- Preserved zero runtime dependencies and backward compatibility.
+
 ## 1.1.1
 
 - Unified gate execution and enforced deploy-time verification.

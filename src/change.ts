@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { AutomationPlugin, ChangeRisk, ChangeReviewInput, FrameworkManifest, GateVerdict } from './types.js';
 import { writeEvidence } from './evidence.js';
@@ -14,7 +14,8 @@ export interface VerifyChangeResult {
 }
 
 function git(args: string[], cwd: string) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).replace(/\r?\n$/, '');
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  return result.status === 0 && typeof result.stdout === 'string' ? result.stdout.replace(/\r?\n$/, '') : '';
 }
 
 function scoreRisk(files: string[], protectedPaths: string[]): ChangeRisk {

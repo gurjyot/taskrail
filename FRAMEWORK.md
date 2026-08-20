@@ -2,7 +2,6 @@
 
 ## Goal
 
-Make automations hard to break.
 TaskRail provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
 
 ## Rules
@@ -13,60 +12,60 @@ TaskRail provides guardrails, structure, deployment safety, and operational repo
 4. CLI is the control plane.
 5. Features live in plugins/adapters.
 6. Validation is enforced by tooling.
-7. Deploy through the framework, not ad-hoc edits.
-8. Deployment must support validate, test, build candidate, backup, atomic replace, health check, drift detection, and rollback.
+7. Deploy through TaskRail, not ad-hoc edits.
+8. Deployment must validate, test, build candidate, back up, replace atomically, check health, and roll back if needed.
 9. Shared behavior belongs in framework code, not copied into each automation.
-10. Projects must stay free to use other frameworks internally.
+10. Projects may use other frameworks internally.
 
 ## Lifecycle
 
 `doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
 
-## v0.2 additions
+## Discovery
 
-- `plan`
+Normal automation work usually needs only:
+- project `AGENTS.md`
+- project manifest
+- `taskrail doctor`
+- CLI help when needed
+
+Read deeper framework docs only when changing TaskRail itself.
+
+## v1.2.0 surface
+
+- manifest/config contract
+- lifecycle
+- validation
+- plugins/adapters
+- structured logs/errors
 - `doctor`
+- `plan`
+- `gate`
+- `verify-change`
 - deployment locks
 - immutable releases
-- audit history
-- structured failure reports
+- backup
+- atomic deploy
+- rollback
+- drift detection
+- secret guardrail
+- compatibility checks
+- tier-aware health
+- lightweight audit history
 - idempotency helper
-
-## Freeze policy
-
-After `v1.1.1`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
-
-## Deployment sequence
-
-`validate -> test -> build candidate -> backup -> atomic deploy -> health check -> keep OR rollback`
-
-## Managed project shape
-
-- `AGENTS.md`
-- `automation.json`
-- `src/`
-- `tests/`
-- `deploy/`
+- capability registry and discovery
 
 ## Agent contract
 
-- Read framework rules first.
-- Inspect existing modules before creating new ones.
+- Read manifest first.
+- Reuse existing modules/adapters.
+- Never patch managed production files directly.
 - Do not duplicate integrations.
-- Do not make ad-hoc production edits.
-- Change source first.
-- Run validation.
-- Deploy with framework tooling.
-- Verify health after deploy.
+- Make changes in clean source/candidate files.
+- Use TaskRail validation and deployment tools.
+- Verify health after deployment.
+- Treat drift as reconciliation.
 
-## v1 plugin model
+## Freeze policy
 
-Plugins are optional adapters that may provide:
-- config loading
-- health checks
-- deploy hooks
-- backup hooks
-- runtime bindings
-- external API clients
-
-Core only knows the contract, not the implementation.
+After `v1.2.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.

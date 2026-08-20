@@ -299,12 +299,15 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
 }
 
 async function inspectDeployChange(manifest: FrameworkManifest, cwd: string) {
-  const { execFileSync } = await import('node:child_process');
-  const git = (args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const { spawnSync } = await import('node:child_process');
+  const git = (args: string[]) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return result.status === 0 && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  };
   const status = git(['status', '--porcelain']);
   const tracked = status ? status.split('\n').map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean) : [];
   const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean);
-  const changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^"|"$/g, '')))).filter((file) => !file.startsWith('.taskrail/'));
+  const changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^\"|\"$/g, '')))).filter((file) => !file.startsWith('.taskrail/'));
   const protectedPaths = (manifest.protectedPaths ?? []).filter((prefix) => changedFiles.some((file) => {
     const abs = path.isAbsolute(file) ? path.normalize(file) : path.normalize(path.resolve(cwd, file));
     const normalizedPrefix = path.normalize(prefix);

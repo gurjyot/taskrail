@@ -20,6 +20,8 @@ export interface FrameworkManifest {
   testCommand: string;
   buildCommand?: string;
   releaseCommand?: string;
+  capabilities?: string[];
+  capabilityRoots?: string[];
   healthCheck?: HealthCheckDefinition;
   healthChecks?: HealthCheckDefinition[];
   backup?: BackupPolicy;
@@ -42,6 +44,24 @@ export interface BackupPolicy {
 export interface PluginReference {
   name: string;
   module: string;
+}
+
+export interface CapabilityManifest {
+  name: string;
+  version: string;
+  description: string;
+  runtime: 'node';
+  canonicalPath: string;
+  requiredSharedFiles?: string[];
+  healthCheck?: HealthCheckDefinition;
+  input?: string;
+  output?: string;
+}
+
+export interface CapabilityContract extends CapabilityManifest {
+  root: string;
+  path: string;
+  consumers?: string[];
 }
 
 export interface FrameworkConfig {

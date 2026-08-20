@@ -1,9 +1,9 @@
-import { access, stat } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { access, constants, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import type { FrameworkManifest } from './types.js';
 import { isCompatible } from './config.js';
 import { TASKRAIL_VERSION } from './version.js';
+import { capabilityRootsFor, getCapability } from './capabilities.js';
 
 export interface PreflightResult {
   ok: boolean;
@@ -19,6 +19,11 @@ export async function preflight(manifest: FrameworkManifest): Promise<PreflightR
   push('deployWritable', await access(manifest.deployDir, constants.W_OK).then(() => true, () => false));
   for (const file of manifest.requiredFiles ?? []) push(`file:${file}`, await access(file, constants.F_OK).then(() => true, () => false));
   for (const envName of manifest.requiredEnv ?? []) push(`env:${envName}`, Boolean(process.env[envName]));
+  for (const capability of manifest.capabilities ?? []) {
+    const roots = capabilityRootsFor(manifest);
+    const contract = await getCapability(capability, roots);
+    push(`capability:${capability}`, Boolean(contract), contract ? contract.description : 'missing capability');
+  }
   const nodeCheck = spawnSync(process.execPath, ['--version'], { encoding: 'utf8' });
   push('runtime', nodeCheck.status === 0, nodeCheck.stdout.trim());
   return { ok: checks.every((check) => check.ok), checks };
