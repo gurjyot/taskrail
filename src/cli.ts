@@ -155,8 +155,22 @@ async function main() {
   }
   if (cmd === 'gate') {
     const result = await runGate(config.manifest, process.cwd(), await loadPlugins(config.manifest).catch(() => []));
+    if (result.verdict !== 'PASS') {
+      for (const step of result.steps.filter((step) => step.required && !step.ok)) {
+        console.error([
+          `step: ${step.name}`,
+          `command: ${step.command || 'n/a'}`,
+          `cwd: ${step.cwd || 'n/a'}`,
+          `exit: ${step.exitCode ?? 'n/a'}`,
+          step.stdout ? `stdout:\n${step.stdout.trimEnd()}` : 'stdout: <empty>',
+          step.stderr ? `stderr:\n${step.stderr.trimEnd()}` : 'stderr: <empty>',
+        ].join('\n'));
+      }
+      console.error(JSON.stringify(result, null, 2));
+      process.exitCode = 1;
+      return;
+    }
     output(result);
-    if (result.verdict !== 'PASS') process.exitCode = 1;
     return;
   }
   if (cmd === 'verify-change') {
