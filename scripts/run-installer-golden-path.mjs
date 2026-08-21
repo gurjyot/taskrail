@@ -40,7 +40,7 @@ const env = {
   ...process.env,
   TASKRAIL_RELEASE_API: `${base}/release-install/release.json`,
   TASKRAIL_RELEASE_BASE: `${base}/release-install`,
-  TASKRAIL_PLATFORM_MANIFEST_URL: `${base}/platform-install/manifest.json`,
+  TASKRAIL_PLATFORM_MANIFEST_URL: `${base}/release-install/taskrail-platform-manifest.json`,
   TASKRAIL_PLATFORM_ROOT: path.join(root, '.installer-platform-fixture'),
 };
 
