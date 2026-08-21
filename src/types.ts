@@ -20,6 +20,13 @@ export interface DeployStrategy { type: DeployStrategyType; releaseRoot?: string
 export interface RetryPolicy { maxAttempts?: number; baseDelayMs?: number; maxDelayMs?: number; jitter?: boolean; }
 export interface ExecutionPolicy { timeoutMs?: number; maxConcurrency?: number; staleAfterMs?: number; retry?: RetryPolicy; }
 export interface ResourcePolicy { memoryMaxMb?: number; cpuQuotaPercent?: number; tasksMax?: number; nice?: number; }
+export interface IsolationPolicy {
+  level?: 'standard' | 'strict';
+  writablePaths?: string[];
+  privateTmp?: boolean;
+  protectHome?: boolean;
+  noNewPrivileges?: boolean;
+}
 
 export interface FrameworkManifest {
   name: string;
@@ -57,6 +64,7 @@ export interface FrameworkManifest {
   migrations?: MigrationHooks;
   execution?: ExecutionPolicy;
   resources?: ResourcePolicy;
+  isolation?: IsolationPolicy;
   statePath?: string;
   database?: { required?: boolean; schema?: string; };
 }
