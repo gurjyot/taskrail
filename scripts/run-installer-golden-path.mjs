@@ -13,6 +13,13 @@ function safePath(url) {
   return resolved;
 }
 
+function executable(bin) {
+  if (process.platform !== 'win32') return bin;
+  if (/\.(?:exe|cmd|bat)$/i.test(bin) || bin.includes('/') || bin.includes('\\')) return bin;
+  const shims = new Set(['taskrail', 'taskrail-platform-bootstrap', 'npm', 'npx', 'pnpm', 'yarn']);
+  return shims.has(bin.toLowerCase()) ? `${bin}.cmd` : bin;
+}
+
 const server = createServer(async (request, response) => {
   try {
     const file = safePath(request.url || '/');
@@ -60,10 +67,11 @@ if (process.platform === 'win32') {
 }
 
 function run(bin, binArgs) {
+  const resolvedBin = executable(bin);
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, binArgs, { cwd: root, env, stdio: 'inherit', shell: false });
+    const child = spawn(resolvedBin, binArgs, { cwd: root, env, stdio: 'inherit', shell: false });
     child.once('error', reject);
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${bin} exited with ${code}`)));
+    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${resolvedBin} exited with ${code}`)));
   });
 }
 
