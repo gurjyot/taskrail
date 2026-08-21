@@ -27,11 +27,16 @@ async function main() {
     : [await findAutomation(target!, process.cwd())].filter(Boolean) as string[];
   if (!files.length) throw new Error('no managed automation manifests found');
 
+  const seenAutomations = new Set<string>();
+  const seenUnits = new Set<string>();
   const results: Array<{ automation: string; unit: string; applied: boolean; path?: string; dropIn: string }> = [];
   for (const file of files) {
     const manifest = await readManifest(file);
-    if (!manifest.managed || manifest.serviceManager?.type !== 'systemd') continue;
+    if (!manifest.managed || manifest.serviceManager?.type !== 'systemd' || seenAutomations.has(manifest.name)) continue;
+    seenAutomations.add(manifest.name);
     for (const unit of managedServiceUnits(manifest)) {
+      if (seenUnits.has(unit)) continue;
+      seenUnits.add(unit);
       const dropIn = renderTaskRailDropIn(manifest);
       const installed = apply ? await installTaskRailDropIn(unit, manifest) : undefined;
       results.push({ automation: manifest.name, unit, applied: apply, path: installed, dropIn });
@@ -43,7 +48,7 @@ async function main() {
   }
   if (json) console.log(JSON.stringify({ applied: apply, services: results.length, results }, null, 2));
   else {
-    console.log(`STATUS: PASS`);
+    console.log('STATUS: PASS');
     console.log(`MODE: ${apply ? 'applied' : 'dry-run'}`);
     console.log(`SERVICES: ${results.length}`);
     for (const result of results) console.log(`${result.automation}: ${result.unit}${result.path ? ` -> ${result.path}` : ''}`);
