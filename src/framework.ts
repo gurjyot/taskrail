@@ -49,13 +49,13 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
   'immutable-deploy@1': { id: 'immutable-deploy@1', apply: () => ({ backup: { retain: 3 }, deployStrategy: { type: 'replace-in-place' } }) },
   'postgres-migrations@1': { id: 'postgres-migrations@1', apply: () => ({ database: { required: true } }) },
   'health@1': { id: 'health@1', apply: () => ({ requiredChecks: ['validation', 'test'] }) },
-  'drift@1': { id: 'drift@1', apply: () => ({ runtimePaths, generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
+  'drift@1': { id: 'drift@1', apply: (manifest) => ({ runtimePaths: manifest.runtimePaths ?? runtimePaths, generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
   'change-detection@1': { id: 'change-detection@1', apply: () => ({}) },
   'release-retention@1': { id: 'release-retention@1', apply: () => ({ generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
   'agent-execution@1': {
     id: 'agent-execution@1',
     apply: (manifest) => ({
-      statePath: manifest.statePath ?? `/opt/smg-automations/state/${manifest.name}`,
+      statePath: manifest.statePath ?? '/opt/smg-automations/state/${automation}',
       execution: {
         timeoutMs: manifest.execution?.timeoutMs ?? 300_000,
         maxConcurrency: manifest.execution?.maxConcurrency ?? 4,
