@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createDiagnosticReport, sanitizeDiagnosticValue } from '../src/diagnostics.js';
+import { createDiagnosticReport, sanitizeDiagnosticValue, validateDiagnosticReport, MAX_DIAGNOSTIC_BYTES } from '../src/diagnostics.js';
 import { auditSourceSecurity, scanForSecrets, securityPrinciples } from '../src/security.js';
 
 test('diagnostic reports redact secrets and never claim automatic submission', () => {
@@ -23,6 +23,7 @@ test('diagnostic reports redact secrets and never claim automatic submission', (
   assert.equal(report.privacy.filesystemPathsIncluded, false);
   assert.doesNotMatch(JSON.stringify(report), /super-secret-value|dont-share|abcdefghijklmnopqrstuvwxyz123456/);
   assert.match(JSON.stringify(report), /REDACTED/);
+  assert.equal(validateDiagnosticReport(report).ok, true);
 });
 
 test('diagnostics strip filesystem paths, addresses, email identities, and connection strings', () => {
@@ -41,6 +42,28 @@ test('diagnostics strip filesystem paths, addresses, email identities, and conne
   assert.doesNotMatch(text, /alice|customer-a|10\.20\.30\.40|example\.com|admin:password|db\.internal/i);
   assert.match(text, /PRIVATE|REDACTED/);
   assert.match(text, /health check failed/);
+  assert.equal(validateDiagnosticReport(report).ok, true);
+});
+
+test('diagnostic intake rejects oversized or expanded schemas', () => {
+  const report = createDiagnosticReport({ code: 'FAIL', severity: 'error', stage: 'test', message: 'bounded' });
+  const expanded = { ...report, rawLog: 'do not accept this field' };
+  const expandedResult = validateDiagnosticReport(expanded);
+  assert.equal(expandedResult.ok, false);
+  assert.equal(expandedResult.errors.some((item) => item.includes('unsupported fields')), true);
+
+  const oversized = { ...report, message: 'x'.repeat(MAX_DIAGNOSTIC_BYTES * 2) };
+  const oversizedResult = validateDiagnosticReport(oversized);
+  assert.equal(oversizedResult.ok, false);
+  assert.equal(oversizedResult.errors.some((item) => item.includes('byte limit')), true);
+});
+
+test('diagnostic intake independently rejects sensitive material', () => {
+  const report: any = createDiagnosticReport({ code: 'FAIL', severity: 'error', stage: 'test', message: 'safe' });
+  report.message = 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456';
+  const result = validateDiagnosticReport(report);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.some((item) => item.includes('sensitive material')), true);
 });
 
 test('diagnostic sanitizer bounds arrays, depth, and secret-shaped keys', () => {
