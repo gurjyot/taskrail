@@ -1,23 +1,43 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-const secretPatterns = [
-  /api[_-]?key\s*[:=]\s*[^\s,;]+/i,
-  /(?:access|refresh|auth)?[_-]?token\s*[:=]\s*[^\s,;]+/i,
-  /password\s*[:=]\s*[^\s,;]+/i,
-  /bearer\s+[A-Za-z0-9._~+\/-]{16,}=*/i,
+const secretValuePatterns = [
+  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|passwd|secret)\s*[:=]\s*["'`]([^"'`\s]{8,})["'`]/i,
+  /authorization\s*[:=]\s*["'`]bearer\s+[A-Za-z0-9._~+\/-]{16,}=*["'`]/i,
   /bot[a-z0-9]{6,}:[A-Za-z0-9_-]{20,}/i,
   /-----BEGIN [A-Z ]+PRIVATE KEY-----/,
-  /postgres(?:ql)?:\/\/[^\s]+:[^\s]+@/i,
-  /mysql:\/\/[^\s]+:[^\s]+@/i,
+  /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s/:]+:[^\s/@]+@/i,
 ];
 
-const sourceWarnings: Array<{ code: string; pattern: RegExp; message: string }> = [
-  { code: 'shell-exec', pattern: /\bexec(?:Sync)?\s*\(/, message: 'direct shell execution detected; prefer argument-safe spawn/execFile APIs' },
-  { code: 'shell-true', pattern: /shell\s*:\s*true/, message: 'shell-enabled process execution expands command-injection risk' },
-  { code: 'sql-interpolation', pattern: /(?:SELECT|INSERT|UPDATE|DELETE)[\s\S]{0,160}\$\{|(?:query|execute)\s*\(\s*`[^`]*\$\{/i, message: 'possible interpolated SQL; use parameterized queries' },
-  { code: 'eval', pattern: /\beval\s*\(|new\s+Function\s*\(/, message: 'dynamic code evaluation detected' },
-  { code: 'insecure-http-listen', pattern: /listen\s*\(\s*(?:80|8080|3000)\b/, message: 'network listener detected; TaskRail core should not expose a network service by default' },
+const sourceWarnings: Array<{ code: string; test(text: string): boolean; message: string }> = [
+  {
+    code: 'shell-exec',
+    test: (text) => /(?:^|[^A-Za-z0-9_])exec(?:Sync)?\s*\(/m.test(text),
+    message: 'direct shell execution detected; prefer argument-safe spawn/execFile APIs',
+  },
+  {
+    code: 'shell-true',
+    test: (text) => /shell\s*:\s*true/.test(text),
+    message: 'shell-enabled process execution expands command-injection risk',
+  },
+  {
+    code: 'sql-interpolation',
+    test: (text) => {
+      const templates = text.match(/`(?:\\.|[^`])*`/gs) ?? [];
+      return templates.some((template) => /\b(?:SELECT|INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\b/i.test(template) && /\$\{/.test(template));
+    },
+    message: 'interpolated SQL template detected; use parameterized queries',
+  },
+  {
+    code: 'eval',
+    test: (text) => /(?:^|[^A-Za-z0-9_])eval\s*\(|new\s+Function\s*\(/m.test(text),
+    message: 'dynamic code evaluation detected',
+  },
+  {
+    code: 'insecure-http-listen',
+    test: (text) => /\.listen\s*\(\s*(?:80|8080|3000)\b/.test(text),
+    message: 'network listener detected; TaskRail core should not expose a network service by default',
+  },
 ];
 
 export interface SecurityFinding {
@@ -32,12 +52,16 @@ export interface SecurityAuditResult {
   findings: SecurityFinding[];
 }
 
+function containsSecretMaterial(text: string) {
+  return secretValuePatterns.some((pattern) => pattern.test(text));
+}
+
 export async function scanForSecrets(files: string[]): Promise<string[]> {
   const hits: string[] = [];
   for (const file of files) {
     const text = await readFile(file, 'utf8').catch(() => '');
     if (text.includes('=.env')) hits.push(`${file}: embedded env reference`);
-    for (const pattern of secretPatterns) if (pattern.test(text)) hits.push(`${file}: likely secret pattern`);
+    if (containsSecretMaterial(text)) hits.push(`${file}: likely secret material`);
   }
   return hits;
 }
@@ -47,14 +71,11 @@ export async function auditSourceSecurity(files: string[], strict = false): Prom
   for (const file of files) {
     const text = await readFile(file, 'utf8').catch(() => '');
     if (!text) continue;
-    for (const pattern of secretPatterns) {
-      if (pattern.test(text)) {
-        findings.push({ code: 'secret-material', severity: 'error', file, message: 'likely secret material found in source' });
-        break;
-      }
+    if (containsSecretMaterial(text)) {
+      findings.push({ code: 'secret-material', severity: 'error', file, message: 'likely literal secret material found in source' });
     }
     for (const warning of sourceWarnings) {
-      if (warning.pattern.test(text)) findings.push({ code: warning.code, severity: strict ? 'error' : 'warning', file, message: warning.message });
+      if (warning.test(text)) findings.push({ code: warning.code, severity: strict ? 'error' : 'warning', file, message: warning.message });
     }
   }
   return { ok: findings.every((finding) => finding.severity !== 'error'), findings };
