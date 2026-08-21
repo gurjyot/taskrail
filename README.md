@@ -3,7 +3,7 @@
 <p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, updating, supervising, and safely operating production automations.</strong></p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~108 KiB compressed / ~588 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~198 KiB compressed / ~1046 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 TaskRail is a small control plane and SDK for reliable automation. It is designed to be especially easy for coding agents such as Codex and other AI development tools, while remaining deterministic and fully usable without AI. It provides reusable components, governed capabilities, thin automation scaffolds, deployment safety, transactional updates, rollback/recovery controls, supervision, privacy-safe diagnostics, optional agent adapters, and progressive-disclosure agent skills without requiring a database, queue, container platform, permanent daemon, vector store, or runtime model service.
@@ -56,6 +56,16 @@ REQUIREMENT -> COMPONENT LOOKUP -> CAPABILITY LOOKUP -> REUSE / EXTEND / CREATE 
 The framework follows one rule throughout: **centralize reusable primitives and safety contracts; decentralize automation decisions and execution.**
 
 Ordinary automation agents consume components; they do not invent new TaskRail core components. Before creating a capability, an agent must search the capability registry. Equivalent capabilities are reused instead of duplicated.
+
+## Modular validation and security
+
+Validation and security are registries of reusable modules rather than one giant checklist. A module declares its stable ID, version, applicable contexts/tags, dependencies and evaluator. Profiles select only the modules relevant to an install, update, deployment, rollback, runtime check, security audit or certification run.
+
+The same validator or security control can therefore be reused by many flows without copying its logic. Adding or improving one module automatically strengthens every suite that selects it, while dependency cycles and missing dependencies fail closed.
+
+The standard validation catalog includes manifest/config validation, artifact checksum verification, shared-dependency compatibility, rollback readiness and reboot readiness. The standard security catalog reuses TaskRail's source scanner, private-state permission checks and default-deny network policy. Existing CLI commands remain stable while these internals can evolve independently.
+
+Public orchestration lives under `taskrail/testing` through `ValidationRegistry`, `SecurityRegistry`, `createTaskRailValidationRegistry()` and `createTaskRailSecurityRegistry()`.
 
 ## Component SDK
 
@@ -146,6 +156,8 @@ Reusable artifacts can carry explicit compatibility contracts: artifact kind, ve
 
 Breaking changes fail closed when migration guidance or a safe consumer plan is missing. Unrelated automations remain outside the affected scope.
 
+Stable public exports, commands and manifest fields can also be compared as a backward-compatibility snapshot. Removing a stable contract is treated as a major-version change instead of silently breaking existing users.
+
 ## Safe lifecycle
 
 For a first deployment:
@@ -192,6 +204,12 @@ Automations with migrations are conservative by default. Rollback compatibility 
 taskrail update <automation> --migration-compatible
 ```
 
+## Reboot recovery and bounded retention
+
+TaskRail treats host reboot as a recoverable operating event. On Linux, `taskrail-systemd-sync --all --apply --ensure-enabled` can verify and enable declared services and timers so managed automations return after boot. The reboot policy separately classifies missed work per automation as **run on recovery**, **skip**, or **manual review** instead of applying one dangerous global rule.
+
+Transient health/reconciliation evidence is governed by bounded retention so operational metadata does not grow forever. Deployment and failure evidence can be preserved longer while routine health history is pruned or aggregated. TaskRail does not require a central database for this policy.
+
 ## Isolation and performance guardrails
 
 TaskRail is designed so one automation cannot become the framework's single point of failure. The control plane provides:
@@ -205,6 +223,7 @@ TaskRail is designed so one automation cannot become the framework's single poin
 - control-plane mutation authorization
 - failure/recovery state scoped to the affected automation
 - deterministic supervision designed for 1,000+ independent automations
+- explicit package/startup/validation/memory performance budgets
 
 ```bash
 taskrail isolation-audit
@@ -212,7 +231,7 @@ taskrail conformance
 taskrail-supervise
 ```
 
-TaskRail does not serialize independent automations just because they start at the same time.
+TaskRail does not serialize independent automations just because they start at the same time. Performance budgets fail closed when measured framework size or execution overhead exceeds the configured ceiling rather than allowing gradual unnoticed bloat.
 
 ## Hooks and lifecycle events
 
@@ -275,6 +294,7 @@ Fault injection is a **test/release capability, not runtime machinery**. It is i
 - stale locks
 - state corruption
 - rollback interruption
+- host reboot/restart reconciliation
 
 A fault scenario passes only when TaskRail reaches the expected safe/recoverable state. A test that merely reproduces a crash without proving containment/recovery is not considered a successful fault test.
 
@@ -318,8 +338,8 @@ taskrail/agent
 Examples:
 
 - `taskrail/components` — stable vendor-neutral primitives
-- `taskrail/testing` — conformance, isolation, fault-injection and certification helpers
-- `taskrail/control` — lifecycle/update controls plus compatibility, provenance, security-policy and error-intelligence contracts
+- `taskrail/testing` — modular validation/security, conformance, compatibility, performance, isolation, fault-injection and certification helpers
+- `taskrail/control` — lifecycle/update controls plus compatibility, provenance, security-policy, reboot/retention and error-intelligence contracts
 - `taskrail/agent` — permissioned AI/agent-facing contracts and privacy-safe diagnostics
 
 Internal files can evolve more quickly without making every implementation detail part of TaskRail's semver promise.
@@ -423,6 +443,7 @@ cd taskrail
 npm ci
 npm test
 npm run check
+npm run size:check
 npm run release:readiness
 ```
 
@@ -430,11 +451,11 @@ npm run release:readiness
 
 TaskRail keeps independent release gates so one passing test cannot hide another class of failure:
 
-- **TaskRail CI** — framework tests, public API/CLI and security checks
+- **TaskRail CI** — framework tests, public API/CLI, modular security checks and README-footprint freshness
 - **Package Golden Path** — packed-artifact install/scaffold on Linux, macOS, and Windows
 - **Installer Golden Path** — actual Linux/macOS/Windows setup files, platform bootstrap failure tests, checksums, retries and post-install verification
 - **MCP adapter matrix** — optional adapter tested separately on Linux, macOS, and Windows
-- **Release readiness audit** — version consistency, public API, docs/skills, required installers/adapters/workflows, and anti-bloat contracts
+- **Release readiness audit** — version consistency, public API, docs/skills, required installers/adapters/workflows, modular architecture and anti-bloat contracts
 - **Fault injection** — intentional failure scenarios must prove containment and recovery
 - **Certification** — aggregate required gate verdicts only after the individual gates succeed
 
@@ -462,8 +483,11 @@ TaskRail includes:
 - deterministic component/capability/profile dependency graph
 - blast-radius analysis for shared updates
 - compatibility contracts for reusable artifacts
+- backward-compatibility snapshot assessment for stable public contracts
 - profile-aware thin automation scaffolding
 - manifest/config contracts and preflight validation
+- reusable modular validation registry and context-specific suites
+- reusable modular security-control registry and strict profiles
 - environment detection
 - structured logs/errors and secret redaction
 - privacy-safe diagnostic schema and validation
@@ -476,7 +500,9 @@ TaskRail includes:
 - decision journaling and heartbeats
 - bounded retries, timeouts, concurrency, and execution policies
 - CPU, memory, task, and process-priority guardrails
-- systemd resource drop-ins and optional strict filesystem isolation
+- systemd resource drop-ins, reboot readiness and optional strict filesystem isolation
+- missed-run recovery policy per automation
+- bounded operational-data retention policy
 - health checks and freshness SLAs
 - read-only multi-service supervision
 - fleet managed-root isolation audit
@@ -492,11 +518,13 @@ TaskRail includes:
 - bounded lifecycle hooks with mutation authorization
 - executable engineering/conformance standard
 - reusable fault-injection harness
+- package/startup/validation/memory performance budgets
 - certification gate aggregation
 - three small cross-platform bootstrap installers
 - on-demand, version-matched platform adapters
 - optional read-only stdio MCP adapter outside core
 - package-size/anti-bloat guards
+- automatic README package-footprint freshness gate
 - Golden Path installation tests on Linux, macOS, and Windows
 - scheduled Sentinel verification
 - concise AI-agent instructions and dedicated skills
@@ -551,12 +579,12 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, `taskra
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~108 KiB compressed / ~588 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~198 KiB compressed / ~1046 KiB unpacked. Runtime npm dependencies: 0.**
 
-Measured automatically from the actual `npm pack` artifact. The Golden Path release gate enforces an unpacked size budget, and the main-branch size-sync workflow refreshes these figures after framework changes.
+Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
 
-A separate **2 MB unpacked size guardrail** prevents accidental framework bloat. Platform installer/adaptor source and optional MCP dependencies are deliberately excluded from the core npm package and installed only when relevant.
+A separate **2 MB unpacked size guardrail** prevents accidental framework bloat. Platform installer/adapter source and optional MCP dependencies are deliberately excluded from the core npm package and installed only when relevant.
 
 ## What TaskRail deliberately does not require
 
