@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.8
+
+- Added a stable TaskRail component SDK with execution, state, idempotency, retry, timeout, bounded concurrency, HTTP, config, structured/redacted logging, and safe filesystem primitives.
+- Added `taskrail/components` as the stable public component import while preserving existing deep paths for compatibility.
+- Added component discovery plus profile-aware automation scaffolding through the TaskRail CLI.
+- Added governed capability metadata, deterministic purpose/operation search, semantic duplicate detection, strict conformance checks, and fail-closed capability scaffolding.
+- Added registry-level semantic conflict enforcement so governed duplicate capabilities cannot bypass the scaffold by being hand-created.
+- Added dedicated automation, capability-authoring, and TaskRail-core skills plus repository-wide AI instructions enforcing component-first/capability-first design.
+- Added market/architecture documentation and progressive-disclosure rules to keep agent context and token use low.
+- Kept execution decentralized: no daemon, database, queue, vector store, runtime AI call, or shared cross-domain memory was added.
+
 ## 2.0.7
 
 - Added isolated per-service execution state, durable idempotency claims, decision journaling, heartbeats, bounded retry/timeout/concurrency helpers, and stable execution IDs.

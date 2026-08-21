@@ -1,11 +1,61 @@
 {
   "name": "taskrail",
-  "version": "2.0.7",
-  "private": true,
+  "version": "2.0.8",
+  "private": false,
   "type": "module",
-  "description": "Tiny CLI-first framework for safe automation lifecycle management.",
+  "description": "Lightweight AI-first automation framework with reusable components, governed capabilities, safe deployment, supervision, rollback, and agent skills.",
+  "keywords": [
+    "automation",
+    "automation-framework",
+    "ai-automation",
+    "coding-agents",
+    "agentic-automation",
+    "workflow-automation",
+    "deployment-automation",
+    "automation-sdk",
+    "cli",
+    "typescript",
+    "nodejs",
+    "idempotency",
+    "capability-registry",
+    "ai-developer-tools"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gurjyot/taskrail.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gurjyot/taskrail/issues"
+  },
+  "homepage": "https://github.com/gurjyot/taskrail#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist/",
+    "profiles/",
+    "skills/",
+    "README.md",
+    "FRAMEWORK.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./components": {
+      "types": "./dist/src/components/index.d.ts",
+      "import": "./dist/src/components/index.js"
+    },
+    "./dist/*": "./dist/*",
+    "./src/*": "./src/*"
+  },
   "bin": {
-    "taskrail": "./dist/src/cli.js",
+    "taskrail": "./dist/src/taskrail-cli.js",
     "taskrail-supervise": "./dist/src/supervise-cli.js",
     "taskrail-heartbeat": "./dist/src/heartbeat-cli.js",
     "taskrail-systemd-sync": "./dist/src/systemd-cli.js"
@@ -13,7 +63,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.js",
-    "check": "npm run build && node dist/src/cli.js --help && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help"
+    "check": "npm run build && node dist/src/taskrail-cli.js --help && node dist/src/taskrail-cli.js components && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"import('taskrail/components').then(m => { if (!m.http || !m.config) process.exit(1) })\"",
+    "prepack": "npm run build && npm test && npm run check"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

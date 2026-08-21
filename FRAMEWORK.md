@@ -2,74 +2,120 @@
 
 ## Goal
 
-TaskRail provides guardrails, structure, deployment safety, and operational reporting. It does not provide intelligence.
+TaskRail is an AI-first automation SDK and control plane. It provides stable technical components, governed reusable capabilities, lifecycle guardrails, deployment safety, and operational reporting. Domain intelligence stays in automations.
+
+## Layers
+
+`automation -> capability -> component -> core`
+
+Automations may also use components directly for generic technical needs.
+
+- **Core**: lifecycle, validation, deployment, compatibility, supervision, resource safety.
+- **Components**: fixed TaskRail-owned technical primitives with stable public APIs.
+- **Capabilities**: governed reusable integrations/features that agents may create or extend.
+- **Automations**: domain decisions and orchestration.
+
+Forbidden dependencies:
+
+- core/component -> capability
+- component/capability -> automation
+- cross-domain shared memory
 
 ## Rules
 
-1. Tiny core.
-2. No mandatory storage, queue, Docker, daemon, or AI layer.
-3. TypeScript/Node.js only.
+1. Keep core and components small.
+2. No mandatory storage, queue, Docker, daemon, vector store, or AI layer.
+3. TypeScript/Node.js is the TaskRail implementation runtime; managed applications may use supported runtimes.
 4. CLI is the control plane.
-5. Features live in plugins/adapters.
-6. Validation is enforced by tooling.
-7. Deploy through TaskRail, not ad-hoc edits.
-8. Deployment must validate, test, build candidate, back up, replace atomically, check health, and roll back if needed.
-9. Shared behavior belongs in framework code, not copied into each automation.
-10. Projects may use other frameworks internally.
+5. Components are TaskRail-owned and cannot be created by ordinary automation/capability agents.
+6. Capability discovery is mandatory before creating reusable integration code.
+7. Semantic duplicate capabilities fail validation when governed metadata establishes the same canonical purpose or substantially identical domain/operations.
+8. Validation is enforced by tooling.
+9. Deploy through TaskRail, not ad-hoc edits.
+10. Deployment must validate, test, build candidate, back up, replace atomically, check health, and roll back if needed.
+11. Projects may use other frameworks internally.
 
-## Lifecycle
+## Automation design workflow
 
-`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
+Before substantial implementation:
 
-## Discovery
+`requirement -> component lookup -> capability lookup -> REUSE / EXTEND / CREATE / LOCAL -> implementation`
 
-Normal automation work usually needs only:
+Delivery remains:
+
+`doctor -> check -> test -> plan -> ship -> health`
+
+Use `gate` and `verify-change` for shared/risky changes.
+
+## Components
+
+Stable public import:
+
+`taskrail/components`
+
+Initial component surface:
+
+- execution
+- state
+- idempotency
+- retry
+- timeout
+- concurrency
+- HTTP
+- config
+- structured/redacted logging
+- safe filesystem persistence
+
+Components do no background/network work on import. Service-specific clients are capabilities, not components.
+
+A new component must pass the component acceptance gate in the `taskrail-core` skill and be broadly useful across unrelated automation categories.
+
+## Capabilities
+
+Capability registry metadata may include:
+
+- canonical purpose
+- domain
+- operations
+- keywords
+- side effects
+- idempotency semantics
+- TaskRail components consumed
+- status/supersession
+
+Creation should use `taskrail init capability`, which performs overlap checks before writing files. New capabilities should pass `taskrail capability-check <name> --strict`.
+
+Superseded capabilities name a canonical replacement. Do not leave two active capabilities with the same canonical purpose.
+
+## Progressive disclosure
+
+Normal agents should load only:
+
 - project `AGENTS.md`
-- project manifest
-- `taskrail doctor`
-- `taskrail list`
-- CLI help when needed
-- `taskrail capabilities` and `taskrail inspect <automation>` when capability work is involved
+- automation manifest
+- TaskRail health/context
+- compact component list
+- compact capability search results
 
-Read deeper framework docs only when changing TaskRail itself.
+Read detailed component/capability docs only after shortlisting. Read implementation source only when modifying/debugging that unit.
 
-## v2.0.0 surface
+## Operational surface
 
-- manifest/config contract
-- lifecycle
-- validation
-- plugins/adapters
-- structured logs/errors
-- `doctor`
-- `plan`
-- `gate`
-- `verify-change`
-- deployment locks
-- immutable releases
-- backup
-- atomic deploy
-- rollback
-- drift detection
-- secret guardrail
-- compatibility checks
-- tier-aware health
-- lightweight audit history
-- idempotency helper
-- capability registry and discovery
-- optional agent skill
+TaskRail includes:
 
-## Agent contract
-
-- Read manifest first.
-- Reuse existing modules/adapters.
-- Never patch managed production files directly.
-- Do not duplicate integrations.
-- Make changes in clean source/candidate files.
-- Use TaskRail validation and deployment tools.
-- Verify health after deployment.
-- Treat drift as reconciliation.
-- Check and reuse capabilities before inventing new integration code.
+- manifest/profile/framework-capability contracts
+- validation, gate, planning and change verification
+- immutable/safe deployment, backup and rollback
+- drift detection and repair
+- structured logs/errors and secret guardrails
+- compatibility checks and tier-aware health
+- execution IDs, isolated state, idempotency, retry/timeout/concurrency primitives
+- heartbeat supervision and resource/systemd guardrails
+- capability registry/discovery/governance
+- TaskRail component SDK
+- automation/capability scaffolding
+- agent skills for automation, capability, and core maintenance
 
 ## Freeze policy
 
-After `v2.0.0`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through existing contracts or an optional adapter.
+Add to core or the component catalog only when a real repeated generic problem cannot be solved cleanly with the existing component surface, a governed capability, or automation-local logic. Components evolve more slowly than capabilities.
