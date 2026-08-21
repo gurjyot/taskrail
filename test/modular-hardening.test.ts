@@ -9,11 +9,11 @@ import { diagnosticIssueKey, groupDiagnostics } from '../src/error-intelligence.
 import { faultGatePassed, runFaultScenarios } from '../src/fault-injection.js';
 import { provenancePayload, sha256, verifyProvenance } from '../src/provenance.js';
 import { assessSecurityDeclaration, TASKRAIL_SECURITY_POLICY } from '../src/security-policy.js';
+import { planSharedUpdate } from '../src/update-plan.js';
+import type { UsageGraph } from '../src/usage-graph.js';
 
-test('compatibility contracts identify exact consumers affected by a shared update', () => {
-  assert.equal(satisfiesSimpleRange('2.4.1', '^2.3.0'), true);
-  assert.equal(satisfiesSimpleRange('3.0.0', '^2.3.0'), false);
-  const assessment = assessSharedArtifactUpdate(
+function compatibilityAssessment() {
+  return assessSharedArtifactUpdate(
     { schema: 1, kind: 'capability', name: 'meta-api', version: '2.4.1', taskrail: '2.x' },
     { schema: 1, kind: 'capability', name: 'meta-api', version: '3.0.0', taskrail: '3.x', changeLevel: 'major', migrationRequired: true, migrationGuide: 'MIGRATION.md' },
     [
@@ -21,9 +21,39 @@ test('compatibility contracts identify exact consumers affected by a shared upda
       { name: 'unrelated', taskrailVersion: '3.0.0', dependencies: {} },
     ],
   );
+}
+
+test('compatibility contracts identify exact consumers affected by a shared update', () => {
+  assert.equal(satisfiesSimpleRange('2.4.1', '^2.3.0'), true);
+  assert.equal(satisfiesSimpleRange('3.0.0', '^2.3.0'), false);
+  const assessment = compatibilityAssessment();
   assert.deepEqual(assessment.affected, ['ads-agent']);
   assert.equal(assessment.breaking, true);
   assert.equal(assessment.ok, false);
+});
+
+test('compatibility evidence automatically turns shared breaking updates into scoped migration plans', () => {
+  const graph: UsageGraph = {
+    automations: [
+      { name: 'ads-agent', manifestPath: '/automations/ads-agent/automation.json', components: [], capabilities: ['meta-api'] },
+      { name: 'unrelated', manifestPath: '/automations/unrelated/automation.json', components: [], capabilities: [] },
+    ],
+    capabilities: [{ name: 'meta-api', version: '2.4.1', components: ['http'], automationConsumers: ['ads-agent'] }],
+    components: [],
+    profiles: [],
+    errors: [],
+  };
+  const plan = planSharedUpdate(graph, {
+    targetKind: 'capability',
+    targetName: 'meta-api',
+    fromVersion: '2.4.1',
+    toVersion: '3.0.0',
+    compatibility: compatibilityAssessment(),
+  });
+  assert.equal(plan.action, 'migration-required');
+  assert.equal(plan.pauseRequired, true);
+  assert.deepEqual(plan.pauseScope, ['ads-agent']);
+  assert.equal(plan.affectedCount, 1);
 });
 
 test('provenance verifies checksum, trusted source, and signature without a runtime dependency', () => {
