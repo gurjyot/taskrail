@@ -49,11 +49,11 @@ test('diagnostic sanitizer bounds arrays, depth, and secret-shaped keys', () => 
   assert.equal(sanitized.values.length, 50);
 });
 
-test('security audit hard-fails secrets and can make injection-prone patterns strict failures', async () => {
+test('security audit hard-fails secrets and structurally detects injection-prone code', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-security-'));
   try {
     const bad = path.join(root, 'bad.js');
-    await writeFile(bad, "const password = 'password=very-secret';\nexec('curl ' + input);\nconst q = `SELECT * FROM users WHERE id=${id}`;\n");
+    await writeFile(bad, "import { exec } from 'node:child_process';\nconst password = 'password=very-secret';\nexec('curl ' + input);\nconst q = `SELECT * FROM users WHERE id=${id}`;\n");
     const secrets = await scanForSecrets([bad]);
     assert.equal(secrets.length > 0, true);
     const report = await auditSourceSecurity([bad], true);
@@ -61,6 +61,19 @@ test('security audit hard-fails secrets and can make injection-prone patterns st
     assert.equal(report.findings.some((item) => item.code === 'secret-material'), true);
     assert.equal(report.findings.some((item) => item.code === 'shell-exec'), true);
     assert.equal(report.findings.some((item) => item.code === 'sql-interpolation'), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('ordinary update messages and scanner source do not create false positives', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-security-safe-'));
+  try {
+    const safe = path.join(root, 'safe.js');
+    await writeFile(safe, "const message = `update entered recovery-required state: ${reason}`;\nconst sql = 'SELECT * FROM users WHERE id = ?';\n");
+    const report = await auditSourceSecurity([safe], true);
+    assert.equal(report.ok, true);
+    assert.equal(report.findings.length, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
