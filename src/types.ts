@@ -35,6 +35,7 @@ export interface ServiceUnitDefinition {
   kind: 'service' | 'timer';
   oneshotOkay?: boolean;
   user?: string;
+  staleAfterMs?: number;
 }
 
 export interface ServiceManagerDefinition {
