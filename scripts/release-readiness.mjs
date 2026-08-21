@@ -24,6 +24,7 @@ add('check:strict-security', String(pkg.scripts?.check || '').includes('security
 add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:contract');
 add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
 add('script:size-sync', Boolean(pkg.scripts?.['size:sync']), 'size:sync');
+add('script:size-check', Boolean(pkg.scripts?.['size:check']), 'size:check');
 add('release:sigstore-attestation', releaseWorkflow.includes('actions/attest@v4') && releaseWorkflow.includes('id-token: write') && releaseWorkflow.includes('attestations: write'), 'actions/attest@v4');
 add('release:certification', releaseWorkflow.includes('npm run certify'), 'npm run certify');
 
@@ -38,8 +39,10 @@ for (const file of [
   'src/error-intelligence.ts',
   'src/security.ts',
   'src/security-registry.ts',
+  'src/security-modules.ts',
   'src/security-policy.ts',
   'src/validation-registry.ts',
+  'src/validation-modules.ts',
   'src/reboot-recovery.ts',
   'src/retention-policy.ts',
   'src/performance-budget.ts',
@@ -59,7 +62,7 @@ for (const file of [
   'test/platform-bootstrap.test.ts',
   'scripts/certify-release.mjs',
   'scripts/test-mcp-packed.mjs',
-  'scripts/update-readme-size.mjs',
+  'scripts/sync-readme-size.mjs',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
@@ -68,7 +71,6 @@ for (const file of [
   '.github/workflows/fault-injection.yml',
   '.github/workflows/release.yml',
   '.github/workflows/sentinel.yml',
-  '.github/workflows/size-sync.yml',
   'skills/taskrail/SKILL.md',
   'skills/taskrail-capability/SKILL.md',
   'skills/taskrail-core/SKILL.md',
