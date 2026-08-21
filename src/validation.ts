@@ -6,7 +6,7 @@ export function validateConfig(config: FrameworkConfig): string[] {
   const errors: string[] = [];
   if (!config.projectName) errors.push('projectName is required');
   if (!config.manifest.name) errors.push('manifest.name is required');
-  if (!['node', 'python', 'shell'].includes(config.manifest.runtime)) errors.push('runtime must be node, python, or shell');
+  if (!['node', 'python', 'shell', 'php'].includes(config.manifest.runtime)) errors.push('runtime must be node, python, shell, or php');
   if (!config.manifest.sourceDir) errors.push('manifest.sourceDir is required');
   if (!config.manifest.deployDir) errors.push('manifest.deployDir is required');
   if (!config.manifest.validationCommand) errors.push('manifest.validationCommand is required');
@@ -21,5 +21,24 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (config.manifest.deployStrategy?.type && !['replace-in-place', 'release-symlink'].includes(config.manifest.deployStrategy.type)) errors.push('manifest.deployStrategy.type is invalid');
   if (config.manifest.migrations?.destructive && !config.manifest.migrations.applyCommand) errors.push('destructive migrations require migrations.applyCommand');
   if (config.manifest.serviceManager?.type && config.manifest.serviceManager.type !== 'systemd') errors.push('manifest.serviceManager.type must be systemd');
+  for (const unit of config.manifest.serviceManager?.units ?? []) {
+    if (unit.staleAfterMs !== undefined && (!Number.isInteger(unit.staleAfterMs) || unit.staleAfterMs <= 0)) errors.push(`service unit ${unit.name} staleAfterMs must be a positive integer`);
+  }
+
+  const execution = config.manifest.execution;
+  if (execution?.timeoutMs !== undefined && (!Number.isInteger(execution.timeoutMs) || execution.timeoutMs <= 0)) errors.push('manifest.execution.timeoutMs must be a positive integer');
+  if (execution?.maxConcurrency !== undefined && (!Number.isInteger(execution.maxConcurrency) || execution.maxConcurrency < 1)) errors.push('manifest.execution.maxConcurrency must be an integer >= 1');
+  if (execution?.staleAfterMs !== undefined && (!Number.isInteger(execution.staleAfterMs) || execution.staleAfterMs <= 0)) errors.push('manifest.execution.staleAfterMs must be a positive integer');
+  if (execution?.retry?.maxAttempts !== undefined && (!Number.isInteger(execution.retry.maxAttempts) || execution.retry.maxAttempts < 1)) errors.push('manifest.execution.retry.maxAttempts must be an integer >= 1');
+  if (execution?.retry?.baseDelayMs !== undefined && (!Number.isInteger(execution.retry.baseDelayMs) || execution.retry.baseDelayMs < 0)) errors.push('manifest.execution.retry.baseDelayMs must be a non-negative integer');
+  if (execution?.retry?.maxDelayMs !== undefined && (!Number.isInteger(execution.retry.maxDelayMs) || execution.retry.maxDelayMs < 0)) errors.push('manifest.execution.retry.maxDelayMs must be a non-negative integer');
+  if (execution?.retry?.baseDelayMs !== undefined && execution?.retry?.maxDelayMs !== undefined && execution.retry.maxDelayMs < execution.retry.baseDelayMs) errors.push('manifest.execution.retry.maxDelayMs must be >= baseDelayMs');
+
+  const resources = config.manifest.resources;
+  if (resources?.memoryMaxMb !== undefined && (!Number.isInteger(resources.memoryMaxMb) || resources.memoryMaxMb < 32)) errors.push('manifest.resources.memoryMaxMb must be an integer >= 32');
+  if (resources?.cpuQuotaPercent !== undefined && (!Number.isFinite(resources.cpuQuotaPercent) || resources.cpuQuotaPercent <= 0 || resources.cpuQuotaPercent > 1000)) errors.push('manifest.resources.cpuQuotaPercent must be > 0 and <= 1000');
+  if (resources?.tasksMax !== undefined && (!Number.isInteger(resources.tasksMax) || resources.tasksMax < 1)) errors.push('manifest.resources.tasksMax must be an integer >= 1');
+  if (resources?.nice !== undefined && (!Number.isInteger(resources.nice) || resources.nice < -20 || resources.nice > 19)) errors.push('manifest.resources.nice must be between -20 and 19');
+
   return errors;
 }
