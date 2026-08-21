@@ -30,13 +30,5 @@ jobs:
           cache: npm
       - name: Install and build TaskRail core
         run: npm ci && npm run build
-      - name: Install optional MCP SDK without changing TaskRail core dependencies
-        working-directory: adapters/mcp
-        run: npm install --ignore-scripts --legacy-peer-deps
-      - name: Install this exact packed TaskRail artifact as the MCP peer
-        run: node -e "const cp=require('child_process'),path=require('path'); const npm=process.platform==='win32'?'npm.cmd':'npm'; const packed=JSON.parse(cp.execFileSync(npm,['pack','--ignore-scripts','--json'],{encoding:'utf8'}))[0]; const tgz=path.resolve(packed.filename); cp.execFileSync(npm,['install','--no-save','--ignore-scripts','--legacy-peer-deps',tgz],{cwd:path.resolve('adapters/mcp'),stdio:'inherit'});"
-      - name: Run official-client stdio and security tests
-        working-directory: adapters/mcp
-        run: npm test
-      - name: Prove MCP adapter is absent from the core npm payload
-        run: node -e "const {execFileSync}=require('child_process'); const raw=execFileSync(process.platform==='win32'?'npm.cmd':'npm',['pack','--ignore-scripts','--json'],{encoding:'utf8'}); const p=JSON.parse(raw)[0]; const leak=p.files.some(f=>String(f.path).replaceAll('\\\\','/').startsWith('adapters/mcp/')); if(leak){console.error('MCP adapter leaked into TaskRail core package');process.exit(1)} console.log('core package excludes optional MCP adapter')"
+      - name: Pack core and MCP separately, install both into a clean project, and test stdio
+        run: node scripts/test-mcp-packed.mjs
