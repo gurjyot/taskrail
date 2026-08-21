@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const command = process.argv[2] || '--help';
 const compositionCommands = new Set(['components', 'component', 'capability-find', 'capability-check', 'init']);
 
