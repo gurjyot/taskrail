@@ -67,6 +67,13 @@ export interface ExecutionPolicy {
   retry?: RetryPolicy;
 }
 
+export interface ResourcePolicy {
+  memoryMaxMb?: number;
+  cpuQuotaPercent?: number;
+  tasksMax?: number;
+  nice?: number;
+}
+
 export interface FrameworkManifest {
   name: string;
   taskrailCompatibility?: string;
@@ -101,6 +108,7 @@ export interface FrameworkManifest {
   serviceManager?: ServiceManagerDefinition;
   migrations?: MigrationHooks;
   execution?: ExecutionPolicy;
+  resources?: ResourcePolicy;
   statePath?: string;
   database?: {
     required?: boolean;
