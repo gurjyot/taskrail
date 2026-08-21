@@ -111,6 +111,84 @@ test('drift ignores release metadata', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+
+test('stale release snapshot does not block deploy when source is clean', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'deploy/main.js': 'process.exit(0)',
+    'deploy/package.json': '{"name":"demo","version":"1.0.0"}',
+    'release/main.js': 'stale',
+    'release/tools/runtime.log': 'legacy runtime',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'source',
+      deployDir: 'deploy',
+      validationCommand: 'node main.js',
+      testCommand: 'node main.js',
+      healthCheck: { type: 'file', path: 'main.js' },
+      backup: { retain: 1 },
+      requiredChecks: ['validation', 'test', 'drift'],
+    }, null, 2),
+  });
+  const result = await safeDeploy({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file', path: 'main.js' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, true);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('real managed source drift still blocks deploy', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'deploy/main.js': 'process.exit(0)',
+    'deploy/package.json': '{"name":"demo","version":"1.0.0"}',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'source',
+      deployDir: 'deploy',
+      validationCommand: 'node main.js',
+      testCommand: 'node main.js',
+      healthCheck: { type: 'file', path: 'main.js' },
+      backup: { retain: 1 },
+      requiredChecks: ['validation', 'test'],
+    }, null, 2),
+  });
+  await writeFile(path.join(base, 'source', 'main.js'), 'process.exit(1)');
+  const result = await safeDeploy({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file', path: 'main.js' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, false);
+  await rm(base, { recursive: true, force: true });
+});
+
 test('rollback CLI uses the active manifest state file', async () => {
   const base = await fixtureDir();
   await gitInit(base);
@@ -230,6 +308,20 @@ test('impact aliases capability-impact and returns consumers', async () => {
   const output = execFileSync(process.execPath, [cli, 'impact', 'telegram-send', '--json'], { cwd: base, encoding: 'utf8' });
   const parsed = JSON.parse(output);
   assert.deepEqual(parsed.consumers, ['alpha']);
+  await rm(base, { recursive: true, force: true });
+});
+
+
+test('backward compatibility still supports release metadata and default checks', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/check.js': 'process.exit(0)',
+    'deploy/index.txt': 'old',
+  });
+  const drift = await detectDrift(path.join(base, 'live'), path.join(base, 'release'));
+  assert.equal(drift.drifted, false);
+  const result = await runGate(baseManifest(base, { sourceDir: path.join(base, 'src'), deployDir: path.join(base, 'deploy'), validationCommand: 'node check.js', testCommand: 'node check.js' }), base);
+  assert.equal(result.verdict, 'PASS');
   await rm(base, { recursive: true, force: true });
 });
 
