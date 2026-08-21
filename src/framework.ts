@@ -92,12 +92,32 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
       generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'],
     }),
   },
+  'agent-execution@1': {
+    id: 'agent-execution@1',
+    apply: (manifest) => ({
+      statePath: manifest.statePath ?? `/opt/smg-automations/state/${manifest.name}`,
+      execution: {
+        timeoutMs: 300_000,
+        maxConcurrency: 4,
+        staleAfterMs: 900_000,
+        retry: { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 10_000, jitter: true },
+      },
+      resources: {
+        memoryMaxMb: 512,
+        cpuQuotaPercent: 100,
+        tasksMax: 64,
+        nice: 5,
+      },
+    }),
+  },
 };
+
+const common = ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1', 'agent-execution@1'];
 
 export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   'smg-node-timer@1': {
     id: 'smg-node-timer@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
+    frameworkCapabilities: common,
     defaults: {
       managed: true,
       sourceDir: 'src',
@@ -114,7 +134,7 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   },
   'smg-node-service@1': {
     id: 'smg-node-service@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
+    frameworkCapabilities: common,
     defaults: {
       managed: true,
       sourceDir: '.',
@@ -128,7 +148,7 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   },
   'smg-node-postgres-service@1': {
     id: 'smg-node-postgres-service@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'postgres-migrations@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
+    frameworkCapabilities: [...common, 'postgres-migrations@1'],
     defaults: {
       managed: true,
       sourceDir: '.',
