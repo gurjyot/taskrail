@@ -16,7 +16,7 @@ concurrency:
 jobs:
   sentinel:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,10 +49,20 @@ jobs:
         continue-on-error: true
         run: npm run build:install-release
 
+      - name: Deterministic fault and recovery contract
+        id: fault
+        continue-on-error: true
+        run: npm run fault:contract
+
       - name: Release readiness contract
         id: readiness
         continue-on-error: true
         run: npm run release:readiness
+
+      - name: Source release certification
+        id: certification
+        continue-on-error: true
+        run: npm run certify
 
       - name: Summarize Sentinel result
         id: summary
@@ -74,7 +84,9 @@ jobs:
             echo "| api | ${{ steps.api.outcome }} |"
             echo "| audit | ${{ steps.audit.outcome }} |"
             echo "| package | ${{ steps.package.outcome }} |"
+            echo "| fault | ${{ steps.fault.outcome }} |"
             echo "| readiness | ${{ steps.readiness.outcome }} |"
+            echo "| certification | ${{ steps.certification.outcome }} |"
           } > .taskrail/sentinel-summary.md
           for result in \
             "${{ steps.install.outcome }}" \
@@ -82,7 +94,9 @@ jobs:
             "${{ steps.api.outcome }}" \
             "${{ steps.audit.outcome }}" \
             "${{ steps.package.outcome }}" \
-            "${{ steps.readiness.outcome }}"; do
+            "${{ steps.fault.outcome }}" \
+            "${{ steps.readiness.outcome }}" \
+            "${{ steps.certification.outcome }}"; do
             if [ "$result" != "success" ]; then failed=true; fi
           done
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
@@ -96,7 +110,7 @@ jobs:
         run: |
           title='[TaskRail Sentinel] release readiness failed'
           body_file='.taskrail/sentinel-summary.md'
-          existing="$(gh issue list --state open --search '"'"'[TaskRail Sentinel] release readiness failed'"'"' in:title' --json number --jq '.[0].number // empty')"
+          existing="$(gh issue list --state open --search '[TaskRail Sentinel] release readiness failed in:title' --json number --jq '.[0].number // empty')"
           if [ -n "$existing" ]; then
             gh issue edit "$existing" --title "$title" --body-file "$body_file"
           else
@@ -109,7 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          existing="$(gh issue list --state open --search '"'"'[TaskRail Sentinel] release readiness failed'"'"' in:title' --json number --jq '.[0].number // empty')"
+          existing="$(gh issue list --state open --search '[TaskRail Sentinel] release readiness failed in:title' --json number --jq '.[0].number // empty')"
           if [ -n "$existing" ]; then
             gh issue close "$existing" --comment 'Sentinel is green again; all scheduled release-readiness gates passed.'
           fi
