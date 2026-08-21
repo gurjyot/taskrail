@@ -56,5 +56,5 @@ test('hook context is frozen and handlers are timeout bounded', async () => {
   const result = await bus.emit('health:passed', { data: { key: 'value' } });
   assert.equal(frozen, true);
   assert.equal(result.ok, true);
-  assert.match(result.outcomes.find((item) => item.name === 'slow')?.error ?? '', /timeout/i);
+  assert.match(result.outcomes.find((item) => item.name === 'slow')?.error ?? '', /timeout|timed out/i);
 });
