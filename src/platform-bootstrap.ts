@@ -55,7 +55,7 @@ export function defaultPlatformRoot() {
 export function releaseManifestUrl(version: string) {
   const override = process.env.TASKRAIL_PLATFORM_MANIFEST_URL;
   if (override) return override;
-  return `https://raw.githubusercontent.com/gurjyot/taskrail/v${version}/platform-install/manifest.json`;
+  return `https://github.com/gurjyot/taskrail/releases/download/v${version}/taskrail-platform-manifest.json`;
 }
 
 async function readTextSource(source: string) {
