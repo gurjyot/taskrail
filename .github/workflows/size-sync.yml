@@ -2,13 +2,14 @@ name: TaskRail README Size Sync
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: taskrail-size-sync-${{ github.ref }}
+  group: taskrail-size-sync-main
   cancel-in-progress: true
 
 jobs:
@@ -19,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -40,4 +41,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add README.md
           git commit -m 'docs: sync TaskRail package footprint'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin main
