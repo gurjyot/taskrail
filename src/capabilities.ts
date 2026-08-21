@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { CapabilityContract, CapabilityManifest, FrameworkManifest } from './types.js';
+import { findHardRegistryConflicts } from './capability-governance.js';
 
 export interface ManagedAutomation {
   name: string;
@@ -153,7 +154,20 @@ export async function loadCapabilities(roots: string[]): Promise<CapabilityLoadR
     }
     capabilities.push(items[0]);
   }
-  return { capabilities: capabilities.sort((a, b) => a.name.localeCompare(b.name)), errors };
+
+  const sorted = capabilities.sort((a, b) => a.name.localeCompare(b.name));
+  for (const conflict of await findHardRegistryConflicts(sorted)) {
+    const left = sorted.find((item) => item.name === conflict.left);
+    const right = sorted.find((item) => item.name === conflict.right);
+    if (!left || !right) continue;
+    errors.push({
+      name: conflict.left,
+      path: left.path,
+      message: `semantic capability conflict: ${conflict.left} vs ${conflict.right}: ${conflict.reason.join(', ')}`,
+      conflictingPaths: [left.path, right.path],
+    });
+  }
+  return { capabilities: sorted, errors };
 }
 
 export async function resolveCapability(name: string, roots: string[]): Promise<CapabilityResolutionResult> {
@@ -219,7 +233,6 @@ export async function listManagedAutomations(cwd = process.cwd()): Promise<Manag
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-
 export async function workspaceCapabilityRoots(cwd = process.cwd()) {
   const roots = unique([
     ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
@@ -230,18 +243,10 @@ export async function workspaceCapabilityRoots(cwd = process.cwd()) {
 
 export async function capabilityImpact(name: string, cwd = process.cwd()) {
   const manifests = await discoverAutomationManifests(cwd);
-  const consumers: ManagedAutomation[] = [];
+  const consumers: Array<{ name: string; manifestPath: string }> = [];
   for (const manifestPath of manifests) {
     const manifest = await readJson<FrameworkManifest>(manifestPath);
-    if (!manifest?.managed) continue;
-    if (!(manifest.capabilities ?? []).includes(name)) continue;
-    consumers.push({
-      name: manifest.name,
-      manifestPath,
-      runtime: manifest.runtime,
-      capabilities: unique(manifest.capabilities ?? []),
-      status: 'managed',
-    });
+    if ((manifest?.capabilities ?? []).includes(name)) consumers.push({ name: manifest!.name, manifestPath });
   }
   return consumers.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -1,37 +1,55 @@
 ---
 name: taskrail
-description: Operate TaskRail-managed automations with a minimal, capability-aware workflow.
+description: Build and operate TaskRail-managed automations using stable components and governed capabilities.
 ---
 # TaskRail
 
-Use TaskRail for managed automations.
+Use this skill for ordinary TaskRail-managed automation work.
 
-Core v2.0.4 control-plane commands:
-- `taskrail status`
-- `taskrail inspect <automation> --json`
-- `taskrail impact <name> --json`
+## Start cheap
 
-Before meaningful work:
+Read the automation manifest and run:
+
 - `taskrail doctor`
-- `taskrail list`
-- if capability work is involved: `taskrail capabilities`
-- if capability work is involved: `taskrail inspect <automation>`
+- `taskrail components`
+- `taskrail capability-find "<needed behavior>"`
 
-Capability rule:
-- check existing capabilities first
-- reuse a capability when its contract fits
-- create a new capability only when small reusable technical functionality is likely to help multiple automations
-- do not create capabilities for trivial helpers
-- do not create capabilities for automation-specific business logic
-- keep capabilities small, fast, testable, modular, and free of secrets
+Do not load every component/capability implementation. Read detailed docs only for shortlisted building blocks.
 
-Changing an automation:
-`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
+## Required design decision
 
-Changing a shared capability:
-- `taskrail capability <name>`
-- `taskrail impact <name>`
-- test the capability and relevant consumers after changing shared behavior
+Before substantial new automation or feature code, record exactly one capability decision:
 
-Restraint:
-- do not expand TaskRail core unless a real repeated problem cannot be solved with an automation, capability, adapter/helper, or the existing manifest/lifecycle
+- `REUSE:<capability>` — existing capability fits
+- `EXTEND:<capability>` — a small backwards-compatible operation should be added
+- `CREATE:<capability>` — materially distinct reusable integration/technical behavior is missing
+- `LOCAL:<reason>` — automation-specific business/domain logic
+
+Do not start implementation before this lookup and decision.
+
+## Components
+
+Use TaskRail components for generic infrastructure such as HTTP, config, logging, state, idempotency, retry, timeout, bounded concurrency, and safe files.
+
+Components are TaskRail-owned. Do not create or modify components during ordinary automation work. Import stable public APIs rather than TaskRail internals.
+
+## Capabilities
+
+- reuse the canonical active capability when it fits
+- extend rather than fork when the existing capability can safely cover the operation
+- use `taskrail init capability` only after discovery
+- never create semantically overlapping capabilities to avoid changing an existing contract
+- when generic integration logic would be copied into a second automation, evaluate promotion into a capability first
+- keep capabilities small, modular, testable, explicit about side effects/idempotency, and free of secrets
+
+For capability authoring or extension, switch to the `taskrail-capability` skill.
+
+## Delivery lifecycle
+
+`doctor -> check -> test -> plan -> ship -> health`
+
+Use `gate` and `verify-change` when reviewing risky/shared changes. Treat drift as reconciliation, not silent overwrite.
+
+## Restraint
+
+Business decisions stay in automations. Service/integration reuse belongs in capabilities. Generic stable infrastructure belongs in TaskRail components. Do not expand TaskRail core for automation-specific needs.
