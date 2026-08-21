@@ -7,6 +7,10 @@
   "engines": {
     "node": ">=22"
   },
+  "files": [
+    "core.mjs",
+    "server.mjs"
+  ],
   "bin": {
     "taskrail-mcp": "./server.mjs"
   },
