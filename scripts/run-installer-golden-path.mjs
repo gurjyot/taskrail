@@ -20,6 +20,11 @@ function executable(bin) {
   return shims.has(bin.toLowerCase()) ? `${bin}.cmd` : bin;
 }
 
+function windowsCommandLine(bin, args) {
+  const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
+  return [quote(bin), ...args.map(quote)].join(' ');
+}
+
 const server = createServer(async (request, response) => {
   try {
     const file = safePath(request.url || '/');
@@ -68,8 +73,14 @@ if (process.platform === 'win32') {
 
 function run(bin, binArgs) {
   const resolvedBin = executable(bin);
+  let spawnBin = resolvedBin;
+  let spawnArgs = binArgs;
+  if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(resolvedBin)) {
+    spawnBin = process.env.ComSpec || 'cmd.exe';
+    spawnArgs = ['/d', '/s', '/c', windowsCommandLine(resolvedBin, binArgs)];
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn(resolvedBin, binArgs, { cwd: root, env, stdio: 'inherit', shell: false });
+    const child = spawn(spawnBin, spawnArgs, { cwd: root, env, stdio: 'inherit', shell: false });
     child.once('error', reject);
     child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${resolvedBin} exited with ${code}`)));
   });
