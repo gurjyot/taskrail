@@ -1,6 +1,6 @@
 {
   "name": "taskrail-template",
-  "taskrailCompatibility": "2.0.x",
+  "taskrailCompatibility": "3.0.x",
   "profile": "smg-node-timer@1",
   "runtime": "node",
   "managed": true,
