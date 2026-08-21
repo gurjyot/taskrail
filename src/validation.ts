@@ -1,6 +1,11 @@
+import path from 'node:path';
 import type { FrameworkConfig } from './types.js';
 
 const allowedChecks = new Set(['validation', 'test', 'build', 'health', 'drift', 'migrate']);
+
+function hasDuplicates(values: string[]) {
+  return new Set(values).size !== values.length;
+}
 
 export function validateConfig(config: FrameworkConfig): string[] {
   const errors: string[] = [];
@@ -13,7 +18,10 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (!config.manifest.testCommand) errors.push('manifest.testCommand is required');
   if (config.manifest.requiredChecks && !config.manifest.requiredChecks.every((check) => allowedChecks.has(check))) errors.push('manifest.requiredChecks contains an unsupported value');
   if (config.manifest.protectedPaths && !config.manifest.protectedPaths.every((p) => typeof p === 'string' && p.trim().length > 0)) errors.push('manifest.protectedPaths must contain non-empty strings');
+  if (config.manifest.components && !config.manifest.components.every((component) => typeof component === 'string' && component.trim().length > 0)) errors.push('manifest.components must contain non-empty strings');
+  if (config.manifest.components && hasDuplicates(config.manifest.components)) errors.push('manifest.components must not contain duplicates');
   if (config.manifest.capabilities && !config.manifest.capabilities.every((cap) => typeof cap === 'string' && cap.trim().length > 0)) errors.push('manifest.capabilities must contain non-empty strings');
+  if (config.manifest.capabilities && hasDuplicates(config.manifest.capabilities)) errors.push('manifest.capabilities must not contain duplicates');
   if (config.manifest.capabilityRoots && !config.manifest.capabilityRoots.every((root) => typeof root === 'string' && root.trim().length > 0)) errors.push('manifest.capabilityRoots must contain non-empty strings');
   if ('requiredFiles' in (config.manifest as any)) errors.push('manifest.requiredFiles is not supported; use manifest.requiredSharedFiles');
   if (config.manifest.requiredSharedFiles && !config.manifest.requiredSharedFiles.every((file) => (typeof file === 'string' && file.trim().length > 0) || (typeof file === 'object' && typeof file.path === 'string' && file.path.trim().length > 0))) errors.push('manifest.requiredSharedFiles must contain non-empty paths');
@@ -39,6 +47,15 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (resources?.cpuQuotaPercent !== undefined && (!Number.isFinite(resources.cpuQuotaPercent) || resources.cpuQuotaPercent <= 0 || resources.cpuQuotaPercent > 1000)) errors.push('manifest.resources.cpuQuotaPercent must be > 0 and <= 1000');
   if (resources?.tasksMax !== undefined && (!Number.isInteger(resources.tasksMax) || resources.tasksMax < 1)) errors.push('manifest.resources.tasksMax must be an integer >= 1');
   if (resources?.nice !== undefined && (!Number.isInteger(resources.nice) || resources.nice < -20 || resources.nice > 19)) errors.push('manifest.resources.nice must be between -20 and 19');
+
+  const isolation = config.manifest.isolation;
+  if (isolation?.level && !['standard', 'strict'].includes(isolation.level)) errors.push('manifest.isolation.level must be standard or strict');
+  if (isolation?.writablePaths && !isolation.writablePaths.every((value) => typeof value === 'string' && value.trim().length > 0)) errors.push('manifest.isolation.writablePaths must contain non-empty strings');
+  if (isolation?.writablePaths && hasDuplicates(isolation.writablePaths)) errors.push('manifest.isolation.writablePaths must not contain duplicates');
+  if (isolation?.level === 'strict') {
+    if (config.manifest.statePath && !path.isAbsolute(config.manifest.statePath)) errors.push('strict isolation requires an absolute manifest.statePath');
+    if ((isolation.writablePaths ?? []).some((value) => !path.isAbsolute(value))) errors.push('strict isolation requires absolute isolation.writablePaths');
+  }
 
   return errors;
 }

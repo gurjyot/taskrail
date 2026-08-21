@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "taskrailVersion": "2.0.8",
+  "platforms": {
+    "linux": {
+      "id": "linux",
+      "file": "linux/adapter.mjs",
+      "sha256": "ee0498cdb3659771ab8c21b869325caef9968a664eb271fd98234a5e7c802019",
+      "bytes": 263
+    },
+    "darwin": {
+      "id": "macos",
+      "file": "darwin/adapter.mjs",
+      "sha256": "fbecd65e6365e2de1121318f6ef8474c0494fd823c7ba0a43503889f91ad1921",
+      "bytes": 241
+    },
+    "win32": {
+      "id": "windows",
+      "file": "win32/adapter.mjs",
+      "sha256": "7f571b0eec8b2295b3fbb82aa8e235fe0a5e875e482207d5c6adfe24d4718459",
+      "bytes": 266
+    }
+  }
+}
