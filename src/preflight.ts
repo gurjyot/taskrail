@@ -2,7 +2,7 @@ import { access, constants, mkdir, readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { FrameworkManifest } from './types.js';
-import { isCompatible, resolvePaths } from './config.js';
+import { isCompatible, isTaskRailCompatible, resolvePaths } from './config.js';
 import { TASKRAIL_VERSION } from './version.js';
 import { capabilityRootsFor, discoverAutomationManifests, loadCapabilities } from './capabilities.js';
 import { detectEnvironment, appliesToEnvironment } from './env.js';
@@ -20,7 +20,7 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
   const push = (name: string, ok: boolean, message?: string) => checks.push({ name, ok, message });
   const updatePause = await readUpdatePause(manifest, cwd);
   push('update-pause', !updatePause, updatePause ? `${updatePause.reason}${updatePause.targetName ? ` (${updatePause.targetKind}:${updatePause.targetName})` : ''}` : 'not paused');
-  push('compatibility', isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility));
+  push('compatibility', isTaskRailCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility));
   push('sourceDir', await stat(paths.sourceDir).then(() => true, () => false));
   if (envInfo.name === 'production') {
     push('deployDir', await stat(paths.deployDir).then(() => true, () => false));

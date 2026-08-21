@@ -25,6 +25,7 @@ test('init automation creates a runnable thin Node scaffold', async () => {
     const target = path.join(root, 'demo-agent');
     const manifest = JSON.parse(await readFile(path.join(target, 'automation.json'), 'utf8'));
     assert.equal(manifest.profile, 'smg-node-timer@1');
+    assert.equal(manifest.taskrailCompatibility, '3.0.x');
     assert.deepEqual(manifest.capabilities, []);
     execFileSync(process.execPath, ['--test', 'tests/*.test.js'], { cwd: target, shell: true, stdio: 'pipe' });
   } finally {
