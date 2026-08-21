@@ -96,8 +96,9 @@ export async function recoverInterruptedAutomation(
   migrationCompatible = !manifest.migrations,
 ): Promise<RecoveryResumeResult> {
   let checkpoint = await readUpdateCheckpoint(cwd, 'automation', manifest.name);
-  if (!checkpoint || ['committed', 'aborted'].includes(checkpoint.phase)) {
-    return { ok: true, action: 'none', checkpoint: checkpoint || undefined };
+  if (!checkpoint) return { ok: true, action: 'none' };
+  if (['committed', 'aborted'].includes(checkpoint.phase)) {
+    return { ok: true, action: 'none', checkpoint };
   }
   if (!checkpoint.lastKnownGoodRelease || !checkpoint.lastKnownGoodReleasePath) {
     if (checkpoint.phase !== 'recovery-required') {
@@ -158,7 +159,12 @@ export async function recoverInterruptedAutomation(
     return { ok: true, action: 'restored', checkpoint };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    checkpoint = await transitionUpdate(cwd, 'automation', manifest.name, 'recovery-required', `recovery restore failed: ${reason}`).catch(() => checkpoint);
+    const fallback = checkpoint;
+    try {
+      checkpoint = await transitionUpdate(cwd, 'automation', manifest.name, 'recovery-required', `recovery restore failed: ${reason}`);
+    } catch {
+      checkpoint = fallback;
+    }
     return { ok: false, action: 'recovery-required', reason, checkpoint };
   }
 }
