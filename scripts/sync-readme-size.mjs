@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -8,16 +9,12 @@ const checkOnly = process.argv.includes('--check');
 const input = process.argv.find((arg) => arg.endsWith('.json') && !arg.startsWith('--'));
 
 function packMetadata() {
-  if (input) return JSON.parse(requireText(input))[0];
+  if (input) return JSON.parse(readFileSync(path.resolve(root, input), 'utf8'))[0];
   const npmExecPath = process.env.npm_execpath;
   const raw = npmExecPath
     ? execFileSync(process.execPath, [npmExecPath, 'pack', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' })
     : execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' });
   return JSON.parse(raw)[0];
-}
-
-function requireText(file) {
-  return require('node:fs').readFileSync(path.resolve(root, file), 'utf8');
 }
 
 function kib(bytes) {
