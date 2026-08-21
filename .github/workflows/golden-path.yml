@@ -70,7 +70,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Measure package and enforce footprint budget
+      - name: Measure package and enforce performance budget
         run: |
           npm pack --ignore-scripts --json > pack.json
-          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) }"
+          node --input-type=module -e "import fs from 'node:fs'; import { assessPerformanceBudget } from './dist/src/performance-budget.js'; const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); const report=assessPerformanceBudget({compressedBytes:p.size,unpackedBytes:p.unpackedSize}); console.log(JSON.stringify(report,null,2)); if(!report.ok) process.exit(1)"
