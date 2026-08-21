@@ -15,6 +15,12 @@ export {
 export { checkCapability } from '../capability-check.js';
 export { buildUsageGraph, usageImpact } from '../usage-graph.js';
 export { classifyVersionChange, planSharedUpdate } from '../update-plan.js';
+export {
+  TASKRAIL_ECOSYSTEM_CONTRACT,
+  validateHubCapabilityPublication,
+  validateAutomationPublication,
+  ecosystemRepositoryRules,
+} from '../ecosystem-contract.js';
 export type {
   CapabilityContract,
   CapabilityManifest,
@@ -34,3 +40,8 @@ export type {
   ProfileUsageNode,
 } from '../usage-graph.js';
 export type { SharedUpdatePlan } from '../update-plan.js';
+export type {
+  EcosystemRepositoryRole,
+  EcosystemCheckResult,
+  HubCapabilityPublication,
+} from '../ecosystem-contract.js';
