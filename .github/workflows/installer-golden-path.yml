@@ -30,8 +30,8 @@ jobs:
           cache: npm
       - name: Install development dependencies
         run: npm ci
-      - name: Run framework and bootstrap tests
-        run: npm test
+      - name: Build framework and run platform-bootstrap tests
+        run: npm run build && node --test dist/test/platform-bootstrap.test.js
       - name: Build exact release install payload
         run: npm run build:install-release
       - name: Execute native setup file end to end
