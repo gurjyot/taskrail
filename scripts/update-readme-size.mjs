@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 
-const packFile = process.argv[2] || 'pack.json';
+const checkOnly = process.argv.includes('--check');
+const packFile = process.argv.find((arg) => arg.endsWith('.json')) || 'pack.json';
 const pack = JSON.parse(await readFile(packFile, 'utf8'))[0];
 if (!pack || !Number.isFinite(pack.size) || !Number.isFinite(pack.unpackedSize)) {
   throw new Error('invalid npm pack metadata');
@@ -18,6 +19,15 @@ const headlinePattern = /<!-- taskrail-size:start -->[\s\S]*?<!-- taskrail-size:
 const footprintPattern = /<!-- taskrail-footprint:start -->[\s\S]*?<!-- taskrail-footprint:end -->/;
 if (!headlinePattern.test(readme)) throw new Error('README headline size markers missing');
 if (!footprintPattern.test(readme)) throw new Error('README footprint markers missing');
-readme = readme.replace(headlinePattern, headline).replace(footprintPattern, footprint);
-await writeFile(readmePath, readme);
-console.log(JSON.stringify({ compressedBytes: pack.size, unpackedBytes: pack.unpackedSize, compressedKiB, unpackedKiB }));
+const next = readme.replace(headlinePattern, headline).replace(footprintPattern, footprint);
+if (checkOnly) {
+  if (next !== readme) {
+    console.error(`README footprint is stale. Expected ~${compressedKiB} KiB compressed / ~${unpackedKiB} KiB unpacked.`);
+    process.exitCode = 1;
+  } else {
+    console.log(JSON.stringify({ current: true, compressedBytes: pack.size, unpackedBytes: pack.unpackedSize, compressedKiB, unpackedKiB }));
+  }
+} else {
+  await writeFile(readmePath, next);
+  console.log(JSON.stringify({ changed: next !== readme, compressedBytes: pack.size, unpackedBytes: pack.unpackedSize, compressedKiB, unpackedKiB }));
+}
