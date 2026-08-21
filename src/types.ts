@@ -53,6 +53,20 @@ export interface DeployStrategy {
   releaseRoot?: string;
 }
 
+export interface RetryPolicy {
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  jitter?: boolean;
+}
+
+export interface ExecutionPolicy {
+  timeoutMs?: number;
+  maxConcurrency?: number;
+  staleAfterMs?: number;
+  retry?: RetryPolicy;
+}
+
 export interface FrameworkManifest {
   name: string;
   taskrailCompatibility?: string;
@@ -86,6 +100,7 @@ export interface FrameworkManifest {
   deployStrategy?: DeployStrategy;
   serviceManager?: ServiceManagerDefinition;
   migrations?: MigrationHooks;
+  execution?: ExecutionPolicy;
   statePath?: string;
   database?: {
     required?: boolean;
