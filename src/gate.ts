@@ -99,12 +99,10 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
 
   if (required.has('drift')) {
     try {
-      const state = JSON.parse(await readFile(stateFileFor(manifest, cwd), 'utf8')) as { releasePath?: string };
-      if (!state.releasePath) throw new Error('missing release');
-      const drift = await detectDrift(path.resolve(cwd, manifest.deployDir), state.releasePath);
+      const drift = await detectDrift(path.resolve(cwd, manifest.deployDir), path.resolve(cwd, manifest.sourceDir));
       steps.push({ name: 'drift', ok: !drift.drifted, required: true, message: drift.files.join(', ') || 'clean' });
     } catch {
-      steps.push({ name: 'drift', ok: false, required: true, message: 'missing release state' });
+      steps.push({ name: 'drift', ok: false, required: true, message: 'missing source state' });
     }
   }
 

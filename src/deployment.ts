@@ -288,7 +288,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     if (await pathExists(target)) {
       const state = await readState(stateFile);
       if (state?.releasePath) {
-        const drift = await detectDrift(target, state.releasePath);
+        const drift = await detectDrift(target, source);
         if (drift.drifted) return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
       }
       await rename(target, backup);
