@@ -12,11 +12,14 @@ const versionMatch = versionSource.match(/TASKRAIL_VERSION\s*=\s*['"]([^'"]+)['"
 const platformManifest = JSON.parse(await readFile(path.join(root, 'platform-install', 'manifest.json'), 'utf8'));
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const architecture = await readFile(path.join(root, 'docs', 'taskrail-3-reliability-architecture.md'), 'utf8');
+const diagnosticsSecurity = await readFile(path.join(root, 'docs', 'diagnostics-and-security.md'), 'utf8');
 
 add('version:package-source', versionMatch?.[1] === pkg.version, `${pkg.version} / ${versionMatch?.[1] || 'missing'}`);
 add('version:platform-manifest', platformManifest.taskrailVersion === pkg.version, `${pkg.version} / ${platformManifest.taskrailVersion}`);
 add('runtime-dependencies:none', !pkg.dependencies || Object.keys(pkg.dependencies).length === 0, String(Object.keys(pkg.dependencies || {}).length));
 add('package:platform-assets-excluded', !pkg.files?.some((item) => String(item).startsWith('platform-install') || String(item).startsWith('installers')), JSON.stringify(pkg.files || []));
+add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
+add('check:strict-security', String(pkg.scripts?.check || '').includes('security audit --strict --root src'), 'npm run check');
 
 for (const file of [
   'installers/taskrail-install-linux.sh',
@@ -25,10 +28,19 @@ for (const file of [
   'platform-install/linux/adapter.mjs',
   'platform-install/darwin/adapter.mjs',
   'platform-install/win32/adapter.mjs',
+  'src/diagnostics.ts',
+  'src/security.ts',
+  'src/agent-surface.ts',
+  'src/recovery-resume.ts',
+  'test/diagnostics-security.test.ts',
+  'test/agent-surface.test.ts',
+  'test/platform-bootstrap.test.ts',
+  'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
   '.github/workflows/installer-golden-path.yml',
   '.github/workflows/release.yml',
+  '.github/workflows/sentinel.yml',
   'skills/taskrail/SKILL.md',
   'skills/taskrail-capability/SKILL.md',
   'skills/taskrail-core/SKILL.md',
@@ -59,7 +71,18 @@ for (const phrase of [
   'Sentinel',
 ]) add(`architecture:${phrase}`, architecture.includes(phrase), phrase);
 
-for (const exportName of ['./components', './capabilities', './manifest', './testing', './control']) {
+for (const phrase of [
+  'TaskRail core does not transmit telemetry',
+  'private GitHub repository',
+  'authorized automation',
+  'parameterized SQL',
+  'stdio',
+  'read: allowed',
+  'write: denied',
+  'control/deployment/recovery: denied',
+]) add(`security-doc:${phrase}`, diagnosticsSecurity.includes(phrase), phrase);
+
+for (const exportName of ['./components', './capabilities', './manifest', './testing', './control', './agent']) {
   add(`public-api:${exportName}`, Boolean(pkg.exports?.[exportName]), exportName);
 }
 
@@ -73,7 +96,7 @@ const report = {
   failed: checks.filter((item) => !item.ok).length,
   checks,
 };
-await mkdir(path.join(root, '.taskrail'), { recursive: true });
-await writeFile(path.join(root, '.taskrail', 'release-readiness.json'), `${JSON.stringify(report, null, 2)}\n`);
+await mkdir(path.join(root, '.taskrail'), { recursive: true, mode: 0o700 });
+await writeFile(path.join(root, '.taskrail', 'release-readiness.json'), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
 console.log(JSON.stringify(report, null, 2));
 if (!ok) process.exitCode = 1;
