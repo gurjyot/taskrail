@@ -19,7 +19,8 @@ API="${TASKRAIL_RELEASE_API:-https://api.github.com/repos/gurjyot/taskrail/relea
 curl --fail --location --silent --show-error --retry 5 --retry-all-errors --connect-timeout 10 --max-time 120 "$API" -o "$TMP/release.json"
 TAG="$(node -e "const r=require(process.argv[1]); if(!r.tag_name) process.exit(1); process.stdout.write(r.tag_name)" "$TMP/release.json")"
 VERSION="${TAG#v}"
-BASE="https://github.com/gurjyot/taskrail/releases/download/$TAG"
+BASE="${TASKRAIL_RELEASE_BASE:-https://github.com/gurjyot/taskrail/releases/download/$TAG}"
+PLATFORM_MANIFEST="${TASKRAIL_PLATFORM_MANIFEST_URL:-https://raw.githubusercontent.com/gurjyot/taskrail/$TAG/platform-install/manifest.json}"
 
 curl --fail --location --silent --show-error --retry 5 --retry-all-errors --connect-timeout 10 --max-time 120 "$BASE/taskrail-install-manifest.json" -o "$TMP/install-manifest.json"
 ASSET="$(node -e "const m=require(process.argv[1]); if(m.taskrailVersion!==process.argv[2]) process.exit(2); process.stdout.write(m.framework.file)" "$TMP/install-manifest.json" "$VERSION")"
@@ -30,7 +31,7 @@ ACTUAL="$(node -e "const fs=require('fs'),c=require('crypto'); process.stdout.wr
 [[ "$ACTUAL" == "$EXPECTED" ]] || { echo "TaskRail package checksum verification failed." >&2; exit 4; }
 
 npm install -g "$TMP/$ASSET"
-TASKRAIL_PLATFORM_MANIFEST_URL="https://raw.githubusercontent.com/gurjyot/taskrail/$TAG/platform-install/manifest.json" taskrail-platform-bootstrap install
+TASKRAIL_PLATFORM_MANIFEST_URL="$PLATFORM_MANIFEST" taskrail-platform-bootstrap install
 
 taskrail --help >/dev/null
 taskrail-platform-bootstrap status >/dev/null
