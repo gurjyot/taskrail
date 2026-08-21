@@ -1,13 +1,13 @@
 {
   "name": "taskrail-template",
-  "taskrailCompatibility": "2.0.x",
-  "entry": "src/index.ts",
+  "taskrailCompatibility": "2.1.x",
+  "profile": "smg-node-timer@1",
   "runtime": "node",
   "managed": true,
   "sourceDir": "src",
-  "deployDir": "deploy",
-  "validationCommand": "true",
-  "testCommand": "true",
+  "validationCommand": "node --check src/index.js",
+  "testCommand": "node --test tests/*.test.js",
   "requiredSharedFiles": [],
-  "backup": { "retain": 3 }
+  "requiredChecks": ["validation", "test", "health"],
+  "healthCheck": { "type": "command", "command": "node --check src/index.js" }
 }
