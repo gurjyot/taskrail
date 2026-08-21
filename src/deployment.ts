@@ -160,17 +160,17 @@ async function readState(stateFile: string): Promise<DeployState | null> {
 }
 
 async function writeState(stateFile: string, state: DeployState) {
-  await writeFile(stateFile, JSON.stringify(state, null, 2));
+  await writeFile(stateFile, JSON.stringify(state, null, 2), { mode: 0o600 });
 }
 
 async function writeReceipt(workspace: string, receipt: Record<string, unknown>) {
   const dir = path.join(workspace, '.taskrail', 'receipts');
-  await mkdir(dir, { recursive: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
   const latest = path.join(dir, 'latest.json');
   const dated = path.join(dir, `${String(receipt.releaseId || 'unknown')}.json`);
   const body = JSON.stringify(receipt, null, 2);
-  await writeFile(latest, body);
-  await writeFile(dated, body);
+  await writeFile(latest, body, { mode: 0o600 });
+  await writeFile(dated, body, { mode: 0o600 });
   return latest;
 }
 
@@ -225,345 +225,276 @@ async function pruneReleases(releaseRoot: string, preserve: Set<string>, retain 
     }
   }
   removable.sort((a, b) => b.mtime - a.mtime);
-  for (const old of removable.slice(retain)) await rm(old.target, { recursive: true, force: true });
+  const keep = Math.max(0, retain);
+  for (const old of removable.slice(keep)) await rm(old.target, { recursive: true, force: true });
 }
 
-async function cleanupOwnedArtifacts(workspace: string, manifest: FrameworkManifest, releaseRoot: string, state: DeployState | null, preserveReleasePath?: string) {
-  await rm(path.join(workspace, `${manifest.name}.candidate`), { recursive: true, force: true }).catch(() => undefined);
-  await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
-  const preserve = new Set<string>([preserveReleasePath, state?.releasePath, state?.previousReleasePath, state?.lastKnownGoodReleasePath].filter(Boolean) as string[]);
-  await pruneReleases(releaseRoot, preserve, manifest.backup?.retain ?? 0);
+async function rollbackTarget(target: string, backup?: string) {
+  if (!backup || !(await pathExists(backup))) return { ok: false, message: 'backup is missing' };
+  await rm(target, { recursive: true, force: true });
+  await rename(backup, target);
+  return { ok: true, message: 'rollback complete' };
 }
 
-async function currentLivePath(target: string) {
-  if (await isSymlink(target)) {
-    const pointer = await readlink(target);
-    return path.resolve(path.dirname(target), pointer);
-  }
-  return target;
+async function rollbackReleaseSymlink(target: string, previousReleasePath?: string) {
+  if (!previousReleasePath || !(await pathExists(previousReleasePath))) return { ok: false, message: 'previous release is missing' };
+  await rm(target, { recursive: true, force: true });
+  await symlink(previousReleasePath, target, 'dir');
+  return { ok: true, message: 'release symlink restored' };
 }
 
-async function activateRelease(target: string, releasePath: string, backupPath: string) {
-  const targetExists = await pathExists(target);
-  let previousReleasePath: string | undefined;
-  if (targetExists) {
-    previousReleasePath = await currentLivePath(target);
-    if (await isSymlink(target)) await unlink(target);
-    else await rename(target, backupPath);
-  }
-  await symlink(releasePath, target, 'dir');
-  return { previousReleasePath };
+async function writeFailureReport(workspace: string, report: FailureReport) {
+  const dir = path.join(workspace, '.taskrail', 'failures');
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${Date.now()}-${report.stage}.json`);
+  await writeFile(file, JSON.stringify(report, null, 2));
+  return file;
 }
 
-async function restoreActivation(target: string, backupPath: string, previousReleasePath?: string) {
-  if (await isSymlink(target)) await unlink(target).catch(() => undefined);
-  else await rm(target, { recursive: true, force: true });
-  if (previousReleasePath && await pathExists(previousReleasePath)) {
-    await symlink(previousReleasePath, target, 'dir');
-    return;
-  }
-  if (await pathExists(backupPath)) await rename(backupPath, target);
-}
-
-export async function loadPlugin(modulePath: string): Promise<AutomationPlugin> {
-  const mod = await import(pathToFileURL(path.resolve(modulePath)).href);
-  return mod.default ?? mod.plugin ?? mod;
-}
-
-export async function loadPlugins(manifest: FrameworkManifest): Promise<AutomationPlugin[]> {
-  const refs = manifest.plugins ?? [];
+export async function loadPlugins(manifest: FrameworkManifest) {
   const plugins: AutomationPlugin[] = [];
-  for (const ref of refs) plugins.push(await loadPlugin(ref.module));
+  for (const ref of manifest.plugins ?? []) {
+    const target = path.isAbsolute(ref.module) ? ref.module : path.resolve(ref.module);
+    const module = await import(pathToFileURL(target).href);
+    const plugin = (module.default ?? module.plugin) as AutomationPlugin;
+    if (!plugin?.name) throw new Error(`invalid plugin: ${ref.name}`);
+    plugins.push(plugin);
+  }
   return plugins;
 }
 
-export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
-  const checks: Array<Promise<{ ok: boolean; tier: 'process' | 'integration' | 'end-to-end'; details?: string }>> = [];
-  if (health) {
-    checks.push((async () => {
-      if (health.type === 'command') {
-        const result = await runCommand(health.command, cwd);
-        return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
-      }
-      if (health.type === 'file') return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
-      if (health.type === 'http') {
-        const response = await fetch(health.url);
-        return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
-      }
-      return { ok: true, tier: 'process' as const };
-    })());
+export async function runHealthCheck(
+  definition: HealthCheckDefinition | undefined,
+  cwd: string,
+  plugin?: AutomationPlugin,
+  command?: string,
+): Promise<{ ok: boolean; details?: string }> {
+  if (command) {
+    const result = await runCommand(command, cwd);
+    if (!result.ok) return { ok: false, details: result.error || `health command exited ${result.code}` };
   }
-  if (runtimeHealthCommand) {
-    checks.push((async () => {
-      const result = await runCommand(runtimeHealthCommand, cwd);
-      return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
-    })());
+  if (!definition) return plugin?.healthCheck ? await plugin.healthCheck() : { ok: true };
+  if (definition.type === 'file') return { ok: await pathExists(path.resolve(cwd, definition.path)), details: definition.path };
+  if (definition.type === 'command') {
+    const result = await runCommand(definition.command, cwd);
+    return { ok: result.ok, details: result.error || `exit ${result.code}` };
   }
-  if (plugin?.healthCheck) {
-    checks.push((async () => {
-      const result = await plugin.healthCheck!();
-      return { ok: result.ok, tier: 'integration' as const, details: result.details };
-    })());
+  if (definition.type === 'http') {
+    try {
+      const response = await fetch(definition.url);
+      const expected = definition.expectStatus ?? 200;
+      return { ok: response.status === expected, details: `status ${response.status}` };
+    } catch (error) {
+      return { ok: false, details: error instanceof Error ? error.message : String(error) };
+    }
   }
-  if (!checks.length) return { ok: true, tier: 'process' as const };
-  const results = await Promise.all(checks);
-  return results.find((result) => !result.ok) ?? results[0];
+  return { ok: false, details: 'unknown health check' };
 }
 
-async function migrationPreflight(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.checkCommand) return { ok: true, code: 0 };
-  return runCommand(manifest.migrations.checkCommand, cwd);
-}
-
-async function migrationApply(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.applyCommand) return { ok: true, code: 0 };
-  return runCommand(manifest.migrations.applyCommand, cwd);
-}
-
-function failure(report: FailureReport) {
-  return buildFailureReport(report);
-}
-
-export async function check(manifest: FrameworkManifest, options: ManifestRunOptions = {}): Promise<CheckResult> {
-  const preflightResult = await preflight(manifest, options.cwd || process.cwd());
-  return { ok: preflightResult.ok, checks: preflightResult.checks };
-}
-
-export async function doctor(manifest: FrameworkManifest, options: ManifestRunOptions = {}): Promise<DoctorResult> {
-  const cwd = options.cwd || process.cwd();
-  const envInfo = detectEnvironment(manifest, cwd);
-  const preflightResult = await preflight(manifest, cwd);
-  const deployTarget = path.resolve(cwd, manifest.deployDir);
-  const lockDir = path.join(path.dirname(deployTarget), '.taskrail', 'lock');
-  const lock = await acquireLock(lockDir, { operation: 'doctor' });
-  if (lock.ok) await releaseLock(lockDir);
-  const stateFile = path.join(path.dirname(deployTarget), `${manifest.name}.deploy-state.json`);
-  const state = await readState(stateFile);
-  const latestHealthyRelease = state?.releasePath;
-  const livePath = await currentLivePath(deployTarget).catch(() => deployTarget);
-  const pluginNames = await loadPlugins(manifest).then((plugins) => plugins.map((p) => p.name)).catch(() => []);
-  const drift = state?.releasePath && (await pathExists(livePath)) ? await detectDrift(livePath, state.releasePath, manifest) : undefined;
-  const git = inspectGitState(cwd);
-  const deployable = preflightResult.ok && isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility) && (!drift || !drift.drifted);
-  return {
-    version: TASKRAIL_VERSION,
-    compatible: isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility),
-    manifestValid: preflightResult.ok,
-    project: manifest.name,
-    environment: envInfo,
-    runtimeVersion: process.version,
-    requiredSharedFiles: await Promise.all((manifest.requiredSharedFiles ?? []).map(async (file) => {
-      const value = typeof file === 'string' ? file : file.path;
-      return { file: value, ok: await pathExists(value), detail: value };
-    })),
-    envPresence: (manifest.requiredEnv ?? []).map((name) => ({ name, ok: Boolean(process.env[name]) })),
-    lockState: lock.ok ? { locked: false } : { locked: true, holder: lock.holder },
-    deployTarget,
-    plugins: pluginNames,
-    latestHealthyRelease,
-    drift,
-    healthReady: Boolean(manifest.healthCheck || manifest.healthChecks?.length || manifest.healthCommand),
-    lastDeploymentResult: state ? 'deployed' : 'unknown',
-    git,
-    deployable,
-  };
+export async function rollback(state: DeployState, plugin?: AutomationPlugin): Promise<{ ok: boolean; message: string }> {
+  try {
+    if (state.previousReleasePath) {
+      const restored = await rollbackReleaseSymlink(state.targetPath, state.previousReleasePath);
+      if (!restored.ok) return restored;
+    } else {
+      const restored = await rollbackTarget(state.targetPath, state.backupPath);
+      if (!restored.ok) return restored;
+    }
+    await plugin?.rollback?.();
+    return { ok: true, message: 'rollback complete' };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export async function safeDeploy(manifest: FrameworkManifest, plugin?: AutomationPlugin, options: DeployOptions = {}): Promise<DeployOutcome> {
   const projectRoot = options.projectRoot || process.cwd();
-  const envInfo = detectEnvironment(manifest, projectRoot);
-  const paths = resolvePaths(manifest, projectRoot);
-  const source = paths.sourceDir;
-  const target = paths.deployDir;
+  const resolved = resolvePaths(manifest, projectRoot);
+  const sourceDir = resolved.sourceDir;
+  const target = resolved.deployDir;
   const workspace = path.dirname(target);
-  const stateFile = path.join(workspace, `${manifest.name}.deploy-state.json`);
-  const lockDir = options.lockDir || path.join(workspace, '.taskrail', 'lock');
-  const historyFile = options.historyFile || path.join(workspace, '.taskrail', 'history.jsonl');
-  const releaseRoot = manifest.deployStrategy?.releaseRoot ? path.resolve(projectRoot, manifest.deployStrategy.releaseRoot) : (options.releasesDir || path.join(workspace, '.taskrail', 'releases'));
   const candidate = path.join(workspace, `${manifest.name}.candidate`);
   const backup = path.join(workspace, `${manifest.name}.backup-${Date.now()}`);
-  const strategy = manifest.deployStrategy?.type || 'replace-in-place';
-  const git = inspectGitState(projectRoot);
-  const fingerprint = fingerprintInputs(manifest, git);
-
-  if (envInfo.name === 'production') {
-    if (!git.available || !git.sha) return { deployed: false, rolledBack: false, failure: 'production deploy requires git sha' };
-    if (!git.clean) return { deployed: false, rolledBack: false, failure: 'production deploy requires clean git tree' };
-  }
-
-  const buildCommand = runtimeInstallCommand(manifest);
-  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target, buildCommand };
-  const preflightResult = await preflight(resolvedManifest);
-  if (!preflightResult.ok) {
-    return {
-      deployed: false,
-      rolledBack: false,
-      failure: 'preflight failed',
-      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: 'preflight checks failed', rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),
-    };
-  }
-
-  const priorState = await readState(stateFile);
-  if (hasFrameworkCapability(manifest, 'change-detection') && priorState?.currentSha === git.sha && priorState?.currentFingerprint === fingerprint && priorState?.releasePath && await pathExists(target)) {
-    const existingReleasePath = priorState.releasePath;
-    const drift = await detectDrift(await currentLivePath(target).catch(() => target), existingReleasePath, manifest);
-    if (!drift.drifted) {
-      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-      if (health.ok) {
-        await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, priorState, existingReleasePath);
-        return { deployed: true, rolledBack: false, releaseId: priorState.currentReleaseId, releasePath: existingReleasePath, sha: git.sha };
+  const stateFile = path.join(workspace, `${manifest.name}.deploy-state.json`);
+  const releasesDir = options.releasesDir ?? (manifest.deployStrategy?.releaseRoot ? path.resolve(projectRoot, manifest.deployStrategy.releaseRoot) : path.join(workspace, '.taskrail', 'releases'));
+  const historyFile = options.historyFile ?? path.join(workspace, '.taskrail', 'history.jsonl');
+  const lockDir = options.lockDir ?? path.join(workspace, '.taskrail', 'lock');
+  await acquireLock(lockDir, manifest.name);
+  try {
+    const git = inspectGitState(projectRoot);
+    const env = detectEnvironment(manifest, projectRoot);
+    const fingerprint = fingerprintInputs(manifest, git);
+    const priorState = await readState(stateFile);
+    const strategy = manifest.deployStrategy?.type || 'replace-in-place';
+    const noOp = priorState?.currentSha && git.sha && priorState.currentSha === git.sha && priorState.currentFingerprint === fingerprint && await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+    if (noOp?.ok) {
+      await appendAudit(historyFile, { at: new Date().toISOString(), project: manifest.name, action: 'deploy', status: 'noop', sha: git.sha, message: 'same revision and fingerprint already healthy' });
+      return { deployed: true, rolledBack: false, releaseId: priorState?.currentReleaseId, releasePath: priorState?.releasePath, sha: git.sha };
+    }
+    const change = await inspectChange(manifest, projectRoot, await loadPlugins(manifest).catch(() => []));
+    if (!change.deployAllowed) return { deployed: false, rolledBack: false, failure: `change blocked: ${change.risk}` };
+    const pre = await preflight(manifest, projectRoot);
+    if (!pre.ok) return { deployed: false, rolledBack: false, failure: 'preflight failed' };
+    const gate = await runGate(manifest, projectRoot, await loadPlugins(manifest).catch(() => []));
+    if (gate.verdict !== 'PASS') return { deployed: false, rolledBack: false, failure: `gate ${gate.verdict}` };
+    await rm(candidate, { recursive: true, force: true });
+    const exclude = [target, candidate, backup, releasesDir, historyFile, lockDir, stateFile];
+    await copyDir(sourceDir, candidate, exclude);
+    await stageCapabilities(manifest, projectRoot, candidate);
+    if (manifest.dependencyManager || manifest.buildCommand) {
+      const command = runtimeInstallCommand(manifest);
+      if (command) {
+        const built = await runCommand(command, candidate);
+        if (!built.ok) return { deployed: false, rolledBack: false, failure: built.error || `build failed (${built.code})` };
       }
     }
-  }
-
-  const lock = await acquireLock(lockDir, { operation: 'deploy', releaseId: git.sha || options.sourceRevision, cwd: projectRoot });
-  if (!lock.ok) {
-    return {
-      deployed: false,
-      rolledBack: false,
-      failure: `deployment locked by ${lock.holder || 'unknown'}`,
-      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'lock', category: 'locked', message: lock.holder || 'unknown', rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'wait for the lock holder to finish', environment: envInfo.name }),
-    };
-  }
-
-  try {
-    await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_attempted', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, sha: git.sha });
-    await rm(candidate, { recursive: true, force: true });
-    const sourceExcludes = Array.from(new Set([candidate, backup, stateFile, releaseRoot, historyFile, lockDir]));
-    await copyDir(source, candidate, sourceExcludes);
-    await stageCapabilities(manifest, projectRoot, candidate);
-
-    const validation = await runCommand(manifest.validationCommand, candidate);
-    if (!validation.ok) return { deployed: false, rolledBack: false, failure: validation.error || 'candidate validation failed' };
-    const tests = await runCommand(manifest.testCommand, candidate);
-    if (!tests.ok) return { deployed: false, rolledBack: false, failure: tests.error || 'candidate tests failed' };
-    if (buildCommand) {
-      const build = await runCommand(buildCommand, candidate);
-      if (!build.ok) return { deployed: false, rolledBack: false, failure: build.error || 'candidate build failed' };
+    if (manifest.validationCommand) {
+      const valid = await runCommand(manifest.validationCommand, candidate);
+      if (!valid.ok) return { deployed: false, rolledBack: false, failure: valid.error || `candidate validation failed (${valid.code})` };
     }
-    const migrateCheck = await migrationPreflight(manifest, candidate);
-    if (!migrateCheck.ok) return { deployed: false, rolledBack: false, failure: migrateCheck.error || 'migration preflight failed' };
-
-    const controlsEnabled = Boolean(manifest.requiredChecks?.length || manifest.protectedPaths?.length);
-    if (controlsEnabled) {
-      const liveGate = await runGate({ ...manifest, buildCommand }, projectRoot, plugin ? [plugin] : []);
-      if (liveGate.verdict !== 'PASS') return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
-      const change = await inspectChange(manifest, projectRoot);
-      if (!change.deployAllowed) return { deployed: false, rolledBack: false, failure: `protected change blocked: ${change.protectedPaths.join(', ') || 'unknown'}` };
-    }
-
-    const state = await readState(stateFile);
-    const livePath = await currentLivePath(target).catch(() => target);
-    if (state?.releasePath && await pathExists(livePath)) {
-      const drift = await detectDrift(livePath, state.releasePath, manifest);
-      if (drift.drifted) return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
-    }
-
-    const release = await createRelease({ ...manifest, buildCommand }, candidate, releaseRoot, options.sourceRevision || git.sha);
-    await rm(candidate, { recursive: true, force: true });
-    const migration = await migrationApply(manifest, release.path);
-    if (!migration.ok) return { deployed: false, rolledBack: false, failure: migration.error || 'migration failed' };
-
+    const plugins = await loadPlugins(manifest).catch(() => []);
+    const releaseMeta = await createRelease(manifest, candidate, releasesDir, { sourceRevision: options.sourceRevision || git.sha, environment: env.name });
     let previousReleasePath: string | undefined;
-    if (strategy === 'release-symlink') {
-      const activated = await activateRelease(target, release.path, backup);
-      previousReleasePath = activated.previousReleasePath;
-    } else {
-      if (await pathExists(target)) await rename(target, backup);
-      await copyDir(release.path, target);
-    }
-
-    const liveCheckPath = strategy === 'release-symlink' ? release.path : target;
-    const nextState: DeployState = {
-      backupPath: backup,
-      targetPath: target,
-      releasePath: release.path,
-      previousReleasePath,
-      currentReleaseId: release.releaseId,
-      currentSha: git.sha,
-      currentFingerprint: fingerprint,
-    };
-    await writeState(stateFile, nextState);
-    if (hasFrameworkCapability(manifest, 'release-retention')) await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, state, release.path);
-    else await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
-
-    const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-    if (health.ok) {
-      nextState.lastKnownGoodReleasePath = release.path;
-      nextState.lastKnownGoodReleaseId = release.releaseId;
-      nextState.lastKnownGoodSha = git.sha;
-      nextState.currentFingerprint = fingerprint;
-      await writeState(stateFile, nextState);
-      const receiptPath = await writeReceipt(workspace, {
-        automation: manifest.name,
-        environment: envInfo.name,
-        sha: git.sha,
+    let activeReleasePath: string | undefined;
+    let backupPath: string | undefined;
+    let activated = false;
+    try {
+      if (strategy === 'release-symlink') {
+        previousReleasePath = priorState?.releasePath;
+        activeReleasePath = releaseMeta.path;
+        const tempLink = `${target}.taskrail-next-${Date.now()}`;
+        await rm(tempLink, { recursive: true, force: true });
+        await symlink(releaseMeta.path, tempLink, 'dir');
+        if (await pathExists(target) || await isSymlink(target)) await rm(target, { recursive: true, force: true });
+        await rename(tempLink, target);
+      } else {
+        if (await pathExists(target)) {
+          await rename(target, backup);
+          backupPath = backup;
+        }
+        await rename(candidate, target);
+        activeReleasePath = target;
+      }
+      activated = true;
+      if (manifest.migrations?.applyCommand) {
+        const migrated = await runCommand(manifest.migrations.applyCommand, target);
+        if (!migrated.ok) throw new Error(migrated.error || `migration failed (${migrated.code})`);
+      }
+      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+      if (!health.ok) throw new Error(`health check failed: ${health.details || 'unknown'}`);
+      const receipt = {
+        schema: 1,
+        releaseId: releaseMeta.releaseId,
+        releasePath: releaseMeta.path,
+        sha: options.sourceRevision || git.sha,
+        environment: env.name,
+        manifestName: manifest.name,
         taskrailVersion: TASKRAIL_VERSION,
-        releaseId: release.releaseId,
-        migration: 'PASS',
-        health: 'PASS',
-        deployedAt: new Date().toISOString(),
+        activatedAt: new Date().toISOString(),
+      };
+      const receiptPath = await writeReceipt(workspace, receipt);
+      await writeState(stateFile, {
+        backupPath,
+        targetPath: target,
+        releasePath: activeReleasePath,
+        previousReleasePath,
+        currentReleaseId: releaseMeta.releaseId,
+        currentSha: options.sourceRevision || git.sha,
+        currentFingerprint: fingerprint,
+        lastKnownGoodReleasePath: activeReleasePath,
+        lastKnownGoodReleaseId: releaseMeta.releaseId,
+        lastKnownGoodSha: options.sourceRevision || git.sha,
       });
-      await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_succeeded', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId, sha: git.sha });
-      await writeEvidence(workspace, { kind: 'deploy', project: manifest.name, verdict: 'PASS', deployAllowed: true, releaseId: release.releaseId, sha: git.sha, environment: envInfo.name });
-      await writeFile(path.join(release.path, 'release.json'), JSON.stringify({ ...release, environment: envInfo.name, receiptPath }, null, 2));
-      return { deployed: true, rolledBack: false, backupPath: backup, releaseId: release.releaseId, releasePath: release.path, sha: git.sha };
+      await appendAudit(historyFile, { at: new Date().toISOString(), project: manifest.name, action: 'deploy', status: 'success', sha: options.sourceRevision || git.sha, message: receiptPath });
+      const preserve = new Set([releaseMeta.path, previousReleasePath, priorState?.lastKnownGoodReleasePath].filter((item): item is string => Boolean(item)));
+      await pruneReleases(releasesDir, preserve, manifest.backup?.retain ?? 0);
+      await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
+      return { deployed: true, rolledBack: false, backupPath, releaseId: releaseMeta.releaseId, releasePath: releaseMeta.path, sha: options.sourceRevision || git.sha };
+    } catch (error) {
+      const failure = error instanceof Error ? error.message : String(error);
+      let rolledBack = false;
+      if (activated) {
+        const rollbackResult = strategy === 'release-symlink'
+          ? await rollbackReleaseSymlink(target, previousReleasePath)
+          : await rollbackTarget(target, backupPath);
+        rolledBack = rollbackResult.ok;
+      }
+      const failureReport = buildFailureReport({ project: manifest.name, stage: 'deploy', message: failure, releaseId: releaseMeta.releaseId, rollbackAttempted: activated, rollbackResult: activated ? (rolledBack ? 'success' : 'failed') : 'not-needed', environment: env.name });
+      const report = await writeFailureReport(workspace, failureReport);
+      await appendAudit(historyFile, { at: new Date().toISOString(), project: manifest.name, action: 'deploy', status: 'failure', sha: options.sourceRevision || git.sha, message: report });
+      return { deployed: false, rolledBack, backupPath, releaseId: releaseMeta.releaseId, releasePath: releaseMeta.path, failure, report, sha: options.sourceRevision || git.sha };
     }
-
-    if (strategy === 'release-symlink') await restoreActivation(target, backup, previousReleasePath);
-    else {
-      await rm(target, { recursive: true, force: true });
-      if (await pathExists(backup)) await rename(backup, target);
-    }
-
-    const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
-    const restored = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], restoredPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-    if (!restored.ok) {
-      await writeReceipt(workspace, {
-        automation: manifest.name,
-        environment: envInfo.name,
-        sha: git.sha,
-        taskrailVersion: TASKRAIL_VERSION,
-        releaseId: release.releaseId,
-        migration: 'PASS',
-        health: 'FAIL',
-        rollback: 'FAIL',
-        deployedAt: new Date().toISOString(),
-      });
-      return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed and rollback failed', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually', environment: envInfo.name }) };
-    }
-    await writeReceipt(workspace, {
-      automation: manifest.name,
-      environment: envInfo.name,
-      sha: git.sha,
-      taskrailVersion: TASKRAIL_VERSION,
-      releaseId: release.releaseId,
-      migration: 'PASS',
-      health: 'FAIL',
-      rollback: 'PASS',
-      deployedAt: new Date().toISOString(),
-    });
-    return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed; rollback succeeded', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy', environment: envInfo.name }) };
   } finally {
     await releaseLock(lockDir);
-  }
-}
-
-export async function rollbackFromState(stateFile: string, health: HealthCheckDefinition | undefined, plugin?: AutomationPlugin) {
-  const state = await readState(stateFile);
-  if (!state) return { ok: false, failure: 'missing rollback state' };
-  try {
-    await restoreActivation(state.targetPath, state.backupPath || '', state.previousReleasePath);
-    const restoredPath = state.previousReleasePath || state.targetPath;
-    const restored = await runHealthCheck(health, restoredPath, plugin);
-    if (!restored.ok) return { ok: false, failure: 'restored version failed health check' };
-    return { ok: true, failure: undefined };
-  } catch {
-    return { ok: false, failure: 'rollback failed' };
+    await rm(candidate, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
 export async function rollbackFromManifest(manifest: FrameworkManifest, plugin?: AutomationPlugin) {
-  const stateFile = path.join(path.dirname(path.resolve(manifest.deployDir)), `${manifest.name}.deploy-state.json`);
-  return rollbackFromState(stateFile, manifest.healthCheck ?? manifest.healthChecks?.[0], plugin);
+  const resolved = resolvePaths(manifest, process.cwd());
+  const stateFile = path.join(path.dirname(resolved.deployDir), `${manifest.name}.deploy-state.json`);
+  const state = await readState(stateFile);
+  if (!state) return { ok: false, message: `no deploy state found at ${stateFile}` };
+  return rollback(state, plugin);
+}
+
+export async function check(manifest: FrameworkManifest, options: ManifestRunOptions = {}): Promise<CheckResult> {
+  const cwd = options.cwd || process.cwd();
+  const pre = await preflight(manifest, cwd);
+  const checks = [...pre.checks];
+  const configErrors = validateConfig({ projectName: manifest.name, environment: process.env, manifest });
+  for (const error of configErrors) checks.push({ name: `config:${error}`, ok: false, message: error });
+  const plugins = await loadPlugins(manifest).catch(() => []);
+  for (const candidatePlugin of plugins) {
+    for (const error of candidatePlugin.validate?.({ projectName: manifest.name, environment: process.env, manifest }) ?? []) checks.push({ name: `plugin:${candidatePlugin.name}`, ok: false, message: error });
+  }
+  return { ok: checks.every((item) => item.ok), checks };
+}
+
+export async function doctor(manifest: FrameworkManifest, options: ManifestRunOptions = {}): Promise<DoctorResult> {
+  const cwd = options.cwd || process.cwd();
+  const paths = resolvePaths(manifest, cwd);
+  const environment = detectEnvironment(manifest, cwd);
+  const manifestErrors = validateConfig({ projectName: manifest.name, environment: process.env, manifest });
+  const git = inspectGitState(cwd);
+  const plugins = await loadPlugins(manifest).catch(() => []);
+  const root = path.dirname(paths.deployDir);
+  const stateFile = path.join(root, `${manifest.name}.deploy-state.json`);
+  const state = await readState(stateFile);
+  const requiredSharedFiles: DoctorResult['requiredSharedFiles'] = [];
+  for (const requirement of manifest.requiredSharedFiles ?? []) {
+    const item = typeof requirement === 'string' ? { path: requirement } : requirement;
+    const target = path.isAbsolute(item.path) ? item.path : path.resolve(cwd, item.path);
+    requiredSharedFiles.push({ file: target, ok: await pathExists(target), detail: item.secret ? 'secret' : undefined });
+  }
+  const envPresence = (manifest.requiredEnv ?? []).map((name) => ({ name, ok: Boolean(process.env[name]) }));
+  const lockState = await import('./locks.js').then(async ({ readLock }) => {
+    const lock = await readLock(path.join(root, '.taskrail', 'lock'));
+    return lock ? { locked: true, holder: lock.owner } : { locked: false };
+  });
+  const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], paths.deployDir, plugin ?? plugins[0], manifest.healthCommand || manifest.runtimeHealthCommand).catch(() => ({ ok: false }));
+  let drift: DoctorResult['drift'];
+  if (state?.releasePath) {
+    const result = await detectDrift(paths.deployDir, state.releasePath, manifest).catch(() => ({ drifted: true, files: ['unknown'], items: [] }));
+    drift = { drifted: result.drifted, files: result.files, items: result.items };
+  }
+  return {
+    version: TASKRAIL_VERSION,
+    compatible: isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility),
+    manifestValid: manifestErrors.length === 0,
+    project: manifest.name,
+    environment,
+    runtimeVersion: process.version,
+    requiredSharedFiles,
+    envPresence,
+    lockState,
+    deployTarget: paths.deployDir,
+    plugins: plugins.map((item) => item.name),
+    latestHealthyRelease: state?.lastKnownGoodReleaseId,
+    drift,
+    healthReady: health.ok,
+    lastDeploymentResult: state?.currentReleaseId,
+    git,
+    deployable: manifestErrors.length === 0 && isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility) && envPresence.every((item) => item.ok) && requiredSharedFiles.every((item) => item.ok),
+  };
 }
