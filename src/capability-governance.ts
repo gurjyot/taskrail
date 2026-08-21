@@ -16,6 +16,8 @@ export interface CapabilityMetadata {
   sideEffects?: CapabilitySideEffects;
   idempotency?: CapabilityIdempotency;
   components?: string[];
+  input?: string;
+  output?: string;
   status?: CapabilityStatus;
   supersededBy?: string;
 }
@@ -81,6 +83,8 @@ export async function capabilityMetadata(capability: CapabilityContract): Promis
       sideEffects: raw.sideEffects,
       idempotency: raw.idempotency,
       components: Array.isArray(raw.components) ? raw.components.filter((item): item is string => typeof item === 'string') : undefined,
+      input: raw.input,
+      output: raw.output,
       status: raw.status || 'active',
       supersededBy: raw.supersededBy,
     };
