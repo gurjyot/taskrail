@@ -20,6 +20,7 @@ add('version:platform-manifest', platformManifest.taskrailVersion === pkg.versio
 add('runtime-dependencies:none', !pkg.dependencies || Object.keys(pkg.dependencies).length === 0, String(Object.keys(pkg.dependencies || {}).length));
 add('package:platform-assets-excluded', !pkg.files?.some((item) => String(item).startsWith('platform-install') || String(item).startsWith('installers') || String(item).startsWith('adapters/mcp')), JSON.stringify(pkg.files || []));
 add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
+add('package:platform-api', Boolean(pkg.exports?.['./platform']), './platform');
 add('check:strict-security', String(pkg.scripts?.check || '').includes('security audit --strict --root src'), 'npm run check');
 add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:contract');
 add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
@@ -54,12 +55,16 @@ for (const file of [
   'src/agent-surface.ts',
   'src/agent-grants.ts',
   'src/recovery-resume.ts',
+  'src/platform-contract.ts',
+  'src/execution-guardrails.ts',
+  'src/public/platform.ts',
   'test/diagnostics-security.test.ts',
   'test/agent-surface.test.ts',
   'test/modular-hardening.test.ts',
   'test/modular-architecture.test.ts',
   'test/deployment-private-state.test.ts',
   'test/platform-bootstrap.test.ts',
+  'test/platform-contract.test.ts',
   'scripts/certify-release.mjs',
   'scripts/test-mcp-packed.mjs',
   'scripts/sync-readme-size.mjs',
@@ -119,7 +124,7 @@ for (const phrase of [
   'control/deployment/recovery: denied',
 ]) add(`security-doc:${phrase}`, diagnosticsSecurity.includes(phrase), phrase);
 
-for (const exportName of ['./components', './capabilities', './manifest', './testing', './control', './agent']) {
+for (const exportName of ['./components', './capabilities', './manifest', './testing', './control', './agent', './platform']) {
   add(`public-api:${exportName}`, Boolean(pkg.exports?.[exportName]), exportName);
 }
 
