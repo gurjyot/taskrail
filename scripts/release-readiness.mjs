@@ -17,9 +17,11 @@ const diagnosticsSecurity = await readFile(path.join(root, 'docs', 'diagnostics-
 add('version:package-source', versionMatch?.[1] === pkg.version, `${pkg.version} / ${versionMatch?.[1] || 'missing'}`);
 add('version:platform-manifest', platformManifest.taskrailVersion === pkg.version, `${pkg.version} / ${platformManifest.taskrailVersion}`);
 add('runtime-dependencies:none', !pkg.dependencies || Object.keys(pkg.dependencies).length === 0, String(Object.keys(pkg.dependencies || {}).length));
-add('package:platform-assets-excluded', !pkg.files?.some((item) => String(item).startsWith('platform-install') || String(item).startsWith('installers')), JSON.stringify(pkg.files || []));
+add('package:platform-assets-excluded', !pkg.files?.some((item) => String(item).startsWith('platform-install') || String(item).startsWith('installers') || String(item).startsWith('adapters/mcp')), JSON.stringify(pkg.files || []));
 add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
 add('check:strict-security', String(pkg.scripts?.check || '').includes('security audit --strict --root src'), 'npm run check');
+add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:contract');
+add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
 
 for (const file of [
   'installers/taskrail-install-linux.sh',
@@ -29,16 +31,27 @@ for (const file of [
   'platform-install/darwin/adapter.mjs',
   'platform-install/win32/adapter.mjs',
   'src/diagnostics.ts',
+  'src/error-intelligence.ts',
   'src/security.ts',
+  'src/security-policy.ts',
+  'src/provenance.ts',
+  'src/compatibility-contract.ts',
+  'src/certification.ts',
+  'src/fault-injection.ts',
   'src/agent-surface.ts',
+  'src/agent-grants.ts',
   'src/recovery-resume.ts',
   'test/diagnostics-security.test.ts',
   'test/agent-surface.test.ts',
+  'test/modular-hardening.test.ts',
   'test/platform-bootstrap.test.ts',
+  'scripts/certify-release.mjs',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
   '.github/workflows/installer-golden-path.yml',
+  '.github/workflows/mcp-adapter.yml',
+  '.github/workflows/fault-injection.yml',
   '.github/workflows/release.yml',
   '.github/workflows/sentinel.yml',
   'skills/taskrail/SKILL.md',
@@ -61,7 +74,14 @@ for (const phrase of [
   'TaskRail-Install.ps1',
   'TaskRail-Install.command',
   'taskrail-install-linux.sh',
+  'Release provenance',
+  'Versioned security policy',
+  'Fault injection',
+  'TaskRail certification',
+  'Optional MCP adapter',
 ]) add(`readme:${phrase}`, readme.includes(phrase), phrase);
+
+add('readme:removed-diagram-note', !readme.includes('The diagram is intentionally plain text') && !readme.includes('The diagram is plain text so it renders directly'), 'diagram explanatory note removed');
 
 for (const phrase of [
   'Transactional update model',
