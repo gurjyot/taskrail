@@ -3,9 +3,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { discoverAutomationManifests } from './capabilities.js';
 import { resolveFrameworkManifest } from './framework.js';
-import { inspectTargets, unhealthyTargets } from './supervisor.js';
+import { inspectTargets, unhealthyTargets, type SupervisionTarget } from './supervisor.js';
 import { effectiveExecutionPolicy } from './execution.js';
 import type { FrameworkManifest } from './types.js';
+
+function serviceName(unit: string) {
+  return unit.replace(/\.service$/, '');
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -19,16 +23,28 @@ async function main() {
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 256) throw new Error('concurrency must be an integer between 1 and 256');
 
   const manifests = await discoverAutomationManifests(process.cwd());
-  const targets = [];
+  const byName = new Map<string, SupervisionTarget>();
   for (const manifestPath of manifests) {
     const raw = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
     if (!raw.managed) continue;
     const manifest = resolveFrameworkManifest(raw);
-    if (!manifest.statePath) continue;
-    const stateDir = path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(path.dirname(manifestPath), manifest.statePath);
-    targets.push({ name: manifest.name, stateDir, staleAfterMs: effectiveExecutionPolicy(manifest.execution).staleAfterMs });
+    const fallbackFreshness = effectiveExecutionPolicy(manifest.execution).staleAfterMs;
+    const services = (manifest.serviceManager?.units ?? []).filter((unit) => unit.kind === 'service');
+    if (services.length) {
+      for (const unit of services) {
+        const name = serviceName(unit.name);
+        const stateDir = name === manifest.name && manifest.statePath
+          ? (path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(path.dirname(manifestPath), manifest.statePath))
+          : path.resolve(`/opt/smg-automations/state/${name}`);
+        byName.set(name, { name, stateDir, staleAfterMs: unit.staleAfterMs ?? fallbackFreshness });
+      }
+    } else if (manifest.statePath) {
+      const stateDir = path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(path.dirname(manifestPath), manifest.statePath);
+      byName.set(manifest.name, { name: manifest.name, stateDir, staleAfterMs: fallbackFreshness });
+    }
   }
 
+  const targets = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
   const results = await inspectTargets(targets, concurrency);
   const unhealthy = unhealthyTargets(results);
   if (json) console.log(JSON.stringify({ ok: unhealthy.length === 0, total: results.length, unhealthy: unhealthy.length, results }, null, 2));
