@@ -12,6 +12,7 @@ export {
   validateLastKnownGoodRecovery,
   recordRecoveryReadiness,
 } from '../recovery-readiness.js';
+export { transactionalDeploy } from '../transactional-deploy.js';
 export type {
   LifecycleEvent,
   LifecycleContext,
@@ -26,3 +27,4 @@ export type {
   UpdatePhase,
 } from '../update-transaction.js';
 export type { RecoveryReadinessResult } from '../recovery-readiness.js';
+export type { TransactionalDeployOptions, TransactionalDeployResult } from '../transactional-deploy.js';
