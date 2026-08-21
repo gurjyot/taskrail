@@ -1,0 +1,77 @@
+name: TaskRail Golden Path
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskrail-golden-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-install:
+    name: Fresh install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install development dependencies
+        run: npm ci
+      - name: Build and verify source
+        run: npm test
+      - name: Build installable package without rerunning prepack
+        shell: bash
+        run: |
+          npm run build
+          npm pack --ignore-scripts --json > pack.json
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; fs.writeFileSync('package-name.txt',p.filename); console.log('packed',p.filename,'compressed',p.size,'unpacked',p.unpackedSize)"
+      - name: Install packed TaskRail globally
+        shell: bash
+        run: npm install -g "./$(cat package-name.txt)"
+      - name: Verify public CLI and component API
+        shell: bash
+        run: |
+          taskrail --help
+          taskrail components
+          node --input-type=module -e "import('taskrail/components').then(m => { if (!m.http || !m.config || !m.withRetry || !m.runIdempotent) process.exit(1) })"
+      - name: Scaffold a fresh portable automation
+        shell: bash
+        run: |
+          mkdir golden-user
+          cd golden-user
+          taskrail init automation hello-taskrail --profile smg-node-timer@1
+          test -f hello-taskrail/automation.json
+          test -f hello-taskrail/AGENTS.md
+          cd hello-taskrail
+          node --check src/index.js
+          node --test tests/*.test.js
+
+  package-size:
+    name: Package footprint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Measure package
+        run: |
+          npm pack --ignore-scripts --json > pack.json
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) }"
