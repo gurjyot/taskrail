@@ -165,27 +165,29 @@ test('real managed source drift still blocks deploy', async () => {
       managed: true,
       sourceDir: 'source',
       deployDir: 'deploy',
-      validationCommand: 'node main.js',
-      testCommand: 'node main.js',
+      validationCommand: 'node -e "process.exit(0)"',
+      testCommand: 'node -e "process.exit(0)"',
       healthCheck: { type: 'file', path: 'main.js' },
       backup: { retain: 1 },
       requiredChecks: ['validation', 'test'],
     }, null, 2),
   });
   await writeFile(path.join(base, 'source', 'main.js'), 'process.exit(1)');
+  await writeFile(path.join(base, 'demo.deploy-state.json'), JSON.stringify({ backupPath: path.join(base, 'backup'), targetPath: path.join(base, 'deploy'), releasePath: path.join(base, 'release') }, null, 2));
   const result = await safeDeploy({
     name: 'demo',
     runtime: 'node',
     managed: true,
     sourceDir: path.join(base, 'source'),
     deployDir: path.join(base, 'deploy'),
-    validationCommand: 'node main.js',
-    testCommand: 'node main.js',
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
     healthCheck: { type: 'file', path: 'main.js' },
     backup: { retain: 1 },
     requiredChecks: ['validation', 'test'],
   }, undefined, { projectRoot: base });
   assert.equal(result.deployed, false);
+  assert.match(result.failure ?? '', /drift detected/i);
   await rm(base, { recursive: true, force: true });
 });
 
