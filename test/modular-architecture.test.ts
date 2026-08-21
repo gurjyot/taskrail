@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { ValidationRegistry, validationModule } from '../src/validation-registry.js';
+import { createTaskRailValidationRegistry } from '../src/validation-modules.js';
 import { SecurityRegistry, securityControl } from '../src/security-registry.js';
+import { createTaskRailSecurityRegistry } from '../src/security-modules.js';
 import { planRebootRecovery, rebootRecoverySafe } from '../src/reboot-recovery.js';
 import { planRetention } from '../src/retention-policy.js';
 import { assessPerformanceBudget } from '../src/performance-budget.js';
@@ -22,6 +27,19 @@ test('validation modules are reusable across suites and dependencies run once', 
   assert.deepEqual(install.modules, ['checksum', 'installer-network']);
   const update = await registry.run({ name: 'update', contexts: ['update'], tags: ['integrity'] }, {});
   assert.deepEqual(update.modules, ['checksum']);
+});
+
+test('standard TaskRail validation registry composes install, update, recovery and reboot checks', async () => {
+  const registry = createTaskRailValidationRegistry();
+  const install = await registry.run({ name: 'install', contexts: ['install'] }, { checksumValid: true });
+  assert.equal(install.ok, true);
+  assert.equal(install.modules.includes('artifact.checksum'), true);
+  const unsafe = await registry.run({ name: 'update', contexts: ['update'] }, { checksumValid: false, dependenciesCompatible: false, rollbackReady: false });
+  assert.equal(unsafe.ok, false);
+  assert.deepEqual(unsafe.findings.map((finding) => finding.code).sort(), ['checksum-invalid', 'dependency-incompatible', 'rollback-not-ready']);
+  const reboot = await registry.run({ name: 'reboot', contexts: ['runtime'] }, { rebootReady: false });
+  assert.equal(reboot.ok, false);
+  assert.equal(reboot.findings[0].code, 'reboot-not-ready');
 });
 
 test('validation registry fails closed on unknown dependency and cycles', () => {
@@ -51,6 +69,23 @@ test('security controls compose by profile and strict mode escalates warnings', 
   const strict = await registry.run({ name: 'strict', tags: ['baseline'], strict: true }, {});
   assert.equal(strict.ok, false);
   assert.equal(strict.findings[0].severity, 'error');
+});
+
+test('standard TaskRail security registry reuses existing scanners and remains profile-selectable', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-security-modules-'));
+  const unsafeFile = path.join(root, 'unsafe.js');
+  try {
+    await writeFile(unsafeFile, "const password = 'super-secret-password';\n");
+    const registry = createTaskRailSecurityRegistry();
+    const source = await registry.run({ name: 'source', contexts: ['source'], strict: true }, { sourceFiles: [unsafeFile] });
+    assert.equal(source.ok, false);
+    assert.equal(source.controls.includes('source.secure-code'), true);
+    assert.equal(source.findings.some((finding) => finding.code === 'secret-material'), true);
+    const stateOnly = await registry.run({ name: 'state', contexts: ['state'] }, { privateFiles: [] });
+    assert.deepEqual(stateOnly.controls, ['state.private-permissions']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('reboot recovery supports catch-up skip and manual policies without affecting disabled automations', () => {
