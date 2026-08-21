@@ -42,7 +42,7 @@ async function writeRecoveredState(manifest: FrameworkManifest, cwd: string, che
     lastKnownGoodReleaseId: checkpoint.lastKnownGoodRelease,
   };
   await mkdir(path.dirname(stateFile(manifest, cwd)), { recursive: true });
-  await writeFile(stateFile(manifest, cwd), `${JSON.stringify(state, null, 2)}\n`);
+  await writeFile(stateFile(manifest, cwd), `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
 }
 
 async function restoreRelease(manifest: FrameworkManifest, cwd: string, checkpoint: UpdateCheckpoint, plugin?: AutomationPlugin) {
