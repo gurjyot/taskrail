@@ -7,6 +7,7 @@ export interface AuditEvent {
   project: string;
   taskrailVersion: string;
   releaseId?: string;
+  sha?: string;
   data?: Record<string, unknown>;
 }
 

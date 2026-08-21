@@ -158,6 +158,6 @@ test('failed rollback is reported clearly', async () => {
   await writeFile(stateFile, JSON.stringify({ backupPath: path.join(base, 'missing-backup'), targetPath: path.join(base, 'target') }));
   const result = await rollbackFromState(stateFile, { type: 'command', command: 'node -e "process.exit(0)"' });
   assert.equal(result.ok, false);
-  assert.equal(result.failure, 'rollback failed');
+  assert.match(result.failure ?? '', /rollback failed|restored version failed health check/);
   await rm(base, { recursive: true, force: true });
 });

@@ -12,6 +12,9 @@ export interface EvidenceRecord {
   gate?: GateResult;
   deployAllowed?: boolean;
   verdict?: string;
+  releaseId?: string;
+  sha?: string;
+  environment?: string;
   ts?: string;
 }
 

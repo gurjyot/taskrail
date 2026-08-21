@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -202,7 +202,7 @@ test('rollback CLI uses the active manifest state file', async () => {
   const deployed = await safeDeploy(baseManifest(base));
   assert.equal(deployed.deployed, true);
   const output = execFileSync(process.execPath, [cli, 'rollback'], { cwd: base, encoding: 'utf8' });
-  assert.match(output, /rollback/);
+  assert.match(output, /STATUS: PASS/);
   await rm(base, { recursive: true, force: true });
 });
 
@@ -225,7 +225,7 @@ test('deploy resolves relative deployDir from the project root', async () => {
     }, null, 2),
   });
   const output = execFileSync(process.execPath, [cli, 'deploy'], { cwd: base, encoding: 'utf8' });
-  assert.match(output, /"deployed":true/);
+  assert.match(output, /STATUS: PASS/);
   assert.equal(await readFile(path.join(base, 'deploy/app/index.txt'), 'utf8'), 'v1');
   await rm(base, { recursive: true, force: true });
 });
@@ -309,7 +309,7 @@ test('impact aliases capability-impact and returns consumers', async () => {
   });
   const output = execFileSync(process.execPath, [cli, 'impact', 'telegram-send', '--json'], { cwd: base, encoding: 'utf8' });
   const parsed = JSON.parse(output);
-  assert.deepEqual(parsed.consumers, ['alpha']);
+  assert.deepEqual(parsed.map((item: any) => item.name), ['alpha']);
   await rm(base, { recursive: true, force: true });
 });
 
@@ -339,7 +339,7 @@ test('runtime health command failure is reported by health', async () => {
     execFileSync(process.execPath, [cli, 'health'], { cwd: base, encoding: 'utf8' });
   } catch (error: any) {
     failed = true;
-    assert.match(String(error.stdout ?? ''), /"ok":false/);
+    assert.match(String(error.stdout ?? ''), /STATUS: FAIL/);
   }
   assert.equal(failed, true);
   await rm(base, { recursive: true, force: true });
@@ -355,6 +355,82 @@ test('backward compatibility still supports release metadata and default checks'
   assert.equal(drift.drifted, false);
   const result = await runGate(baseManifest(base, { sourceDir: path.join(base, 'src'), deployDir: path.join(base, 'deploy'), validationCommand: 'node check.js', testCommand: 'node check.js' }), base);
   assert.equal(result.verdict, 'PASS');
+  await rm(base, { recursive: true, force: true });
+});
+
+test('paths reports resolved dirs and last known good metadata', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/index.txt': 'v1',
+    'src/check.js': 'process.exit(0)',
+    'automation.json': JSON.stringify(baseManifest(base, {
+      sourceDir: 'src',
+      deployDir: 'deploy/app',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+    }), null, 2),
+    'deploy/demo.deploy-state.json': JSON.stringify({
+      targetPath: path.join(base, 'deploy/app'),
+      currentReleaseId: 'rel-current',
+      lastKnownGoodReleaseId: 'rel-good',
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'paths', '--json'], { cwd: base, encoding: 'utf8' });
+  const payload = JSON.parse(output);
+  assert.equal(payload.currentRelease, 'rel-current');
+  assert.equal(payload.lastKnownGood, 'rel-good');
+  assert.match(payload.sourceDir, /\/taskrail-fix-.*\/src$/);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('repair removes stale lock safely', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/index.txt': 'v1',
+    'src/check.js': 'process.exit(0)',
+    'automation.json': JSON.stringify(baseManifest(base, {
+      sourceDir: 'src',
+      deployDir: 'deploy/app',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+    }), null, 2),
+  });
+  const lockDir = path.join(base, 'deploy', '.taskrail', 'lock');
+  await mkdir(lockDir, { recursive: true });
+  await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify({ pid: 999999, host: 'test', startedAt: '2026-08-20T00:00:00.000Z' }, null, 2));
+  const output = execFileSync(process.execPath, [cli, 'repair'], { cwd: base, encoding: 'utf8' });
+  assert.match(output, /STATUS: PASS/);
+  await stat(lockDir).then(() => assert.fail('lock should be removed'), () => undefined);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('ship accepts an automation target from workspace root', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'apps/demo/src/index.txt': 'v1',
+    'apps/demo/src/check.js': 'process.exit(0)',
+    'apps/demo/automation.json': JSON.stringify({
+      name: 'demo',
+      taskrailCompatibility: '2.0.x',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: path.join(base, 'live', 'demo'),
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+      healthCheck: { type: 'file', path: 'index.txt' },
+      backup: { retain: 1 },
+      requiredChecks: ['validation', 'test'],
+    }, null, 2),
+  });
+  execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
+  const output = execFileSync(process.execPath, [cli, 'ship', 'demo'], { cwd: base, encoding: 'utf8' });
+  assert.match(output, /STATUS: PASS/);
+  assert.equal(await readFile(path.join(base, 'live', 'demo', 'index.txt'), 'utf8'), 'v1');
+  const receipt = JSON.parse(await readFile(path.join(base, 'live', '.taskrail', 'receipts', 'latest.json'), 'utf8'));
+  assert.equal(receipt.automation, 'demo');
   await rm(base, { recursive: true, force: true });
 });
 
