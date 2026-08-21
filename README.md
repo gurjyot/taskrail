@@ -6,9 +6,9 @@
 <p align="center"><strong>⚡ Tiny framework footprint: ~108 KiB compressed / ~588 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
-TaskRail is a small control plane and SDK for reliable automation. It is designed to be especially easy for coding agents such as Codex and other AI development tools, while remaining deterministic and fully usable without AI. It provides reusable components, governed capabilities, thin automation scaffolds, deployment safety, transactional updates, rollback/recovery controls, supervision, platform adapters, and progressive-disclosure agent skills without requiring a database, queue, container platform, daemon, vector store, or runtime model service.
+TaskRail is a small control plane and SDK for reliable automation. It is designed to be especially easy for coding agents such as Codex and other AI development tools, while remaining deterministic and fully usable without AI. It provides reusable components, governed capabilities, thin automation scaffolds, deployment safety, transactional updates, rollback/recovery controls, supervision, privacy-safe diagnostics, optional agent adapters, and progressive-disclosure agent skills without requiring a database, queue, container platform, permanent daemon, vector store, or runtime model service.
 
-**Keywords:** automation framework, AI automation, coding agents, agentic automation, workflow automation, Node.js automation, TypeScript automation, deployment automation, automation SDK, reusable components, reusable integrations, capability registry, idempotency, transactional deployment, rollback, recovery, health checks, drift detection, systemd automation, cross-platform automation, production automation, Codex skills, AI developer tooling.
+**Keywords:** automation framework, AI automation, coding agents, agentic automation, workflow automation, Node.js automation, TypeScript automation, deployment automation, automation SDK, reusable components, reusable integrations, capability registry, idempotency, transactional deployment, rollback, recovery, health checks, drift detection, systemd automation, cross-platform automation, production automation, MCP automation, Codex skills, AI developer tooling.
 
 ## How TaskRail works
 
@@ -36,15 +36,16 @@ TaskRail is a small control plane and SDK for reliable automation. It is designe
  └────────────────────┘       └──────────────────────┘       └──────────────────────┘
 ```
 
-The diagram is plain text so it renders directly on GitHub, stays version-controlled, needs no image asset, and remains easy for both humans and coding agents to parse.
+## Architecture: modular by design
 
-## Architecture: components, capabilities, automations
+TaskRail is intentionally split into independently improvable layers:
 
-TaskRail separates reusable work into three layers:
-
-1. **Components** — small, stable, vendor-neutral technical primitives owned and shipped by TaskRail core.
-2. **Capabilities** — reusable integrations and domain actions composed from components. They are independently versioned and governed against semantic duplication.
-3. **Automations** — isolated, thin business workflows that compose components and capabilities instead of rebuilding infrastructure.
+1. **Core components** — small, stable, vendor-neutral technical primitives.
+2. **Capabilities** — reusable integrations and domain actions built on components.
+3. **Automations** — isolated business workflows that compose components and capabilities.
+4. **Control-plane policies** — update safety, rollback, compatibility, provenance, diagnostics, security and certification.
+5. **Optional adapters** — platform- or protocol-specific integrations such as MCP, kept outside the core package when they add dependencies.
+6. **CI/release gates** — Golden Paths, Sentinel, fault injection, security audits and certification; these do not run in the hot path of ordinary automations.
 
 The standard design decision is:
 
@@ -52,7 +53,9 @@ The standard design decision is:
 REQUIREMENT -> COMPONENT LOOKUP -> CAPABILITY LOOKUP -> REUSE / EXTEND / CREATE / LOCAL -> IMPLEMENT -> VERIFY -> SHIP
 ```
 
-Ordinary automation agents consume components; they do not invent new TaskRail core components. Before creating a capability, an agent must search the capability registry. Equivalent capabilities are reused instead of duplicated. A genuinely new reusable integration can be scaffolded as a governed capability.
+The framework follows one rule throughout: **centralize reusable primitives and safety contracts; decentralize automation decisions and execution.**
+
+Ordinary automation agents consume components; they do not invent new TaskRail core components. Before creating a capability, an agent must search the capability registry. Equivalent capabilities are reused instead of duplicated.
 
 ## Component SDK
 
@@ -123,7 +126,7 @@ taskrail init capability example-api \
   --component http
 ```
 
-## Usage graph and safe shared changes
+## Compatibility contracts and blast radius
 
 TaskRail derives a deterministic dependency graph from automation manifests and capability metadata. It tracks:
 
@@ -139,15 +142,9 @@ taskrail usage capability example-api
 taskrail update-plan capability example-api --from 1.2.0 --to 2.0.0 --breaking
 ```
 
-Shared updates fail closed when the graph is incomplete. Patch/minor changes do not pause unrelated consumers. A breaking shared change identifies the exact dependent automation set that requires migration handling; unrelated automations remain outside that scope.
+Reusable artifacts can carry explicit compatibility contracts: artifact kind, version, supported TaskRail version, dependency ranges, change level, and migration requirements. TaskRail can determine exactly which consumers fall outside the new contract before activation.
 
-## Automation scaffolding
-
-```bash
-taskrail init automation my-automation --profile smg-node-timer@1
-```
-
-Profiles keep manifests small while supplying reusable operational defaults: runtime, deployment strategy, execution policy, health behavior, drift policy, resource limits, release retention, and optional service-manager integration.
+Breaking changes fail closed when migration guidance or a safe consumer plan is missing. Unrelated automations remain outside the affected scope.
 
 ## Safe lifecycle
 
@@ -176,8 +173,6 @@ After an automation already has a verified last-known-good release, use the stri
 taskrail update <automation>
 ```
 
-The transaction records durable checkpoints and requires a proven recovery point before activation:
-
 ```text
 DISCOVER -> IMPACT -> CHECKPOINT -> STAGE -> VALIDATE -> SIMULATE
        -> ROLLBACK-READY -> ACTIVATE -> VERIFY -> COMMIT
@@ -189,7 +184,7 @@ If activation fails:
 FAIL -> ROLLBACK-REQUIRED -> REVALIDATE OLD RELEASE -> RESTORE -> VERIFY -> CLOSE
 ```
 
-If a candidate fails before activation, the transaction is **aborted** and the live release is untouched. If TaskRail cannot prove a safe recovery path after activation uncertainty, the transaction enters **recovery-required** and destructive cleanup/new activation is blocked until recovery is inspected.
+If a candidate fails before activation, the live release is untouched. If TaskRail cannot prove a safe recovery path after activation uncertainty, the transaction enters **recovery-required** and destructive cleanup/new activation is blocked until recovery is inspected.
 
 Automations with migrations are conservative by default. Rollback compatibility must be explicitly proven before a transactional migration update can proceed:
 
@@ -225,6 +220,88 @@ The bounded lifecycle event bus lets integrations observe or explicitly authoriz
 
 Examples include requirement analysis, staging, preflight, activation, health, rollback, release commit, and recovery-required events.
 
+## Release provenance
+
+TaskRail now has a small provenance verification contract independent of the installer implementation. A release, adapter, component bundle, or capability bundle can be checked for:
+
+- exact SHA-256 artifact identity
+- approved source
+- version/subject metadata
+- timestamp validity
+- optional or required cryptographic signature
+- explicit trusted-key selection
+
+Provenance verification uses Node's built-in cryptography APIs and adds no runtime npm dependency.
+
+Checksums remain useful for corruption detection; signed provenance adds an origin/authenticity layer on top.
+
+## Versioned security policy
+
+Security requirements are represented as a versioned policy rather than being scattered across documentation. Automations and adapters can declare which policy version and controls they satisfy.
+
+Current control categories include:
+
+- secret redaction
+- per-automation/scoped secrets
+- deny-by-default network exposure
+- untrusted-input boundaries for AI/webhook/email content
+- SQL parameterization
+- shell argument boundaries
+- private state storage
+- signed provenance where required
+
+When TaskRail's security policy advances, older declarations can be identified as stale instead of silently remaining on an unknown standard.
+
+## Privacy-safe diagnostics and Error Intelligence
+
+TaskRail diagnostic reports are deliberately minimized. Default reports exclude automation identity and business payloads and aggressively redact secrets, connection strings, filesystem paths, IP addresses, and user identity.
+
+Diagnostics are validated against a strict schema and maximum size before they are considered suitable for submission.
+
+The Error Intelligence layer groups valid reports by deterministic fingerprint, severity, TaskRail version, platform, and occurrence count. This allows a private intake or Sentinel workflow to deduplicate recurring failures without collecting the user's internal automation logic.
+
+End-user installations should never receive credentials for the maintainers' private diagnostics repository. Any future remote intake must be explicitly authorized, previewable, authenticated, rate-limited, and privacy-preserving.
+
+## Fault injection
+
+Fault injection is a **test/release capability, not runtime machinery**. It is intended to keep adding reproducible failure scenarios such as:
+
+- interrupted network/download
+- checksum corruption
+- missing platform payload
+- permission denied
+- disk/full-storage simulation
+- process interruption
+- stale locks
+- state corruption
+- rollback interruption
+
+A fault scenario passes only when TaskRail reaches the expected safe/recoverable state. A test that merely reproduces a crash without proving containment/recovery is not considered a successful fault test.
+
+## TaskRail certification
+
+TaskRail has a small certification aggregator for independent release gates. Certification does not replace CI or control automations; it summarizes their verdicts and fails closed if a required gate fails.
+
+Certification gates can include:
+
+- core CI
+- package Golden Path
+- installer Golden Path
+- release-readiness audit
+- fault injection
+- security-policy conformance
+- provenance verification
+- compatibility-contract checks
+- optional MCP adapter matrix
+
+The intended final release verdict is conceptually:
+
+```text
+TASKRAIL CERTIFIED — PASS
+```
+
+Only independent green gates should produce that verdict.
+
 ## Public SDK
 
 TaskRail keeps public APIs deliberate instead of exposing every internal file:
@@ -235,9 +312,36 @@ taskrail/capabilities
 taskrail/manifest
 taskrail/testing
 taskrail/control
+taskrail/agent
 ```
 
-`taskrail/control` includes lifecycle hooks, durable update checkpoints, recovery-readiness helpers, and transactional automation deployment.
+Examples:
+
+- `taskrail/components` — stable vendor-neutral primitives
+- `taskrail/testing` — conformance, isolation, fault-injection and certification helpers
+- `taskrail/control` — lifecycle/update controls plus compatibility, provenance, security-policy and error-intelligence contracts
+- `taskrail/agent` — permissioned AI/agent-facing contracts and privacy-safe diagnostics
+
+Internal files can evolve more quickly without making every implementation detail part of TaskRail's semver promise.
+
+## Optional MCP adapter
+
+MCP is an **optional adapter**, not a core runtime dependency.
+
+The current direction is:
+
+- stdio-first
+- no network listener by default
+- read-only by default
+- TaskRail CLI remains canonical
+- explicit tool allowlist
+- metadata-only local audit trail
+- no raw prompt, secret, stdout, or arbitrary command recording in audit events
+- write/control actions remain absent until separately scoped and proven safe
+
+The adapter has its own dependencies and three-platform CI matrix so MCP can evolve without increasing the TaskRail core package footprint.
+
+Future MCP write capabilities, if enabled, should require explicit scopes, TaskRail mutation authorization, existing update/rollback gates, and full auditability. External content can never grant itself permission to mutate TaskRail.
 
 ## AI-agent skills
 
@@ -255,7 +359,7 @@ TaskRail core requires:
 
 - Node.js 22 or newer
 - npm
-- network access to GitHub for the small bootstrap installer path
+- network access to the selected release source for the bootstrap installer path
 
 Git is recommended for development and production source tracking. Platform/service requirements are profile-dependent; for example, Linux service profiles can use systemd.
 
@@ -293,7 +397,7 @@ Each installer follows the same verified protocol:
 DETECT PLATFORM
       -> FETCH VERSIONED RELEASE MANIFEST
       -> DOWNLOAD COMMON TASKRAIL PACKAGE
-      -> VERIFY SHA-256
+      -> VERIFY SHA-256 / PROVENANCE POLICY
       -> INSTALL CORE
       -> DOWNLOAD ONLY THIS OS ADAPTER
       -> VERIFY ADAPTER + VERSION
@@ -319,24 +423,30 @@ cd taskrail
 npm ci
 npm test
 npm run check
+npm run release:readiness
 ```
 
 ## Golden Paths and release safety
 
 TaskRail keeps independent release gates so one passing test cannot hide another class of failure:
 
-- **TaskRail CI** — full framework tests and public API/CLI checks
-- **Package Golden Path** — package footprint plus fresh packed-artifact install/scaffold on Linux, macOS, and Windows
-- **Installer Golden Path** — actual Linux/macOS/Windows setup files, platform bootstrap failure tests, release payload checksums, and post-install verification
+- **TaskRail CI** — framework tests, public API/CLI and security checks
+- **Package Golden Path** — packed-artifact install/scaffold on Linux, macOS, and Windows
+- **Installer Golden Path** — actual Linux/macOS/Windows setup files, platform bootstrap failure tests, checksums, retries and post-install verification
+- **MCP adapter matrix** — optional adapter tested separately on Linux, macOS, and Windows
 - **Release readiness audit** — version consistency, public API, docs/skills, required installers/adapters/workflows, and anti-bloat contracts
+- **Fault injection** — intentional failure scenarios must prove containment and recovery
+- **Certification** — aggregate required gate verdicts only after the individual gates succeed
 
-The release package builder fails if platform-specific installer payloads leak into the core npm tarball.
+The release package builder fails if platform-specific installer payloads or optional MCP dependencies leak into the core npm tarball.
 
 ## TaskRail Sentinel
 
-TaskRail Sentinel is a scheduled GitHub control-plane verifier—not a permanent daemon. It periodically reruns framework tests, public API checks, dependency security audit, release-package construction, and the executable release-readiness contract.
+TaskRail Sentinel is a scheduled GitHub control-plane verifier—not a permanent daemon. It periodically reruns framework tests, public API checks, dependency security audit, release-package construction, release-readiness contracts and other designated safety gates.
 
-If Sentinel fails, it opens or updates one deduplicated GitHub issue with evidence and the workflow run. When all scheduled gates recover, Sentinel closes that issue automatically. Runtime fleet health remains handled by heartbeats/supervision plus the operating system or service manager.
+If Sentinel fails, it can open or update a deduplicated GitHub issue with evidence and the workflow run. When all scheduled gates recover, Sentinel can close that issue automatically. Runtime fleet health remains handled by heartbeats/supervision plus the operating system or service manager.
+
+Sentinel/Error Intelligence is intentionally external to the automation hot path: reporting infrastructure failing must never stop user automations.
 
 ## Feature overview
 
@@ -351,10 +461,15 @@ TaskRail includes:
 - capability search, scaffolding, strict checks, and usage tracking
 - deterministic component/capability/profile dependency graph
 - blast-radius analysis for shared updates
+- compatibility contracts for reusable artifacts
 - profile-aware thin automation scaffolding
 - manifest/config contracts and preflight validation
 - environment detection
 - structured logs/errors and secret redaction
+- privacy-safe diagnostic schema and validation
+- diagnostic deduplication/error intelligence
+- versioned security-policy declarations
+- provenance/checksum/signature verification contracts
 - deterministic execution IDs
 - isolated local state
 - durable idempotency claims
@@ -376,8 +491,11 @@ TaskRail includes:
 - compatibility checks and safe manifest upgrades
 - bounded lifecycle hooks with mutation authorization
 - executable engineering/conformance standard
+- reusable fault-injection harness
+- certification gate aggregation
 - three small cross-platform bootstrap installers
 - on-demand, version-matched platform adapters
+- optional read-only stdio MCP adapter outside core
 - package-size/anti-bloat guards
 - Golden Path installation tests on Linux, macOS, and Windows
 - scheduled Sentinel verification
@@ -399,6 +517,7 @@ taskrail plan
 taskrail deploy
 taskrail ship
 taskrail update
+taskrail recover
 taskrail health
 taskrail rollback
 taskrail drift
@@ -419,6 +538,9 @@ taskrail usage
 taskrail update-plan
 taskrail isolation-audit
 taskrail conformance
+taskrail diagnostics
+taskrail security
+taskrail agent
 taskrail platform
 taskrail init automation
 taskrail init capability
@@ -434,7 +556,7 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, `taskra
 Measured automatically from the actual `npm pack` artifact. The Golden Path release gate enforces an unpacked size budget, and the main-branch size-sync workflow refreshes these figures after framework changes.
 <!-- taskrail-footprint:end -->
 
-A separate **2 MB unpacked size guardrail** prevents accidental framework bloat. Platform installer/adaptor source is deliberately excluded from the core npm package and downloaded only when relevant.
+A separate **2 MB unpacked size guardrail** prevents accidental framework bloat. Platform installer/adaptor source and optional MCP dependencies are deliberately excluded from the core npm package and installed only when relevant.
 
 ## What TaskRail deliberately does not require
 
@@ -442,7 +564,7 @@ A separate **2 MB unpacked size guardrail** prevents accidental framework bloat.
 - Redis
 - queue runtime
 - heavyweight workflow-engine runtime
-- TaskRail daemon
+- permanent TaskRail daemon
 - vector database
 - runtime AI/model dependency
 - dashboard requirement
@@ -456,14 +578,16 @@ Individual automations can use any of these when their domain genuinely requires
 
 The compatibility model is designed for three independently releasable repositories:
 
-- **taskrail** — small stable core, SDK, components, safety, compatibility, lifecycle, and skills
-- **taskrail-hub** — governed reusable capabilities
+- **taskrail** — small stable core, SDK, components, safety, compatibility, lifecycle, certification and skills
+- **taskrail-hub** — governed reusable capabilities and optional ecosystem packages
 - **taskrail-automations** — isolated example/reference automations
 
 Compatibility metadata—not synchronized commits—is the contract between them. The core remains small even if the capability and automation ecosystems become large.
 
 ## Development philosophy
 
-TaskRail optimizes for predictable AI-agent behavior, low context/token requirements, reusable technical building blocks, minimal duplication, deterministic validation, safe production changes, explicit contracts, failure isolation, and low operational overhead.
+TaskRail optimizes for predictable AI-agent behavior, low context/token requirements, reusable technical building blocks, minimal duplication, deterministic validation, safe production changes, explicit contracts, failure isolation, secure defaults, modular upgrades, and low operational overhead.
 
 A new TaskRail core component should be added only when repeated real-world automation work demonstrates a stable vendor-neutral primitive that cannot be cleanly expressed with existing components and capabilities.
+
+A new control-plane feature should remain independently testable and should not become part of the ordinary automation execution hot path unless runtime execution genuinely requires it.
