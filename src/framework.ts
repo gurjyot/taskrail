@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition } from './types.js';
@@ -220,6 +220,11 @@ export function compactManifest(manifest: FrameworkManifest): FrameworkManifest 
 
 export function inferProfile(manifest: FrameworkManifest, cwd = process.cwd()): string | null {
   if (manifest.profile) return manifest.profile;
+  if (path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
+    try {
+      if (!statSync(manifest.deployDir).isDirectory()) return null;
+    } catch {}
+  }
   const units = manifest.serviceManager?.units ?? [];
   if (manifest.runtime === 'node' && units.some((unit) => unit.kind === 'timer')) return 'smg-node-timer@1';
   if (manifest.runtime === 'node' && manifest.database?.required) return 'smg-node-postgres-service@1';

@@ -162,6 +162,31 @@ test('upgrade refuses ambiguous legacy manifests', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+test('upgrade normalizes exact compatible patch declarations to 2.0.x', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/main.js': 'process.exit(0)',
+    'tests/self-test.js': 'process.exit(0)',
+    'service/demo.service': '[Service]',
+    'timer/demo.timer': '[Timer]',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      taskrailCompatibility: '2.0.3',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: '/opt/smg-automations/automations/demo',
+      validationCommand: 'node src/main.js',
+      testCommand: 'node tests/self-test.js',
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'upgrade', '--write'], { cwd: base, encoding: 'utf8', env: { ...process.env, TASKRAIL_ENV: 'local' } });
+  assert.match(output, /STATUS: PASS/);
+  const parsed = JSON.parse(await readFile(path.join(base, 'automation.json'), 'utf8'));
+  assert.equal(parsed.taskrailCompatibility, '2.0.x');
+  await rm(base, { recursive: true, force: true });
+});
+
 test('inferProfile preserves backward compatibility for current manifests', () => {
   assert.equal(inferProfile({
     name: 'demo',
