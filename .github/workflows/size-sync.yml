@@ -1,0 +1,45 @@
+name: TaskRail README Size Sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: taskrail-size-sync-main
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Measure exact package artifact
+        run: npm pack --ignore-scripts --json > pack.json
+      - name: Refresh README footprint
+        run: node scripts/update-readme-size.mjs pack.json
+      - name: Commit refreshed size when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README footprint already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: refresh TaskRail package footprint"
+          git push origin main
