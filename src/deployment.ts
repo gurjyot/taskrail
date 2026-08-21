@@ -80,6 +80,14 @@ function parseCommand(command: string) {
   return parts;
 }
 
+function executableForPlatform(rawBin: string) {
+  if (rawBin === 'node') return process.execPath;
+  if (process.platform !== 'win32') return rawBin;
+  if (/\.(?:exe|cmd|bat)$/i.test(rawBin) || rawBin.includes('/') || rawBin.includes('\\')) return rawBin;
+  const windowsCommandShims = new Set(['npm', 'npx', 'pnpm', 'yarn', 'corepack']);
+  return windowsCommandShims.has(rawBin.toLowerCase()) ? `${rawBin}.cmd` : rawBin;
+}
+
 async function pathExists(target: string) {
   try {
     await stat(target);
@@ -130,7 +138,7 @@ async function runCommand(command: string, cwd: string) {
   const { spawn } = await import('node:child_process');
   const [rawBin, ...args] = parseCommand(command);
   return await new Promise<{ ok: boolean; code: number; error?: string }>((resolve) => {
-    const child = spawn(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, stdio: 'ignore' });
+    const child = spawn(executableForPlatform(rawBin), args, { cwd, stdio: 'ignore' });
     child.on('error', (error: NodeJS.ErrnoException) => resolve({ ok: false, code: 1, error: error.code === 'ENOENT' ? `missing executable: ${rawBin}` : error.message }));
     child.on('exit', (code) => resolve({ ok: code === 0, code: code ?? 1 }));
   });
