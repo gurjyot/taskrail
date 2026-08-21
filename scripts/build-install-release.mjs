@@ -11,7 +11,18 @@ await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 
 execFileSync(process.execPath, ['--version'], { stdio: 'ignore' });
-const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' }))[0];
+
+function npmPack() {
+  const args = ['pack', '--ignore-scripts', '--json'];
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath) {
+    return execFileSync(process.execPath, [npmExecPath, ...args], { cwd: root, encoding: 'utf8' });
+  }
+  const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return execFileSync(npmBin, args, { cwd: root, encoding: 'utf8' });
+}
+
+const packed = JSON.parse(npmPack())[0];
 if (!packed?.filename) throw new Error('npm pack did not return a package filename');
 const leaked = (packed.files ?? [])
   .map((item) => String(item.path || '').replace(/\\/g, '/'))
