@@ -111,6 +111,86 @@ test('drift ignores release metadata', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+
+test('stale release snapshot does not block deploy when source is clean', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'deploy/main.js': 'process.exit(0)',
+    'deploy/package.json': '{"name":"demo","version":"1.0.0"}',
+    'release/main.js': 'stale',
+    'release/tools/runtime.log': 'legacy runtime',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'source',
+      deployDir: 'deploy',
+      validationCommand: 'node main.js',
+      testCommand: 'node main.js',
+      healthCheck: { type: 'file', path: 'main.js' },
+      backup: { retain: 1 },
+      requiredChecks: ['validation', 'test', 'drift'],
+    }, null, 2),
+  });
+  const result = await safeDeploy({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file', path: 'main.js' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, true);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('real managed source drift still blocks deploy', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'deploy/main.js': 'process.exit(0)',
+    'deploy/package.json': '{"name":"demo","version":"1.0.0"}',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'source',
+      deployDir: 'deploy',
+      validationCommand: 'node -e "process.exit(0)"',
+      testCommand: 'node -e "process.exit(0)"',
+      healthCheck: { type: 'file', path: 'main.js' },
+      backup: { retain: 1 },
+      requiredChecks: ['validation', 'test'],
+    }, null, 2),
+  });
+  await writeFile(path.join(base, 'source', 'main.js'), 'process.exit(1)');
+  await writeFile(path.join(base, 'demo.deploy-state.json'), JSON.stringify({ backupPath: path.join(base, 'backup'), targetPath: path.join(base, 'deploy'), releasePath: path.join(base, 'release') }, null, 2));
+  const result = await safeDeploy({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
+    healthCheck: { type: 'file', path: 'main.js' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, false);
+  assert.match(result.failure ?? '', /drift detected/i);
+  await rm(base, { recursive: true, force: true });
+});
+
 test('rollback CLI uses the active manifest state file', async () => {
   const base = await fixtureDir();
   await gitInit(base);
@@ -230,6 +310,51 @@ test('impact aliases capability-impact and returns consumers', async () => {
   const output = execFileSync(process.execPath, [cli, 'impact', 'telegram-send', '--json'], { cwd: base, encoding: 'utf8' });
   const parsed = JSON.parse(output);
   assert.deepEqual(parsed.consumers, ['alpha']);
+  await rm(base, { recursive: true, force: true });
+});
+
+
+
+test('runtime health command failure is reported by health', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/check.js': 'process.exit(0)',
+    'deploy/index.txt': 'ok',
+    'src/runtime-health.js': 'process.exit(1)',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+      healthCheck: { type: 'file', path: 'index.txt' },
+      runtimeHealthCommand: 'node runtime-health.js',
+      backup: { retain: 1 },
+    }, null, 2),
+  });
+  let failed = false;
+  try {
+    execFileSync(process.execPath, [cli, 'health'], { cwd: base, encoding: 'utf8' });
+  } catch (error: any) {
+    failed = true;
+    assert.match(String(error.stdout ?? ''), /"ok":false/);
+  }
+  assert.equal(failed, true);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('backward compatibility still supports release metadata and default checks', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/check.js': 'process.exit(0)',
+    'deploy/index.txt': 'old',
+  });
+  const drift = await detectDrift(path.join(base, 'live'), path.join(base, 'release'));
+  assert.equal(drift.drifted, false);
+  const result = await runGate(baseManifest(base, { sourceDir: path.join(base, 'src'), deployDir: path.join(base, 'deploy'), validationCommand: 'node check.js', testCommand: 'node check.js' }), base);
+  assert.equal(result.verdict, 'PASS');
   await rm(base, { recursive: true, force: true });
 });
 
