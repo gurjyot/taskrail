@@ -13,6 +13,11 @@ await mkdir(out, { recursive: true });
 execFileSync(process.execPath, ['--version'], { stdio: 'ignore' });
 const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' }))[0];
 if (!packed?.filename) throw new Error('npm pack did not return a package filename');
+const leaked = (packed.files ?? [])
+  .map((item) => String(item.path || '').replace(/\\/g, '/'))
+  .filter((file) => file.startsWith('platform-install/') || file.startsWith('installers/'));
+if (leaked.length) throw new Error(`platform-specific installer payload leaked into TaskRail core package: ${leaked.join(', ')}`);
+
 const source = path.join(root, packed.filename);
 const target = path.join(out, packed.filename);
 await rename(source, target);
@@ -32,4 +37,4 @@ const manifest = {
 };
 await writeFile(path.join(out, 'taskrail-install-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 await writeFile(path.join(out, 'release.json'), `${JSON.stringify({ tag_name: `v${version}` }, null, 2)}\n`);
-console.log(JSON.stringify({ out, ...manifest }, null, 2));
+console.log(JSON.stringify({ out, leakedPlatformFiles: leaked.length, ...manifest }, null, 2));
