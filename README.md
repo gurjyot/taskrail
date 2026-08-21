@@ -2,9 +2,9 @@
 
 <p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, supervising, and safely operating production automations.</strong></p>
 
-<p align="center"><strong>⚡ Tiny framework footprint: ~110 KB compressed / ~601 KB unpacked, with zero runtime npm dependencies.</strong></p>
-
-<!-- taskrail-package-size:110463:601274 -->
+<!-- taskrail-size:start -->
+<p align="center"><strong>⚡ Tiny framework footprint: ~108 KiB compressed / ~588 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<!-- taskrail-size:end -->
 
 TaskRail is designed for coding agents such as Codex and other AI development tools, but remains deterministic and useful without AI. It provides a small control plane, reusable component SDK, governed capabilities, deployment safety, runtime guardrails, and progressive-disclosure agent instructions without requiring a database, queue, container platform, daemon, vector store, or runtime AI service.
 
@@ -160,7 +160,7 @@ Profiles provide reusable operational defaults such as runtime, deployment strat
 
 TaskRail currently includes:
 
-- **Tiny package footprint: ~110 KB compressed / ~601 KB unpacked, with zero runtime npm dependencies**
+- **Tiny package footprint: ~108 KiB compressed / ~588 KiB unpacked, with zero runtime npm dependencies**
 - CLI-first control plane
 - public TypeScript/Node.js library API
 - component SDK
@@ -336,11 +336,11 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, and `ta
 
 ## Framework footprint
 
-**TaskRail 2.0.8 package footprint: ~110 KB compressed / ~601 KB unpacked. Runtime npm dependencies: 0.**
+<!-- taskrail-footprint:start -->
+**Current TaskRail package footprint: ~108 KiB compressed / ~588 KiB unpacked. Runtime npm dependencies: 0.**
 
-The exact measured values for the current package are **110,463 bytes compressed** and **601,274 bytes unpacked**. These are measured from the actual `npm pack` artifact rather than inferred from repository size.
-
-The Golden Path release gate measures this on every change. If the package size changes and the README size marker is not updated, CI fails. This keeps the published footprint synchronized with the framework as it evolves.
+Measured automatically from the actual `npm pack` artifact. The Golden Path release gate enforces an unpacked size budget, and the main-branch size-sync workflow refreshes these figures after framework changes.
+<!-- taskrail-footprint:end -->
 
 A separate **2 MB unpacked size guardrail** currently prevents accidental framework bloat.
 
