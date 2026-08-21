@@ -9,6 +9,10 @@ import type { FrameworkManifest } from './types.js';
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('taskrail-supervise [--json] [--concurrency=N]');
+    return;
+  }
   const json = args.includes('--json');
   const concurrencyArg = args.find((arg) => arg.startsWith('--concurrency='));
   const concurrency = concurrencyArg ? Number(concurrencyArg.split('=')[1]) : 16;
