@@ -20,7 +20,8 @@ try {
   if (-not $release.tag_name) { throw 'GitHub release did not include tag_name.' }
   $tag = [string]$release.tag_name
   $version = $tag.TrimStart('v')
-  $base = "https://github.com/gurjyot/taskrail/releases/download/$tag"
+  $base = if ($env:TASKRAIL_RELEASE_BASE) { $env:TASKRAIL_RELEASE_BASE } else { "https://github.com/gurjyot/taskrail/releases/download/$tag" }
+  $platformManifest = if ($env:TASKRAIL_PLATFORM_MANIFEST_URL) { $env:TASKRAIL_PLATFORM_MANIFEST_URL } else { "https://raw.githubusercontent.com/gurjyot/taskrail/$tag/platform-install/manifest.json" }
 
   $manifestPath = Join-Path $tmp 'taskrail-install-manifest.json'
   Invoke-WebRequest -Uri "$base/taskrail-install-manifest.json" -OutFile $manifestPath -Headers @{ 'User-Agent' = 'taskrail-installer' } -MaximumRetryCount 5 -RetryIntervalSec 2 -TimeoutSec 120
@@ -38,7 +39,7 @@ try {
   & npm install -g $packagePath
   if ($LASTEXITCODE -ne 0) { throw 'TaskRail package installation failed.' }
 
-  $env:TASKRAIL_PLATFORM_MANIFEST_URL = "https://raw.githubusercontent.com/gurjyot/taskrail/$tag/platform-install/manifest.json"
+  $env:TASKRAIL_PLATFORM_MANIFEST_URL = $platformManifest
   & taskrail-platform-bootstrap install
   if ($LASTEXITCODE -ne 0) { throw 'TaskRail Windows platform adapter installation failed.' }
 
