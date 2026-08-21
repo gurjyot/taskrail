@@ -8,6 +8,10 @@ export function managedServiceUnits(manifest: FrameworkManifest) {
   return (manifest.serviceManager?.units ?? []).filter((unit) => unit.kind === 'service').map((unit) => unit.name);
 }
 
+export function managedSystemdUnits(manifest: FrameworkManifest) {
+  return (manifest.serviceManager?.units ?? []).map((unit) => ({ name: unit.name, kind: unit.kind })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function quoteSystemdPath(value: string) {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
