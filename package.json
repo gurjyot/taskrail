@@ -51,6 +51,22 @@
       "types": "./dist/src/components/index.d.ts",
       "import": "./dist/src/components/index.js"
     },
+    "./capabilities": {
+      "types": "./dist/src/public/capabilities.d.ts",
+      "import": "./dist/src/public/capabilities.js"
+    },
+    "./manifest": {
+      "types": "./dist/src/public/manifest.d.ts",
+      "import": "./dist/src/public/manifest.js"
+    },
+    "./testing": {
+      "types": "./dist/src/public/testing.d.ts",
+      "import": "./dist/src/public/testing.js"
+    },
+    "./control": {
+      "types": "./dist/src/public/control.d.ts",
+      "import": "./dist/src/public/control.js"
+    },
     "./dist/*": "./dist/*",
     "./src/*": "./src/*"
   },
@@ -63,7 +79,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.js",
-    "check": "npm run build && node dist/src/taskrail-cli.js --help && node dist/src/taskrail-cli.js components && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"import('taskrail/components').then(m => { if (!m.http || !m.config) process.exit(1) })\"",
+    "check": "npm run build && node dist/src/taskrail-cli.js --help && node dist/src/taskrail-cli.js components && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"Promise.all([import('taskrail/components'), import('taskrail/capabilities'), import('taskrail/manifest'), import('taskrail/testing'), import('taskrail/control')]).then(([components, capabilities, manifest, testing, control]) => { if (!components.http || !components.config || !capabilities.buildUsageGraph || !manifest.validateConfig || !testing.evaluateConformance || !control.LifecycleBus) process.exit(1) })\"",
     "prepack": "npm run build && npm test && npm run check"
   },
   "devDependencies": {
