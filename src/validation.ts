@@ -21,6 +21,9 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (config.manifest.deployStrategy?.type && !['replace-in-place', 'release-symlink'].includes(config.manifest.deployStrategy.type)) errors.push('manifest.deployStrategy.type is invalid');
   if (config.manifest.migrations?.destructive && !config.manifest.migrations.applyCommand) errors.push('destructive migrations require migrations.applyCommand');
   if (config.manifest.serviceManager?.type && config.manifest.serviceManager.type !== 'systemd') errors.push('manifest.serviceManager.type must be systemd');
+  for (const unit of config.manifest.serviceManager?.units ?? []) {
+    if (unit.staleAfterMs !== undefined && (!Number.isInteger(unit.staleAfterMs) || unit.staleAfterMs <= 0)) errors.push(`service unit ${unit.name} staleAfterMs must be a positive integer`);
+  }
 
   const execution = config.manifest.execution;
   if (execution?.timeoutMs !== undefined && (!Number.isInteger(execution.timeoutMs) || execution.timeoutMs <= 0)) errors.push('manifest.execution.timeoutMs must be a positive integer');
