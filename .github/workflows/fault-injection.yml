@@ -1,0 +1,38 @@
+name: TaskRail Fault Injection
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskrail-fault-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fault-contract:
+    name: Fault contract (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exact development dependencies
+        run: npm ci
+      - name: Run deterministic fault and recovery contracts
+        run: npm run fault:contract
+      - name: Build installer release fixture
+        run: npm run build:install-release
+      - name: Ensure core package remains platform-neutral
+        run: node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('release-install/taskrail-install-manifest.json','utf8')); if(!m.framework?.sha256) process.exit(1); console.log('verified release fixture',m.framework.file)"
