@@ -62,7 +62,7 @@ export async function scaffoldAutomation(input: AutomationScaffoldInput) {
 
   const manifest = {
     name: input.name,
-    taskrailCompatibility: '2.0.x',
+    taskrailCompatibility: '3.0.x',
     profile: input.profile,
     runtime,
     managed: true,
