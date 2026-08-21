@@ -16,7 +16,7 @@ async function fixtureDir() {
   return await mkdtemp(path.join(os.tmpdir(), 'taskrail-update-'));
 }
 
-test('update transaction permits only explicit forward and recovery transitions', async () => {
+test('update transaction requires a proven rollback path before activation', async () => {
   const root = await fixtureDir();
   try {
     const created = await createUpdateCheckpoint(root, {
@@ -39,10 +39,23 @@ test('update transaction permits only explicit forward and recovery transitions'
     await transitionUpdate(root, 'capability', 'telegram-send', 'staged');
     await transitionUpdate(root, 'capability', 'telegram-send', 'validated');
     await transitionUpdate(root, 'capability', 'telegram-send', 'simulated');
+    await assert.rejects(
+      transitionUpdate(root, 'capability', 'telegram-send', 'rollback-ready'),
+      /cannot mark rollback ready/,
+    );
+    assert.equal((await readUpdateCheckpoint(root, 'capability', 'telegram-send'))?.phase, 'simulated');
+
+    await transitionUpdate(root, 'capability', 'telegram-send', 'rollback-ready', 'last known good verified', {
+      recovery: {
+        previousReleaseVerified: true,
+        configurationVerified: true,
+        migrationCompatible: true,
+      },
+    });
     await transitionUpdate(root, 'capability', 'telegram-send', 'activated');
     await transitionUpdate(root, 'capability', 'telegram-send', 'verified');
     const committed = await transitionUpdate(root, 'capability', 'telegram-send', 'committed');
-    assert.equal(committed.history.length, 9);
+    assert.equal(committed.history.length, 10);
     assert.equal((await readUpdateCheckpoint(root, 'capability', 'telegram-send'))?.phase, 'committed');
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -93,7 +106,7 @@ test('active transaction cannot be replaced by another update', async () => {
   }
 });
 
-test('rollback readiness fails closed until old release configuration and migration are verified', async () => {
+test('rollback after failure is revalidated before restore', async () => {
   const root = await fixtureDir();
   try {
     await createUpdateCheckpoint(root, {
