@@ -20,11 +20,6 @@ function executable(bin) {
   return shims.has(bin.toLowerCase()) ? `${bin}.cmd` : bin;
 }
 
-function windowsCommandLine(bin, args) {
-  const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
-  return [quote(bin), ...args.map(quote)].join(' ');
-}
-
 const server = createServer(async (request, response) => {
   try {
     const file = safePath(request.url || '/');
@@ -77,7 +72,7 @@ function run(bin, binArgs) {
   let spawnArgs = binArgs;
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(resolvedBin)) {
     spawnBin = process.env.ComSpec || 'cmd.exe';
-    spawnArgs = ['/d', '/s', '/c', windowsCommandLine(resolvedBin, binArgs)];
+    spawnArgs = ['/d', '/c', 'call', resolvedBin, ...binArgs];
   }
   return new Promise((resolve, reject) => {
     const child = spawn(spawnBin, spawnArgs, { cwd: root, env, stdio: 'inherit', shell: false });
