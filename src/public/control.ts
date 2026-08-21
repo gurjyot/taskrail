@@ -28,6 +28,8 @@ export { verifyProvenance, provenancePayload, sha256 } from '../provenance.js';
 export { assessSharedArtifactUpdate, satisfiesSimpleRange } from '../compatibility-contract.js';
 export { assessSecurityDeclaration, TASKRAIL_SECURITY_POLICY } from '../security-policy.js';
 export { groupDiagnostics, diagnosticIssueKey } from '../error-intelligence.js';
+export { planRebootRecovery, rebootRecoverySafe } from '../reboot-recovery.js';
+export { planRetention, retentionDecision, DEFAULT_RETENTION_POLICY } from '../retention-policy.js';
 export type {
   LifecycleEvent,
   LifecycleContext,
@@ -50,3 +52,5 @@ export type { ProvenanceStatement, ProvenancePolicy, ProvenanceResult } from '..
 export type { CompatibilityContract, CompatibilityConsumer, CompatibilityAssessment, SharedArtifactKind, ChangeLevel } from '../compatibility-contract.js';
 export type { SecurityPolicy, SecurityDeclaration, SecurityControl } from '../security-policy.js';
 export type { DiagnosticGroup } from '../error-intelligence.js';
+export type { MissedRunPolicy, RebootAutomationState, RebootAction } from '../reboot-recovery.js';
+export type { RetentionRecord, RetentionPolicy } from '../retention-policy.js';
