@@ -33,9 +33,8 @@ jobs:
       - name: Install optional MCP SDK without changing TaskRail core dependencies
         working-directory: adapters/mcp
         run: npm install --ignore-scripts --legacy-peer-deps
-      - name: Link this exact TaskRail build as the MCP peer
-        working-directory: adapters/mcp
-        run: npm install --no-save --ignore-scripts --legacy-peer-deps ../..
+      - name: Install this exact packed TaskRail artifact as the MCP peer
+        run: node -e "const cp=require('child_process'),path=require('path'); const npm=process.platform==='win32'?'npm.cmd':'npm'; const packed=JSON.parse(cp.execFileSync(npm,['pack','--ignore-scripts','--json'],{encoding:'utf8'}))[0]; const tgz=path.resolve(packed.filename); cp.execFileSync(npm,['install','--no-save','--ignore-scripts','--legacy-peer-deps',tgz],{cwd:path.resolve('adapters/mcp'),stdio:'inherit'});"
       - name: Run official-client stdio and security tests
         working-directory: adapters/mcp
         run: npm test
