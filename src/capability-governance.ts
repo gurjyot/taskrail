@@ -31,6 +31,12 @@ export interface CapabilityConflict extends CapabilitySearchResult {
   severity: 'hard' | 'soft';
 }
 
+export interface RegistryConflict {
+  left: string;
+  right: string;
+  reason: string[];
+}
+
 const stopWords = new Set(['a', 'an', 'and', 'api', 'for', 'from', 'in', 'of', 'on', 'or', 'service', 'the', 'to', 'with']);
 
 function normalize(value: string | undefined) {
@@ -61,7 +67,7 @@ function exactListOverlap(left: string[] = [], right: string[] = []) {
   return overlap(a, b);
 }
 
-async function metadataFor(capability: CapabilityContract): Promise<CapabilityMetadata> {
+export async function capabilityMetadata(capability: CapabilityContract): Promise<CapabilityMetadata> {
   try {
     const raw = JSON.parse(await readFile(capability.path, 'utf8')) as Partial<CapabilityMetadata>;
     return {
@@ -94,10 +100,57 @@ function searchScore(query: string, metadata: CapabilityMetadata) {
   return Math.min(1, purposeScore * 0.55 + operationScore * 0.3 + keywordScore * 0.15);
 }
 
+function compareMetadata(candidate: CapabilityMetadata, existing: CapabilityMetadata): CapabilityConflict | null {
+  const reasons: string[] = [];
+  let severity: 'hard' | 'soft' | null = null;
+  let score = 0;
+
+  if (normalize(candidate.name) === normalize(existing.name)) {
+    severity = 'hard';
+    score = 1;
+    reasons.push('same name');
+  }
+  if (candidate.purpose && existing.purpose && normalize(candidate.purpose) === normalize(existing.purpose)) {
+    severity = 'hard';
+    score = 1;
+    reasons.push('same canonical purpose');
+  }
+
+  const sameDomain = Boolean(candidate.domain && existing.domain && normalize(candidate.domain) === normalize(existing.domain));
+  const operationOverlap = exactListOverlap(candidate.operations, existing.operations);
+  const descriptiveOverlap = overlap(
+    tokens(candidate.name, candidate.purpose, candidate.description, candidate.keywords),
+    tokens(existing.name, existing.purpose, existing.description, existing.keywords),
+  );
+
+  if (!severity && sameDomain && operationOverlap >= 0.8 && operationOverlap > 0) {
+    severity = 'hard';
+    score = Math.max(score, 0.9);
+    reasons.push('same domain with substantially same operations');
+  }
+
+  const softScore = Math.min(1, (sameDomain ? 0.2 : 0) + operationOverlap * 0.45 + descriptiveOverlap * 0.35);
+  if (!severity && softScore >= 0.45) {
+    severity = 'soft';
+    score = softScore;
+    if (sameDomain) reasons.push('same domain');
+    if (operationOverlap > 0) reasons.push('overlapping operations');
+    if (descriptiveOverlap > 0) reasons.push('overlapping purpose/keywords');
+  }
+
+  return severity ? {
+    name: existing.name,
+    severity,
+    score: Number(score.toFixed(3)),
+    reason: reasons,
+    metadata: existing,
+  } : null;
+}
+
 export async function findSimilarCapabilities(query: string, capabilities: CapabilityContract[], limit = 5): Promise<CapabilitySearchResult[]> {
+  const metadataList = await Promise.all(capabilities.map(capabilityMetadata));
   const results: CapabilitySearchResult[] = [];
-  for (const capability of capabilities) {
-    const metadata = await metadataFor(capability);
+  for (const metadata of metadataList) {
     const score = searchScore(query, metadata);
     if (score <= 0) continue;
     const reason: string[] = [];
@@ -111,53 +164,24 @@ export async function findSimilarCapabilities(query: string, capabilities: Capab
 }
 
 export async function assessCapabilityCandidate(candidate: CapabilityMetadata, capabilities: CapabilityContract[]): Promise<CapabilityConflict[]> {
-  const conflicts: CapabilityConflict[] = [];
-  for (const capability of capabilities) {
-    const existing = await metadataFor(capability);
-    const reasons: string[] = [];
-    let severity: 'hard' | 'soft' | null = null;
-    let score = 0;
+  const metadataList = await Promise.all(capabilities.map(capabilityMetadata));
+  return metadataList
+    .map((existing) => compareMetadata(candidate, existing))
+    .filter((item): item is CapabilityConflict => Boolean(item))
+    .sort((a, b) => (a.severity === b.severity ? b.score - a.score : a.severity === 'hard' ? -1 : 1) || a.name.localeCompare(b.name));
+}
 
-    if (normalize(candidate.name) === normalize(existing.name)) {
-      severity = 'hard';
-      score = 1;
-      reasons.push('same name');
+export async function findHardRegistryConflicts(capabilities: CapabilityContract[]): Promise<RegistryConflict[]> {
+  const metadataList = await Promise.all(capabilities.map(capabilityMetadata));
+  const conflicts: RegistryConflict[] = [];
+  for (let left = 0; left < metadataList.length; left += 1) {
+    for (let right = left + 1; right < metadataList.length; right += 1) {
+      const a = metadataList[left];
+      const b = metadataList[right];
+      if (a.status === 'superseded' || b.status === 'superseded') continue;
+      const conflict = compareMetadata(a, b);
+      if (conflict?.severity === 'hard') conflicts.push({ left: a.name, right: b.name, reason: conflict.reason });
     }
-    if (candidate.purpose && existing.purpose && normalize(candidate.purpose) === normalize(existing.purpose)) {
-      severity = 'hard';
-      score = 1;
-      reasons.push('same canonical purpose');
-    }
-
-    const sameDomain = Boolean(candidate.domain && existing.domain && normalize(candidate.domain) === normalize(existing.domain));
-    const operationOverlap = exactListOverlap(candidate.operations, existing.operations);
-    const descriptiveOverlap = overlap(
-      tokens(candidate.name, candidate.purpose, candidate.description, candidate.keywords),
-      tokens(existing.name, existing.purpose, existing.description, existing.keywords),
-    );
-
-    if (!severity && sameDomain && operationOverlap >= 0.8 && operationOverlap > 0) {
-      severity = 'hard';
-      score = Math.max(score, 0.9);
-      reasons.push('same domain with substantially same operations');
-    }
-
-    const softScore = Math.min(1, (sameDomain ? 0.2 : 0) + operationOverlap * 0.45 + descriptiveOverlap * 0.35);
-    if (!severity && softScore >= 0.45) {
-      severity = 'soft';
-      score = softScore;
-      if (sameDomain) reasons.push('same domain');
-      if (operationOverlap > 0) reasons.push('overlapping operations');
-      if (descriptiveOverlap > 0) reasons.push('overlapping purpose/keywords');
-    }
-
-    if (severity) conflicts.push({
-      name: existing.name,
-      severity,
-      score: Number(score.toFixed(3)),
-      reason: reasons,
-      metadata: existing,
-    });
   }
-  return conflicts.sort((a, b) => (a.severity === b.severity ? b.score - a.score : a.severity === 'hard' ? -1 : 1) || a.name.localeCompare(b.name));
+  return conflicts.sort((a, b) => `${a.left}:${a.right}`.localeCompare(`${b.left}:${b.right}`));
 }
