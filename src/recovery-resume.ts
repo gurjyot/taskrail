@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AutomationPlugin, DeployState, FrameworkManifest } from './types.js';
@@ -6,6 +6,7 @@ import { resolvePaths } from './config.js';
 import { runHealthCheck } from './deployment.js';
 import { readUpdateCheckpoint, transitionUpdate, type UpdateCheckpoint } from './update-transaction.js';
 import { recordRecoveryReadiness, validateLastKnownGoodRecovery } from './recovery-readiness.js';
+import { readPrivateState, writePrivateState } from './private-state.js';
 
 export interface RecoveryResumeResult {
   ok: boolean;
@@ -20,12 +21,7 @@ function stateFile(manifest: FrameworkManifest, cwd: string) {
 }
 
 async function readState(manifest: FrameworkManifest, cwd: string): Promise<DeployState | null> {
-  try {
-    return JSON.parse(await readFile(stateFile(manifest, cwd), 'utf8')) as DeployState;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
+  return readPrivateState<DeployState & Record<string, unknown>>(stateFile(manifest, cwd), { allowLegacy: true });
 }
 
 async function exists(target: string) {
@@ -41,8 +37,7 @@ async function writeRecoveredState(manifest: FrameworkManifest, cwd: string, che
     lastKnownGoodReleasePath: checkpoint.lastKnownGoodReleasePath,
     lastKnownGoodReleaseId: checkpoint.lastKnownGoodRelease,
   };
-  await mkdir(path.dirname(stateFile(manifest, cwd)), { recursive: true });
-  await writeFile(stateFile(manifest, cwd), `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await writePrivateState(stateFile(manifest, cwd), state as DeployState & Record<string, unknown>);
 }
 
 async function restoreRelease(manifest: FrameworkManifest, cwd: string, checkpoint: UpdateCheckpoint, plugin?: AutomationPlugin) {
@@ -107,7 +102,22 @@ export async function recoverInterruptedAutomation(
     return { ok: false, action: 'recovery-required', reason: 'last-known-good recovery path is missing', checkpoint };
   }
 
-  const currentState = await readState(manifest, cwd);
+  let currentState: DeployState | null;
+  try {
+    currentState = await readState(manifest, cwd);
+    if (currentState) await writePrivateState(stateFile(manifest, cwd), currentState as DeployState & Record<string, unknown>);
+  } catch (error) {
+    if (checkpoint.phase !== 'recovery-required') {
+      checkpoint = await transitionUpdate(cwd, 'automation', manifest.name, 'recovery-required', 'deployment state integrity could not be verified');
+    }
+    return {
+      ok: false,
+      action: 'recovery-required',
+      reason: `deployment state cannot be trusted: ${error instanceof Error ? error.message : String(error)}`,
+      checkpoint,
+    };
+  }
+
   const preActivationPhases = new Set(['discovered', 'impact-checked', 'checkpointed', 'staged', 'validated', 'simulated', 'rollback-ready']);
   if (preActivationPhases.has(checkpoint.phase) && currentState?.currentReleaseId === checkpoint.lastKnownGoodRelease) {
     const health = await runHealthCheck(
