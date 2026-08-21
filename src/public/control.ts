@@ -24,6 +24,10 @@ export {
   pauseSharedUpdateConsumers,
   resumeSharedUpdateConsumers,
 } from '../shared-update-control.js';
+export { verifyProvenance, provenancePayload, sha256 } from '../provenance.js';
+export { assessSharedArtifactUpdate, satisfiesSimpleRange } from '../compatibility-contract.js';
+export { assessSecurityDeclaration, TASKRAIL_SECURITY_POLICY } from '../security-policy.js';
+export { groupDiagnostics, diagnosticIssueKey } from '../error-intelligence.js';
 export type {
   LifecycleEvent,
   LifecycleContext,
@@ -42,3 +46,7 @@ export type { TransactionalDeployOptions, TransactionalDeployResult } from '../t
 export type { RecoveryResumeResult } from '../recovery-resume.js';
 export type { UpdatePauseRecord } from '../update-pause.js';
 export type { SharedPauseResult } from '../shared-update-control.js';
+export type { ProvenanceStatement, ProvenancePolicy, ProvenanceResult } from '../provenance.js';
+export type { CompatibilityContract, CompatibilityConsumer, CompatibilityAssessment, SharedArtifactKind, ChangeLevel } from '../compatibility-contract.js';
+export type { SecurityPolicy, SecurityDeclaration, SecurityControl } from '../security-policy.js';
+export type { DiagnosticGroup } from '../error-intelligence.js';
