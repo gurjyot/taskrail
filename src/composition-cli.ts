@@ -7,6 +7,7 @@ import { checkCapability } from './capability-check.js';
 import { scaffoldCapability } from './capability-scaffold.js';
 import { scaffoldAutomation } from './automation-scaffold.js';
 import { buildUsageGraph, usageImpact } from './usage-graph.js';
+import { planSharedUpdate } from './update-plan.js';
 
 function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 
@@ -46,6 +47,7 @@ function usage() {
     '  taskrail capability-check <name> [--strict]',
     '  taskrail usage',
     '  taskrail usage <component|capability|profile> <name>',
+    '  taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking]',
     '  taskrail init automation <name> --profile <profile> [--root <dir>]',
     '  taskrail init capability <name> --description <text> --purpose <text> --domain <name> --operation <op> [--operation <op> ...]',
   ].join('\n'));
@@ -97,6 +99,26 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
     const impact = usageImpact(graph, kind, name);
     output({ ...impact, errors: graph.errors });
     if (!impact.exists || graph.errors.length) process.exitCode = 1;
+    return;
+  }
+  if (command === 'update-plan') {
+    const kind = rest[0] as 'component' | 'capability' | undefined;
+    const name = rest[1];
+    if (!kind || !['component', 'capability'].includes(kind) || !name) {
+      console.error('usage: taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking]');
+      process.exitCode = 1;
+      return;
+    }
+    const graph = await buildUsageGraph(process.cwd());
+    const plan = planSharedUpdate(graph, {
+      targetKind: kind,
+      targetName: name,
+      fromVersion: flagValue(rest, '--from'),
+      toVersion: flagValue(rest, '--to'),
+      breaking: hasFlag(rest, '--breaking'),
+    });
+    output({ ...plan, graphErrors: graph.errors });
+    if (plan.action === 'blocked') process.exitCode = 1;
     return;
   }
   if (command === 'capability-find') {
