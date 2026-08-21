@@ -3,8 +3,11 @@ export { auditFleetIsolation } from '../isolation-audit.js';
 export { certifyTaskRail } from '../certification.js';
 export { runFaultScenarios, faultGatePassed } from '../fault-injection.js';
 export { ValidationRegistry, validationModule } from '../validation-registry.js';
+export { createTaskRailValidationRegistry } from '../validation-modules.js';
 export { SecurityRegistry, securityControl } from '../security-registry.js';
+export { createTaskRailSecurityRegistry } from '../security-modules.js';
 export { assessPerformanceBudget, DEFAULT_PERFORMANCE_BUDGET } from '../performance-budget.js';
+export { assessBackwardCompatibility } from '../backward-compatibility.js';
 export type {
   ConformanceReport,
   ConformanceFinding,
@@ -25,6 +28,7 @@ export type {
   ValidationSuite,
   ValidationRunResult,
 } from '../validation-registry.js';
+export type { TaskRailValidationInput } from '../validation-modules.js';
 export type {
   SecurityControlContext,
   SecurityControlSeverity,
@@ -33,4 +37,6 @@ export type {
   SecurityProfile,
   SecurityProfileResult,
 } from '../security-registry.js';
+export type { TaskRailSecurityInput } from '../security-modules.js';
 export type { PerformanceBudget, PerformanceMeasurement, PerformanceViolation } from '../performance-budget.js';
+export type { CompatibilitySnapshot, CompatibilityChange } from '../backward-compatibility.js';
