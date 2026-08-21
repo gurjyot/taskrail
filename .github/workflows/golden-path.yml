@@ -71,7 +71,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Measure package
+      - name: Measure package and enforce README freshness
         run: |
           npm pack --ignore-scripts --json > pack.json
-          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) }"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; const readme=fs.readFileSync('README.md','utf8'); const marker='<!-- taskrail-package-size:'+p.size+':'+p.unpackedSize+' -->'; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) } if (!readme.includes(marker)) { console.error('README package-size marker is stale. Expected: '+marker); process.exit(1) }"
