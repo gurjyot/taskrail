@@ -56,6 +56,8 @@ export interface DeployStrategy {
 export interface FrameworkManifest {
   name: string;
   taskrailCompatibility?: string;
+  profile?: string;
+  frameworkCapabilities?: string[];
   runtime: RuntimeKind;
   runtimeVersion?: string;
   managed: boolean;
@@ -89,6 +91,17 @@ export interface FrameworkManifest {
     required?: boolean;
     schema?: string;
   };
+}
+
+export interface FrameworkCapabilityDefinition {
+  id: string;
+  apply(manifest: FrameworkManifest): Partial<FrameworkManifest>;
+}
+
+export interface FrameworkProfileDefinition {
+  id: string;
+  frameworkCapabilities: string[];
+  defaults: Partial<FrameworkManifest>;
 }
 
 export type HealthCheckDefinition =

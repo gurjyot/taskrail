@@ -1,0 +1,44 @@
+{
+  "name": "twenty-followup-reminder",
+  "taskrailCompatibility": ">=2.0.4 <3.0.0",
+  "profile": "smg-node-timer@1",
+  "runtime": "node",
+  "managed": true,
+  "sourceDir": ".",
+  "validationCommand": "node --check src/main.js",
+  "testCommand": "node tests/self-test.js",
+  "healthCommand": "node --check src/main.js",
+  "healthCheck": {
+    "type": "command",
+    "command": "node --check src/main.js"
+  },
+  "backup": {
+    "retain": 5
+  },
+  "requiredSharedFiles": [
+    {
+      "path": "/opt/smg-automations/shared/.env",
+      "environments": ["production"]
+    },
+    {
+      "path": "/opt/smg-automations/config/twenty-followup-reminder.env",
+      "environments": ["production"]
+    }
+  ],
+  "releaseOwnedPaths": [
+    "AGENTS.md",
+    "automation.json",
+    "main.js",
+    "package.json",
+    "src",
+    "tests",
+    "tools"
+  ],
+  "capabilities": [
+    "telegram-send",
+    "twenty-api"
+  ],
+  "capabilityRoots": [
+    "../capabilities"
+  ]
+}

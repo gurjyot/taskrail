@@ -1,0 +1,90 @@
+{
+  "name": "ads-agent",
+  "taskrailCompatibility": ">=2.0.4 <3.0.0",
+  "profile": "smg-node-timer@1",
+  "runtime": "node",
+  "managed": true,
+  "sourceDir": ".",
+  "validationCommand": "node --check main.js",
+  "testCommand": "node tests/self-test.js",
+  "healthCommand": "node --check main.js",
+  "healthCheck": {
+    "type": "command",
+    "command": "node --check main.js"
+  },
+  "backup": {
+    "retain": 5
+  },
+  "requiredSharedFiles": [
+    {
+      "path": "/opt/smg-automations/shared/.env",
+      "environments": ["production"]
+    },
+    {
+      "path": "/opt/smg-automations/shared/meta-accounts.json",
+      "environments": ["production"]
+    }
+  ],
+  "dependencyManager": {
+    "tool": "npm",
+    "lockfile": "package-lock.json",
+    "manifest": "package.json",
+    "installCommand": "npm ci --omit=dev"
+  },
+  "releaseOwnedPaths": [
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "ads-agent-daily-brief.service",
+    "ads-agent-daily-brief.timer",
+    "ads-agent.env.example",
+    "ads-agent.service",
+    "ads-agent.timer",
+    "automation.json",
+    "lib",
+    "main.js",
+    "package-lock.json",
+    "package.json",
+    "scripts",
+    "tests"
+  ],
+  "protectedPaths": [
+    "/opt/smg-automations/shared/.env",
+    "/opt/smg-automations/shared/meta-accounts.json"
+  ],
+  "capabilities": [
+    "telegram-send",
+    "meta-api"
+  ],
+  "capabilityRoots": [
+    "../capabilities"
+  ],
+  "requiredChecks": [
+    "validation",
+    "test",
+    "health"
+  ],
+  "serviceManager": {
+    "type": "systemd",
+    "units": [
+      {
+        "name": "ads-agent.service",
+        "kind": "service",
+        "oneshotOkay": true
+      },
+      {
+        "name": "ads-agent.timer",
+        "kind": "timer"
+      },
+      {
+        "name": "ads-agent-daily-brief.service",
+        "kind": "service",
+        "oneshotOkay": true
+      },
+      {
+        "name": "ads-agent-daily-brief.timer",
+        "kind": "timer"
+      }
+    ]
+  }
+}
