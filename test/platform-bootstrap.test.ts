@@ -15,7 +15,7 @@ async function fixture() {
   return mkdtemp(path.join(os.tmpdir(), 'taskrail-platform-'));
 }
 
-function digest(value: string) {
+function digest(value: string | Buffer) {
   return createHash('sha256').update(value).digest('hex');
 }
 
@@ -95,6 +95,70 @@ test('version mismatch fails before download activation', async () => {
     await assert.rejects(
       installPlatformAdapter({ platform: 'darwin', version: '2.0.8', root: target, manifestFile }),
       /version mismatch/,
+    );
+    assert.equal(await readInstalledPlatform(target), null);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+test('failed replacement preserves the previously installed adapter and receipt', async () => {
+  const source = await fixture();
+  const target = await fixture();
+  try {
+    const manifestFile = await makeManifest(source);
+    const first = await installPlatformAdapter({ platform: 'win32', version: '2.0.8', root: target, manifestFile });
+    const originalBytes = await readFile(first.adapterPath);
+    const originalReceipt = await readInstalledPlatform(target);
+
+    const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+    const adapterFile = path.join(source, 'win32', 'adapter.mjs');
+    await writeFile(adapterFile, "export default { id: 'tampered' };\n");
+    manifest.platforms.win32.bytes = (await stat(adapterFile)).size;
+    manifest.platforms.win32.sha256 = 'f'.repeat(64);
+    await writeFile(manifestFile, JSON.stringify(manifest, null, 2));
+
+    await assert.rejects(
+      installPlatformAdapter({ platform: 'win32', version: '2.0.8', root: target, manifestFile }),
+      /checksum mismatch/,
+    );
+    assert.deepEqual(await readFile(first.adapterPath), originalBytes);
+    assert.deepEqual(await readInstalledPlatform(target), originalReceipt);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+test('missing selected platform payload fails closed without creating registration', async () => {
+  const source = await fixture();
+  const target = await fixture();
+  try {
+    const manifestFile = await makeManifest(source);
+    await rm(path.join(source, 'linux', 'adapter.mjs'));
+    await assert.rejects(
+      installPlatformAdapter({ platform: 'linux', version: '2.0.8', root: target, manifestFile }),
+      /ENOENT|download failed/,
+    );
+    assert.equal(await readInstalledPlatform(target), null);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+test('invalid platform manifest schema is rejected before installation', async () => {
+  const source = await fixture();
+  const target = await fixture();
+  try {
+    const manifestFile = await makeManifest(source);
+    const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+    manifest.schema = 999;
+    await writeFile(manifestFile, JSON.stringify(manifest, null, 2));
+    await assert.rejects(
+      installPlatformAdapter({ platform: 'linux', version: '2.0.8', root: target, manifestFile }),
+      /unsupported platform manifest schema/,
     );
     assert.equal(await readInstalledPlatform(target), null);
   } finally {
