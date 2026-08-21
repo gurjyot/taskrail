@@ -29,7 +29,7 @@ async function main() {
   const detailsArg = args.find((arg) => arg.startsWith('--details='));
   const stateDir = path.resolve(stateArg ? stateArg.slice('--state='.length) : `/opt/smg-automations/state/${automation}`);
   const context = createExecutionContext(automation, stateDir);
-  const executionId = executionArg?.slice('--execution='.length) || process.env.TASKRAIL_EXECUTION_ID || context.executionId;
+  const executionId = executionArg?.slice('--execution='.length) || process.env.TASKRAIL_EXECUTION_ID || process.env.INVOCATION_ID || context.executionId;
   const resolved = requested === 'systemd' ? systemdStatus() : { status: requested as Exclude<RequestedStatus, 'systemd'>, details: detailsArg?.slice('--details='.length) };
   await writeHeartbeat(stateDir, {
     automation,
