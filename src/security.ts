@@ -9,10 +9,29 @@ const secretValuePatterns = [
   /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^\s/:]+:[^\s/@]+@/i,
 ];
 
+function importsChildProcessExec(text: string) {
+  const imports = text.match(/import\s*\{([^}]*)\}\s*from\s*["']node:child_process["']/gs) ?? [];
+  return imports.some((entry) => /\bexec(?:Sync)?\b/.test(entry));
+}
+
+function callsImportedExec(text: string) {
+  if (!importsChildProcessExec(text)) return false;
+  return /(?:^|[^A-Za-z0-9_])exec(?:Sync)?\s*\(/m.test(text);
+}
+
+function containsInterpolatedSql(text: string) {
+  const templates = text.match(/`(?:\\.|[^`])*`/gs) ?? [];
+  return templates.some((template) => {
+    if (!/\$\{/.test(template)) return false;
+    const sql = template.slice(1, -1).trim();
+    return /^(?:SELECT\b[\s\S]*\bFROM\b|INSERT\s+INTO\b|UPDATE\s+[A-Za-z0-9_."`]+\s+SET\b|DELETE\s+FROM\b|ALTER\s+TABLE\b|DROP\s+(?:TABLE|DATABASE)\b|CREATE\s+(?:TABLE|DATABASE)\b)/i.test(sql);
+  });
+}
+
 const sourceWarnings: Array<{ code: string; test(text: string): boolean; message: string }> = [
   {
     code: 'shell-exec',
-    test: (text) => /(?:^|[^A-Za-z0-9_])exec(?:Sync)?\s*\(/m.test(text),
+    test: callsImportedExec,
     message: 'direct shell execution detected; prefer argument-safe spawn/execFile APIs',
   },
   {
@@ -22,10 +41,7 @@ const sourceWarnings: Array<{ code: string; test(text: string): boolean; message
   },
   {
     code: 'sql-interpolation',
-    test: (text) => {
-      const templates = text.match(/`(?:\\.|[^`])*`/gs) ?? [];
-      return templates.some((template) => /\b(?:SELECT|INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\b/i.test(template) && /\$\{/.test(template));
-    },
+    test: containsInterpolatedSql,
     message: 'interpolated SQL template detected; use parameterized queries',
   },
   {
