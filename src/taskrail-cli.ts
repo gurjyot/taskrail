@@ -25,6 +25,9 @@ if (command === 'platform') {
 } else if (command === 'update') {
   const { runTransactionalDeployCli } = await import('./transactional-deploy-cli.js');
   await runTransactionalDeployCli(process.argv.slice(2));
+} else if (command === 'recover') {
+  const { runRecoveryResumeCli } = await import('./recovery-resume-cli.js');
+  await runRecoveryResumeCli(process.argv.slice(2));
 } else if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
   await runCompositionCli(process.argv.slice(2));
