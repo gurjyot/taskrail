@@ -17,8 +17,6 @@ export interface DecisionRecord {
   decision: string;
   key?: string;
   reason?: string;
-  input?: unknown;
-  output?: unknown;
 }
 
 export interface HeartbeatRecord {
@@ -41,6 +39,11 @@ export interface IdempotencyClaim {
   claimed: boolean;
   key: string;
   path: string;
+}
+
+export interface IdempotentResult<T> {
+  executed: boolean;
+  value?: T;
 }
 
 function safeName(value: string) {
@@ -81,7 +84,7 @@ export class LocalStateStore {
     try {
       return JSON.parse(await readFile(this.file(namespace, key), 'utf8')) as T;
     } catch (error: any) {
-      if (error?.code === 'ENOENT' || error instanceof SyntaxError) return null;
+      if (error?.code === 'ENOENT') return null;
       throw error;
     }
   }
@@ -128,6 +131,17 @@ export class IdempotencyStore {
   }
 }
 
+export async function runIdempotent<T>(store: IdempotencyStore, scope: string, key: string, operation: () => Promise<T>): Promise<IdempotentResult<T>> {
+  const claim = await store.claim(scope, key);
+  if (!claim.claimed) return { executed: false };
+  try {
+    return { executed: true, value: await operation() };
+  } catch (error) {
+    await store.release(scope, key);
+    throw error;
+  }
+}
+
 export async function recordDecision(root: string, record: DecisionRecord) {
   const file = path.join(root, 'decisions.jsonl');
   await mkdir(path.dirname(file), { recursive: true });
@@ -141,8 +155,9 @@ export async function writeHeartbeat(root: string, record: HeartbeatRecord) {
 export async function readHeartbeat(root: string): Promise<HeartbeatRecord | null> {
   try {
     return JSON.parse(await readFile(path.join(root, 'health.json'), 'utf8')) as HeartbeatRecord;
-  } catch {
-    return null;
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
   }
 }
 
