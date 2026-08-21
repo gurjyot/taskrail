@@ -89,15 +89,33 @@ export interface PlatformCommandIntent {
 
 export interface ResolvedPlatformCommand {
   command: PlatformCommandName;
-  argv: string[];
+  target: string;
   minimumRole: PlatformRole;
   risk: 'write' | 'control';
 }
 
+export interface PlatformCommandContext {
+  role: PlatformRole;
+  actor?: string;
+  requestId?: string;
+}
+
+export interface PlatformCommandResult {
+  ok: boolean;
+  command: PlatformCommandName;
+  target: string;
+  message?: string;
+}
+
+export type PlatformCommandExecutor = (
+  command: Readonly<ResolvedPlatformCommand>,
+  context: Readonly<PlatformCommandContext>,
+) => Promise<PlatformCommandResult> | PlatformCommandResult;
+
 const SAFE_TARGET = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
 const ROLE_RANK: Record<PlatformRole, number> = { viewer: 0, operator: 1, admin: 2 };
 
-const COMMANDS: Record<PlatformCommandName, Omit<ResolvedPlatformCommand, 'command' | 'argv'>> = {
+const COMMANDS: Record<PlatformCommandName, Omit<ResolvedPlatformCommand, 'command' | 'target'>> = {
   'automation.start': { minimumRole: 'operator', risk: 'control' },
   'automation.stop': { minimumRole: 'operator', risk: 'control' },
   'automation.pause': { minimumRole: 'operator', risk: 'control' },
@@ -121,20 +139,19 @@ export function resolvePlatformCommand(intent: PlatformCommandIntent): ResolvedP
   if (!SAFE_TARGET.test(intent.target)) throw new Error('invalid platform command target');
   const definition = COMMANDS[intent.command];
   if (!definition) throw new Error(`unsupported platform command: ${intent.command}`);
+  return { command: intent.command, target: intent.target, ...definition };
+}
 
-  const argvByCommand: Record<PlatformCommandName, string[]> = {
-    'automation.start': ['automation', 'start', intent.target],
-    'automation.stop': ['automation', 'stop', intent.target],
-    'automation.pause': ['automation', 'pause', intent.target],
-    'automation.resume': ['automation', 'resume', intent.target],
-    'automation.run': ['automation', 'run', intent.target],
-    'scheduler.enable': ['automation', 'schedule', intent.target, '--enable'],
-    'scheduler.disable': ['automation', 'schedule', intent.target, '--disable'],
-    'notification.acknowledge': ['notification', 'acknowledge', intent.target],
-    'notification.resolve': ['notification', 'resolve', intent.target],
-  };
+export class PlatformCommandGateway {
+  constructor(private readonly executor: PlatformCommandExecutor) {}
 
-  return { command: intent.command, argv: argvByCommand[intent.command], ...definition };
+  async execute(intent: PlatformCommandIntent, context: PlatformCommandContext): Promise<PlatformCommandResult> {
+    const resolved = resolvePlatformCommand(intent);
+    if (!authorizePlatformCommand(context.role, resolved.command)) {
+      throw new Error(`platform role ${context.role} is not authorized for ${resolved.command}`);
+    }
+    return this.executor(Object.freeze(resolved), Object.freeze({ ...context }));
+  }
 }
 
 export interface PlatformEventSubscription {
