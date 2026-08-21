@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const command = process.argv[2] || '--help';
-const compositionCommands = new Set(['components', 'component', 'capability-find', 'capability-check', 'init']);
+const compositionCommands = new Set(['components', 'component', 'capability-find', 'capability-check', 'usage', 'init']);
 
 if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
