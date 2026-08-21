@@ -1,0 +1,50 @@
+name: TaskRail Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify tag matches package version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          test "v${VERSION}" = "${GITHUB_REF_NAME}"
+      - name: Install development dependencies
+        run: npm ci
+      - name: Run full release gates
+        run: |
+          npm test
+          npm run check
+      - name: Build exact install payload
+        run: npm run build:install-release
+      - name: Add native setup files and checksums
+        run: |
+          cp installers/taskrail-install-linux.sh release-install/TaskRail-Install-Linux.sh
+          cp installers/TaskRail-Install.command release-install/TaskRail-Install-macOS.command
+          cp installers/TaskRail-Install.ps1 release-install/TaskRail-Install-Windows.ps1
+          cd release-install
+          sha256sum * > SHA256SUMS
+      - name: Create GitHub release from verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release-install/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "TaskRail ${GITHUB_REF_NAME}"
