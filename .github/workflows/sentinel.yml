@@ -1,0 +1,119 @@
+name: TaskRail Sentinel
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: taskrail-sentinel
+  cancel-in-progress: false
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact development dependencies
+        id: install
+        continue-on-error: true
+        run: npm ci
+
+      - name: Full framework tests
+        id: tests
+        continue-on-error: true
+        run: npm test
+
+      - name: Public API and CLI checks
+        id: api
+        continue-on-error: true
+        run: npm run check
+
+      - name: Dependency security audit
+        id: audit
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: Build verified install payload
+        id: package
+        continue-on-error: true
+        run: npm run build:install-release
+
+      - name: Release readiness contract
+        id: readiness
+        continue-on-error: true
+        run: npm run release:readiness
+
+      - name: Summarize Sentinel result
+        id: summary
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .taskrail
+          failed=false
+          {
+            echo "# TaskRail Sentinel"
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| install | ${{ steps.install.outcome }} |"
+            echo "| tests | ${{ steps.tests.outcome }} |"
+            echo "| api | ${{ steps.api.outcome }} |"
+            echo "| audit | ${{ steps.audit.outcome }} |"
+            echo "| package | ${{ steps.package.outcome }} |"
+            echo "| readiness | ${{ steps.readiness.outcome }} |"
+          } > .taskrail/sentinel-summary.md
+          for result in \
+            "${{ steps.install.outcome }}" \
+            "${{ steps.tests.outcome }}" \
+            "${{ steps.api.outcome }}" \
+            "${{ steps.audit.outcome }}" \
+            "${{ steps.package.outcome }}" \
+            "${{ steps.readiness.outcome }}"; do
+            if [ "$result" != "success" ]; then failed=true; fi
+          done
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          cat .taskrail/sentinel-summary.md
+
+      - name: Open or update Sentinel issue
+        if: always() && steps.summary.outputs.failed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title='[TaskRail Sentinel] release readiness failed'
+          body_file='.taskrail/sentinel-summary.md'
+          existing="$(gh issue list --state open --search '"'"'[TaskRail Sentinel] release readiness failed'"'"' in:title' --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file "$body_file"
+          else
+            gh issue create --title "$title" --body-file "$body_file"
+          fi
+
+      - name: Close recovered Sentinel issue
+        if: always() && steps.summary.outputs.failed == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh issue list --state open --search '"'"'[TaskRail Sentinel] release readiness failed'"'"' in:title' --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment 'Sentinel is green again; all scheduled release-readiness gates passed.'
+          fi
+
+      - name: Enforce Sentinel result
+        if: always() && steps.summary.outputs.failed == 'true'
+        run: exit 1
