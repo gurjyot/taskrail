@@ -1,6 +1,7 @@
 export {
   TASKRAIL_PLATFORM_API_VERSION,
   PlatformEventBus,
+  PlatformCommandGateway,
   platformCommandDefinitions,
   authorizePlatformCommand,
   resolvePlatformCommand,
@@ -26,6 +27,9 @@ export type {
   PlatformCommandName,
   PlatformCommandIntent,
   ResolvedPlatformCommand,
+  PlatformCommandContext,
+  PlatformCommandResult,
+  PlatformCommandExecutor,
   PlatformEventSubscription,
   PlatformEventDelivery,
 } from '../platform-contract.js';
