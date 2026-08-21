@@ -13,7 +13,7 @@ import { detectEnvironment } from './env.js';
 import { inspectGitState } from './git.js';
 import { detectDrift } from './drift.js';
 import { preflight } from './preflight.js';
-import { loadManifest, resolvePaths } from './config.js';
+import { isCompatible, loadManifest, resolvePaths } from './config.js';
 import { compactManifest, inferProfile, resolveFrameworkManifest, frameworkCapabilities, frameworkProfiles } from './framework.js';
 import { isStale, readLock, releaseLock } from './locks.js';
 
@@ -40,10 +40,22 @@ function normalizedRoots(roots: string[], cwd: string) {
   return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(cwd, root))).sort();
 }
 
+function normalizedCompatibility(declared: string | undefined) {
+  if (!declared) return declared;
+  const trimmed = declared.trim();
+  if (/^\d+\.\d+\.\d+$/.test(trimmed)) {
+    const [major, minor] = trimmed.split('.');
+    const [currentMajor, currentMinor] = TASKRAIL_VERSION.split('.');
+    if (major === currentMajor && minor === currentMinor) return `${major}.${minor}.x`;
+  }
+  return declared;
+}
+
 function canonicalizeUpgradeManifest(rawManifest: FrameworkManifest, cwd: string) {
   const profile = inferProfile(rawManifest, cwd);
   const candidate: FrameworkManifest = {
     ...rawManifest,
+    taskrailCompatibility: normalizedCompatibility(rawManifest.taskrailCompatibility),
     profile: rawManifest.profile || profile || undefined,
     frameworkCapabilities: rawManifest.frameworkCapabilities ?? [],
   };
