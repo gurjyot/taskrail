@@ -67,7 +67,17 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
       if (unit.user) push(`unit-user:${unit.name}`, Boolean(unit.user.trim()));
     }
   }
-  if (manifest.statePath) push(`statePath:${manifest.statePath}`, await stat(path.resolve(cwd, manifest.statePath)).then(() => true, () => false));
+  if (manifest.statePath) {
+    const stateDir = path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(cwd, manifest.statePath);
+    const parent = path.dirname(stateDir);
+    if (envInfo.name === 'production') {
+      const ready = await mkdir(parent, { recursive: true }).then(() => true, () => false);
+      const writable = ready && await access(parent, constants.W_OK).then(() => true, () => false);
+      push(`statePath:${manifest.statePath}`, writable, writable ? 'lazy state ready' : 'state parent not writable');
+    } else {
+      push(`statePath:${manifest.statePath}`, true, `lazy state allowed in ${envInfo.name}`);
+    }
+  }
   if (manifest.database?.required) push('database:schema', Boolean(manifest.database.schema), manifest.database.schema || 'missing schema');
   const manifests = await discoverAutomationManifests(cwd).catch(() => []);
   const seenNames = new Map<string, string[]>();
