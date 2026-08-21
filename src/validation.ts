@@ -21,5 +21,15 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (config.manifest.deployStrategy?.type && !['replace-in-place', 'release-symlink'].includes(config.manifest.deployStrategy.type)) errors.push('manifest.deployStrategy.type is invalid');
   if (config.manifest.migrations?.destructive && !config.manifest.migrations.applyCommand) errors.push('destructive migrations require migrations.applyCommand');
   if (config.manifest.serviceManager?.type && config.manifest.serviceManager.type !== 'systemd') errors.push('manifest.serviceManager.type must be systemd');
+
+  const execution = config.manifest.execution;
+  if (execution?.timeoutMs !== undefined && (!Number.isInteger(execution.timeoutMs) || execution.timeoutMs <= 0)) errors.push('manifest.execution.timeoutMs must be a positive integer');
+  if (execution?.maxConcurrency !== undefined && (!Number.isInteger(execution.maxConcurrency) || execution.maxConcurrency < 1)) errors.push('manifest.execution.maxConcurrency must be an integer >= 1');
+  if (execution?.staleAfterMs !== undefined && (!Number.isInteger(execution.staleAfterMs) || execution.staleAfterMs <= 0)) errors.push('manifest.execution.staleAfterMs must be a positive integer');
+  if (execution?.retry?.maxAttempts !== undefined && (!Number.isInteger(execution.retry.maxAttempts) || execution.retry.maxAttempts < 1)) errors.push('manifest.execution.retry.maxAttempts must be an integer >= 1');
+  if (execution?.retry?.baseDelayMs !== undefined && (!Number.isInteger(execution.retry.baseDelayMs) || execution.retry.baseDelayMs < 0)) errors.push('manifest.execution.retry.baseDelayMs must be a non-negative integer');
+  if (execution?.retry?.maxDelayMs !== undefined && (!Number.isInteger(execution.retry.maxDelayMs) || execution.retry.maxDelayMs < 0)) errors.push('manifest.execution.retry.maxDelayMs must be a non-negative integer');
+  if (execution?.retry?.baseDelayMs !== undefined && execution?.retry?.maxDelayMs !== undefined && execution.retry.maxDelayMs < execution.retry.baseDelayMs) errors.push('manifest.execution.retry.maxDelayMs must be >= baseDelayMs');
+
   return errors;
 }
