@@ -58,7 +58,12 @@ test('reboot recovery supports catch-up skip and manual policies without affecti
     { name: 'payments', enabled: true, managed: true, missedRuns: 1, missedRunPolicy: 'manual' },
     { name: 'disabled', enabled: false, managed: true },
   ]);
-  assert.deepEqual(actions.map((item) => item.action), ['catch-up', 'ignore', 'skip-missed', 'manual-review']);
+  assert.deepEqual(actions.map((item) => [item.automation, item.action]), [
+    ['daily', 'catch-up'],
+    ['digest', 'skip-missed'],
+    ['disabled', 'ignore'],
+    ['payments', 'manual-review'],
+  ]);
   assert.equal(rebootRecoverySafe(actions), false);
 });
 
