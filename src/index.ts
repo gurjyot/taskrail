@@ -15,6 +15,7 @@ export * from './plan.js';
 export * from './preflight.js';
 export * from './release.js';
 export * from './security.js';
+export * from './supervisor.js';
 export * from './types.js';
 export * from './validation.js';
 export * from './version.js';
