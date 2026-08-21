@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0
+
+- Added modular validation and security registries so reusable checks can be composed by lifecycle context without duplicating logic.
+- Added transactional shared-update planning, durable recovery checkpoints, immutable last-known-good validation, scoped pause controls, and resumable interrupted recovery.
+- Added private integrity-protected deployment/update state, rollback metadata repair, reboot readiness, bounded retention, and 1,000+ automation isolation/concurrency conformance.
+- Added hardened Linux, macOS, and Windows bootstrap installers with version/checksum verification, native Golden Paths, and injected failure/recovery coverage.
+- Added release provenance, signed-attestation release gates, scheduled Sentinel verification, certification aggregation, and fault-injection matrices.
+- Added deny-by-default AI/untrusted-content boundaries, versioned security policy, privacy-safe diagnostics, Error Intelligence contracts, and opt-in pseudonymous diagnostic submission envelopes.
+- Added the optional stdio-first MCP adapter outside the zero-runtime-dependency core package.
+- Added `taskrail/platform` with transport-neutral dashboard/app contracts, role-gated command intents, realtime event observers, notification/test-state structures, and runaway-execution guardrails.
+- TaskRail 3 explicitly accepts manifests from the released `2.0.x` line as a compatibility bridge; new scaffolds and templates target `3.0.x`.
+- Kept TaskRail decentralized and lightweight: no mandatory daemon, database, queue, vector store, runtime model service, or dashboard dependency was introduced.
+
 ## 2.0.8
 
 - Added a stable TaskRail component SDK with execution, state, idempotency, retry, timeout, bounded concurrency, HTTP, config, structured/redacted logging, and safe filesystem primitives.
