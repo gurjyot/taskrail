@@ -1,0 +1,40 @@
+name: TaskRail Installer Golden Path
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskrail-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-installer:
+    name: Native installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install development dependencies
+        run: npm ci
+      - name: Build framework and run platform-bootstrap tests
+        run: npm run build && node --test dist/test/platform-bootstrap.test.js
+      - name: Build exact release install payload
+        run: npm run build:install-release
+      - name: Execute native setup file end to end
+        run: node scripts/run-installer-golden-path.mjs
+      - name: Inject installer failures and verify recovery
+        run: node scripts/run-installer-failure-injection.mjs

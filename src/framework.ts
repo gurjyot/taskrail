@@ -78,9 +78,11 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
 };
 
 const operational = ['systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1', 'agent-execution@1'];
+const portableOperational = ['immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1', 'agent-execution@1'];
 const nodeCommon = ['node-runtime@1', ...operational];
 const shellCommon = ['shell-runtime@1', ...operational];
 const phpCommon = ['php-runtime@1', ...operational];
+const portableNodeCommon = ['node-runtime@1', ...portableOperational];
 
 function timerDefaults(sourceDir = 'src'): Partial<FrameworkManifest> {
   return {
@@ -100,6 +102,18 @@ function timerDefaults(sourceDir = 'src'): Partial<FrameworkManifest> {
 }
 
 export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
+  'portable-node@1': {
+    id: 'portable-node@1',
+    frameworkCapabilities: portableNodeCommon,
+    defaults: {
+      managed: true,
+      sourceDir: '.',
+      deployDir: '../.taskrail/${automation}/live',
+      statePath: '../.taskrail/${automation}/state',
+      isolation: { level: 'standard' },
+      releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib', 'capabilities', 'adapters', 'tools'],
+    },
+  },
   'smg-node-timer@1': { id: 'smg-node-timer@1', frameworkCapabilities: nodeCommon, defaults: timerDefaults('src') },
   'smg-shell-timer@1': { id: 'smg-shell-timer@1', frameworkCapabilities: shellCommon, defaults: timerDefaults('.') },
   'smg-php-timer@1': { id: 'smg-php-timer@1', frameworkCapabilities: phpCommon, defaults: timerDefaults('.') },

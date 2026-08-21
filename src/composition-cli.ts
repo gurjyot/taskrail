@@ -6,6 +6,11 @@ import { findSimilarCapabilities } from './capability-governance.js';
 import { checkCapability } from './capability-check.js';
 import { scaffoldCapability } from './capability-scaffold.js';
 import { scaffoldAutomation } from './automation-scaffold.js';
+import { buildUsageGraph, usageImpact } from './usage-graph.js';
+import { planSharedUpdate } from './update-plan.js';
+import { auditFleetIsolation } from './isolation-audit.js';
+import { evaluateConformance } from './conformance.js';
+import { pauseSharedUpdateConsumers, resumeSharedUpdateConsumers } from './shared-update-control.js';
 
 function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 
@@ -43,6 +48,11 @@ function usage() {
     '  taskrail component <name>',
     '  taskrail capability-find <query>',
     '  taskrail capability-check <name> [--strict]',
+    '  taskrail usage',
+    '  taskrail usage <component|capability|profile> <name>',
+    '  taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking] [--pause|--resume]',
+    '  taskrail isolation-audit',
+    '  taskrail conformance',
     '  taskrail init automation <name> --profile <profile> [--root <dir>]',
     '  taskrail init capability <name> --description <text> --purpose <text> --domain <name> --operation <op> [--operation <op> ...]',
   ].join('\n'));
@@ -69,6 +79,81 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
       return;
     }
     return output(component);
+  }
+  if (command === 'usage') {
+    const graph = await buildUsageGraph(process.cwd());
+    const kind = rest[0] as 'component' | 'capability' | 'profile' | undefined;
+    const name = rest[1];
+    if (!kind) {
+      return output({
+        summary: {
+          automations: graph.automations.length,
+          capabilities: graph.capabilities.length,
+          components: graph.components.length,
+          profiles: graph.profiles.length,
+          errors: graph.errors.length,
+        },
+        ...graph,
+      });
+    }
+    if (!['component', 'capability', 'profile'].includes(kind) || !name) {
+      console.error('usage: taskrail usage <component|capability|profile> <name>');
+      process.exitCode = 1;
+      return;
+    }
+    const impact = usageImpact(graph, kind, name);
+    output({ ...impact, errors: graph.errors });
+    if (!impact.exists || graph.errors.length) process.exitCode = 1;
+    return;
+  }
+  if (command === 'update-plan') {
+    const kind = rest[0] as 'component' | 'capability' | undefined;
+    const name = rest[1];
+    if (!kind || !['component', 'capability'].includes(kind) || !name) {
+      console.error('usage: taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking] [--pause|--resume]');
+      process.exitCode = 1;
+      return;
+    }
+    if (hasFlag(rest, '--pause') && hasFlag(rest, '--resume')) {
+      console.error('--pause and --resume are mutually exclusive');
+      process.exitCode = 1;
+      return;
+    }
+    if (hasFlag(rest, '--resume')) {
+      const resumed = await resumeSharedUpdateConsumers(process.cwd(), kind, name);
+      output({ action: 'resume', targetKind: kind, targetName: name, ...resumed });
+      if (!resumed.ok) process.exitCode = 1;
+      return;
+    }
+    const graph = await buildUsageGraph(process.cwd());
+    const plan = planSharedUpdate(graph, {
+      targetKind: kind,
+      targetName: name,
+      fromVersion: flagValue(rest, '--from'),
+      toVersion: flagValue(rest, '--to'),
+      breaking: hasFlag(rest, '--breaking'),
+    });
+    if (hasFlag(rest, '--pause')) {
+      const paused = await pauseSharedUpdateConsumers(process.cwd(), plan);
+      output({ ...plan, graphErrors: graph.errors, pause: paused });
+      if (plan.action === 'blocked' || !paused.ok) process.exitCode = 1;
+      return;
+    }
+    output({ ...plan, graphErrors: graph.errors });
+    if (plan.action === 'blocked') process.exitCode = 1;
+    return;
+  }
+  if (command === 'isolation-audit') {
+    const audit = await auditFleetIsolation(process.cwd());
+    output(audit);
+    if (!audit.ok) process.exitCode = 1;
+    return;
+  }
+  if (command === 'conformance') {
+    const report = await evaluateConformance(process.cwd());
+    output(report);
+    if (!report.ok) process.exitCode = 1;
+    return;
   }
   if (command === 'capability-find') {
     const query = rest.filter((item) => !item.startsWith('--')).join(' ').trim();
