@@ -28,6 +28,7 @@ test('last-known-good recovery is validated before activation', async () => {
       targetName: 'publisher',
       changeClass: 'minor',
       lastKnownGoodRelease: 'good',
+      lastKnownGoodReleasePath: release,
       affectedAutomations: ['publisher'],
     });
     checkpoint = await transitionUpdate(root, 'automation', 'publisher', 'impact-checked');
