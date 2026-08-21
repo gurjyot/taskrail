@@ -11,6 +11,7 @@ export type UpdatePhase =
   | 'staged'
   | 'validated'
   | 'simulated'
+  | 'rollback-ready'
   | 'activated'
   | 'verified'
   | 'committed'
@@ -48,7 +49,8 @@ const allowedTransitions: Record<UpdatePhase, readonly UpdatePhase[]> = {
   'checkpointed': ['staged', 'rollback-required', 'recovery-required'],
   'staged': ['validated', 'rollback-required', 'recovery-required'],
   'validated': ['simulated', 'rollback-required', 'recovery-required'],
-  'simulated': ['activated', 'rollback-required', 'recovery-required'],
+  'simulated': ['rollback-ready', 'rollback-required', 'recovery-required'],
+  'rollback-ready': ['activated', 'rollback-required', 'recovery-required'],
   'activated': ['verified', 'rollback-required', 'recovery-required'],
   'verified': ['committed', 'rollback-required', 'recovery-required'],
   'committed': [],
@@ -113,6 +115,15 @@ export function canTransitionUpdate(from: UpdatePhase, to: UpdatePhase) {
   return allowedTransitions[from].includes(to);
 }
 
+export function rollbackReadiness(checkpoint: UpdateCheckpoint) {
+  const reasons: string[] = [];
+  if (!checkpoint.lastKnownGoodRelease) reasons.push('last-known-good release is not recorded');
+  if (!checkpoint.recovery?.previousReleaseVerified) reasons.push('previous release is not verified');
+  if (!checkpoint.recovery?.configurationVerified) reasons.push('previous configuration is not verified');
+  if (checkpoint.recovery?.migrationCompatible !== true) reasons.push('migration rollback compatibility is not verified');
+  return { ok: reasons.length === 0, reasons };
+}
+
 export async function transitionUpdate(
   root: string,
   targetKind: UpdateTargetKind,
@@ -132,17 +143,12 @@ export async function transitionUpdate(
     updatedAt: now,
     history: [...checkpoint.history, { phase: to, at: now, details }],
   };
+  if (to === 'rollback-ready') {
+    const readiness = rollbackReadiness(next);
+    if (!readiness.ok) throw new Error(`cannot mark rollback ready: ${readiness.reasons.join('; ')}`);
+  }
   await atomicWriteJson(transactionFile(root, targetKind, targetName), next);
   return next;
-}
-
-export function rollbackReadiness(checkpoint: UpdateCheckpoint) {
-  const reasons: string[] = [];
-  if (!checkpoint.lastKnownGoodRelease) reasons.push('last-known-good release is not recorded');
-  if (!checkpoint.recovery?.previousReleaseVerified) reasons.push('previous release is not verified');
-  if (!checkpoint.recovery?.configurationVerified) reasons.push('previous configuration is not verified');
-  if (checkpoint.recovery?.migrationCompatible !== true) reasons.push('migration rollback compatibility is not verified');
-  return { ok: reasons.length === 0, reasons };
 }
 
 export async function requireRollbackReady(root: string, targetKind: UpdateTargetKind, targetName: string) {
