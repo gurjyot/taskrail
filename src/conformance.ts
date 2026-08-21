@@ -76,9 +76,10 @@ export async function evaluateConformance(cwd = process.cwd()): Promise<Conforma
     for (const error of validateConfig(config)) findings.push(finding('manifest-validity', 'error', error, raw.name));
 
     const execution = effectiveExecutionPolicy(resolved.execution);
+    const retryAttempts = execution.retry.maxAttempts ?? 3;
     if (execution.timeoutMs > 3_600_000) findings.push(finding('bounded-timeout', 'warning', `execution timeout is unusually high: ${execution.timeoutMs}ms`, raw.name));
     if (execution.maxConcurrency > 64) findings.push(finding('bounded-concurrency', 'warning', `max concurrency is unusually high: ${execution.maxConcurrency}`, raw.name));
-    if (execution.retry.maxAttempts > 8) findings.push(finding('bounded-retry', 'warning', `retry attempts are unusually high: ${execution.retry.maxAttempts}`, raw.name));
+    if (retryAttempts > 8) findings.push(finding('bounded-retry', 'warning', `retry attempts are unusually high: ${retryAttempts}`, raw.name));
 
     const hasHealth = Boolean(resolved.healthCheck || resolved.healthChecks?.length || resolved.healthCommand || resolved.runtimeHealthCommand);
     if (!hasHealth) findings.push(finding('health-required', 'error', 'managed automation has no health probe', raw.name));
