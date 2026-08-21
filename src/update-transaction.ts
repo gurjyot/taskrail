@@ -15,6 +15,7 @@ export type UpdatePhase =
   | 'activated'
   | 'verified'
   | 'committed'
+  | 'aborted'
   | 'rollback-required'
   | 'rollback-validated'
   | 'restored'
@@ -44,16 +45,17 @@ export interface UpdateCheckpoint {
 }
 
 const allowedTransitions: Record<UpdatePhase, readonly UpdatePhase[]> = {
-  'discovered': ['impact-checked', 'recovery-required'],
-  'impact-checked': ['checkpointed', 'recovery-required'],
-  'checkpointed': ['staged', 'rollback-required', 'recovery-required'],
-  'staged': ['validated', 'rollback-required', 'recovery-required'],
-  'validated': ['simulated', 'rollback-required', 'recovery-required'],
-  'simulated': ['rollback-ready', 'rollback-required', 'recovery-required'],
-  'rollback-ready': ['activated', 'rollback-required', 'recovery-required'],
+  'discovered': ['impact-checked', 'aborted', 'recovery-required'],
+  'impact-checked': ['checkpointed', 'aborted', 'recovery-required'],
+  'checkpointed': ['staged', 'aborted', 'rollback-required', 'recovery-required'],
+  'staged': ['validated', 'aborted', 'rollback-required', 'recovery-required'],
+  'validated': ['simulated', 'aborted', 'rollback-required', 'recovery-required'],
+  'simulated': ['rollback-ready', 'aborted', 'rollback-required', 'recovery-required'],
+  'rollback-ready': ['activated', 'aborted', 'rollback-required', 'recovery-required'],
   'activated': ['verified', 'rollback-required', 'recovery-required'],
   'verified': ['committed', 'rollback-required', 'recovery-required'],
   'committed': [],
+  'aborted': [],
   'rollback-required': ['rollback-validated', 'recovery-required'],
   'rollback-validated': ['restored', 'recovery-required'],
   'restored': ['committed', 'recovery-required'],
@@ -94,7 +96,7 @@ export async function readUpdateCheckpoint(root: string, targetKind: UpdateTarge
 export async function createUpdateCheckpoint(root: string, input: Omit<UpdateCheckpoint, 'transactionId' | 'phase' | 'createdAt' | 'updatedAt' | 'history'>): Promise<UpdateCheckpoint> {
   const file = transactionFile(root, input.targetKind, input.targetName);
   const existing = await readUpdateCheckpoint(root, input.targetKind, input.targetName);
-  if (existing && !['committed', 'recovery-required'].includes(existing.phase)) {
+  if (existing && !['committed', 'aborted', 'recovery-required'].includes(existing.phase)) {
     throw new Error(`active update transaction already exists: ${existing.transactionId} (${existing.phase})`);
   }
   const now = new Date().toISOString();
