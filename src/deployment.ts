@@ -19,7 +19,7 @@ import { preflight } from './preflight.js';
 import { createRelease } from './release.js';
 import { buildFailureReport } from './errors.js';
 import { detectDrift } from './drift.js';
-import { isCompatible, resolvePaths } from './config.js';
+import { isTaskRailCompatible, resolvePaths } from './config.js';
 import { writeEvidence } from './evidence.js';
 import { runGate } from './gate.js';
 import { inspectGitState } from './git.js';
@@ -350,10 +350,11 @@ export async function doctor(manifest: FrameworkManifest, options: ManifestRunOp
   const pluginNames = await loadPlugins(manifest).then((plugins) => plugins.map((p) => p.name)).catch(() => []);
   const drift = state?.releasePath && (await pathExists(livePath)) ? await detectDrift(livePath, state.releasePath, manifest) : undefined;
   const git = inspectGitState(cwd);
-  const deployable = preflightResult.ok && isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility) && (!drift || !drift.drifted);
+  const compatible = isTaskRailCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility);
+  const deployable = preflightResult.ok && compatible && (!drift || !drift.drifted);
   return {
     version: TASKRAIL_VERSION,
-    compatible: isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility),
+    compatible,
     manifestValid: preflightResult.ok,
     project: manifest.name,
     environment: envInfo,
