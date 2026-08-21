@@ -16,9 +16,20 @@ function installerCommand() {
   throw new Error(`unsupported failure-injection host: ${process.platform}`);
 }
 
+function windowsCommandLine(bin, args) {
+  const quote = (value) => `"${String(value).replace(/"/g, '""')}"`;
+  return [quote(bin), ...args.map(quote)].join(' ');
+}
+
 function run(bin, args, env, expectSuccess) {
+  let spawnBin = bin;
+  let spawnArgs = args;
+  if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(bin)) {
+    spawnBin = process.env.ComSpec || 'cmd.exe';
+    spawnArgs = ['/d', '/s', '/c', windowsCommandLine(bin, args)];
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd: root, env, stdio: 'pipe', shell: false });
+    const child = spawn(spawnBin, spawnArgs, { cwd: root, env, stdio: 'pipe', shell: false });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += String(chunk); });
