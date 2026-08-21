@@ -31,5 +31,11 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (execution?.retry?.maxDelayMs !== undefined && (!Number.isInteger(execution.retry.maxDelayMs) || execution.retry.maxDelayMs < 0)) errors.push('manifest.execution.retry.maxDelayMs must be a non-negative integer');
   if (execution?.retry?.baseDelayMs !== undefined && execution?.retry?.maxDelayMs !== undefined && execution.retry.maxDelayMs < execution.retry.baseDelayMs) errors.push('manifest.execution.retry.maxDelayMs must be >= baseDelayMs');
 
+  const resources = config.manifest.resources;
+  if (resources?.memoryMaxMb !== undefined && (!Number.isInteger(resources.memoryMaxMb) || resources.memoryMaxMb < 32)) errors.push('manifest.resources.memoryMaxMb must be an integer >= 32');
+  if (resources?.cpuQuotaPercent !== undefined && (!Number.isFinite(resources.cpuQuotaPercent) || resources.cpuQuotaPercent <= 0 || resources.cpuQuotaPercent > 1000)) errors.push('manifest.resources.cpuQuotaPercent must be > 0 and <= 1000');
+  if (resources?.tasksMax !== undefined && (!Number.isInteger(resources.tasksMax) || resources.tasksMax < 1)) errors.push('manifest.resources.tasksMax must be an integer >= 1');
+  if (resources?.nice !== undefined && (!Number.isInteger(resources.nice) || resources.nice < -20 || resources.nice > 19)) errors.push('manifest.resources.nice must be between -20 and 19');
+
   return errors;
 }
