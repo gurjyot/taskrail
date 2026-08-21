@@ -32,81 +32,60 @@ function deepMerge<T extends Record<string, any>>(base: T, patch: Partial<T>): T
 function interpolate(value: unknown, automation: string): unknown {
   if (typeof value === 'string') return value.replaceAll('${automation}', automation);
   if (Array.isArray(value)) return value.map((item) => interpolate(item, automation));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, interpolate(item, automation)]));
-  }
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, interpolate(item, automation)]));
   return value;
 }
 
 export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition> = {
   'node-runtime@1': {
     id: 'node-runtime@1',
-    apply: () => ({
-      runtime: 'node',
-      runtimeVersion: '>=18.0.0 <23.0.0',
-      runtimePaths: ['node_modules', 'logs', 'state', 'tmp', 'cache'],
-    }),
+    apply: () => ({ runtime: 'node', runtimeVersion: '>=18.0.0 <23.0.0', runtimePaths: ['node_modules', 'logs', 'state', 'tmp', 'cache'] }),
   },
   'systemd@1': {
     id: 'systemd@1',
-    apply: (manifest) => ({
-      serviceManager: manifest.serviceManager ?? {
-        type: 'systemd',
-        units: [{ name: `${manifest.name}.service`, kind: 'service', oneshotOkay: true }],
-      },
-    }),
+    apply: (manifest) => ({ serviceManager: manifest.serviceManager ?? { type: 'systemd', units: [{ name: `${manifest.name}.service`, kind: 'service', oneshotOkay: true }] } }),
   },
   'immutable-deploy@1': {
     id: 'immutable-deploy@1',
-    apply: () => ({
-      backup: { retain: 3 },
-      deployStrategy: { type: 'replace-in-place' },
-    }),
+    apply: () => ({ backup: { retain: 3 }, deployStrategy: { type: 'replace-in-place' } }),
   },
   'postgres-migrations@1': {
     id: 'postgres-migrations@1',
-    apply: () => ({
-      database: { required: true },
-    }),
+    apply: () => ({ database: { required: true } }),
   },
   'health@1': {
     id: 'health@1',
-    apply: () => ({
-      requiredChecks: ['validation', 'test'],
-    }),
+    apply: () => ({ requiredChecks: ['validation', 'test'] }),
   },
   'drift@1': {
     id: 'drift@1',
-    apply: () => ({
-      runtimePaths: ['node_modules', 'logs', 'state', 'tmp', 'cache'],
-      generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'],
-    }),
+    apply: () => ({ runtimePaths: ['node_modules', 'logs', 'state', 'tmp', 'cache'], generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }),
   },
-  'change-detection@1': {
-    id: 'change-detection@1',
-    apply: () => ({}),
-  },
+  'change-detection@1': { id: 'change-detection@1', apply: () => ({}) },
   'release-retention@1': {
     id: 'release-retention@1',
-    apply: () => ({
-      generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'],
-    }),
+    apply: () => ({ generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }),
   },
   'agent-execution@1': {
     id: 'agent-execution@1',
     apply: (manifest) => ({
       statePath: manifest.statePath ?? `/opt/smg-automations/state/${manifest.name}`,
       execution: {
-        timeoutMs: 300_000,
-        maxConcurrency: 4,
-        staleAfterMs: 900_000,
-        retry: { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 10_000, jitter: true },
+        timeoutMs: manifest.execution?.timeoutMs ?? 300_000,
+        maxConcurrency: manifest.execution?.maxConcurrency ?? 4,
+        staleAfterMs: manifest.execution?.staleAfterMs ?? 900_000,
+        retry: {
+          maxAttempts: manifest.execution?.retry?.maxAttempts ?? 3,
+          baseDelayMs: manifest.execution?.retry?.baseDelayMs ?? 500,
+          maxDelayMs: manifest.execution?.retry?.maxDelayMs ?? 10_000,
+          jitter: manifest.execution?.retry?.jitter ?? true,
+        },
       },
       resources: {
-        memoryMaxMb: 512,
-        cpuQuotaPercent: 100,
-        tasksMax: 64,
-        nice: 5,
+        memoryMaxMb: manifest.resources?.memoryMaxMb ?? 512,
+        cpuQuotaPercent: manifest.resources?.cpuQuotaPercent ?? 100,
+        tasksMax: manifest.resources?.tasksMax ?? 64,
+        nice: manifest.resources?.nice ?? 5,
       },
     }),
   },
@@ -122,6 +101,7 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
       managed: true,
       sourceDir: 'src',
       deployDir: '/opt/smg-automations/automations/${automation}',
+      execution: { staleAfterMs: 93_600_000 },
       serviceManager: {
         type: 'systemd',
         units: [
@@ -139,10 +119,8 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
       managed: true,
       sourceDir: '.',
       deployDir: '/opt/smg-automations/automations/${automation}',
-      serviceManager: {
-        type: 'systemd',
-        units: [{ name: '${automation}.service', kind: 'service' }],
-      },
+      execution: { staleAfterMs: 900_000 },
+      serviceManager: { type: 'systemd', units: [{ name: '${automation}.service', kind: 'service' }] },
       releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib'],
     },
   },
@@ -153,10 +131,8 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
       managed: true,
       sourceDir: '.',
       deployDir: '/opt/smg-automations/automations/${automation}',
-      serviceManager: {
-        type: 'systemd',
-        units: [{ name: '${automation}.service', kind: 'service' }],
-      },
+      execution: { staleAfterMs: 900_000 },
+      serviceManager: { type: 'systemd', units: [{ name: '${automation}.service', kind: 'service' }] },
       releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib', 'migrations'],
     },
   },
@@ -167,17 +143,12 @@ function hasFile(cwd: string, ...parts: string[]) {
 }
 
 function detectProjectUnitHints(manifest: FrameworkManifest, cwd: string) {
-  const serviceNames = [
-    `${manifest.name}.service`,
-    path.join('service', `${manifest.name}.service`),
-  ];
-  const timerNames = [
-    `${manifest.name}.timer`,
-    path.join('timer', `${manifest.name}.timer`),
-  ];
-  const service = serviceNames.some((file) => hasFile(cwd, file));
-  const timer = timerNames.some((file) => hasFile(cwd, file));
-  return { service, timer };
+  const serviceNames = [`${manifest.name}.service`, path.join('service', `${manifest.name}.service`)];
+  const timerNames = [`${manifest.name}.timer`, path.join('timer', `${manifest.name}.timer`)];
+  return {
+    service: serviceNames.some((file) => hasFile(cwd, file)),
+    timer: timerNames.some((file) => hasFile(cwd, file)),
+  };
 }
 
 function detectSystemdUnitHints(manifest: FrameworkManifest) {
@@ -219,8 +190,7 @@ function resolveFrameworkDefaults(manifest: FrameworkManifest) {
 
 export function compactManifest(manifest: FrameworkManifest): FrameworkManifest {
   const raw = clone(manifest);
-  if (!raw.profile) return raw;
-  if (!frameworkProfiles[raw.profile]) return raw;
+  if (!raw.profile || !frameworkProfiles[raw.profile]) return raw;
   const defaults = resolveFrameworkDefaults(raw);
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
