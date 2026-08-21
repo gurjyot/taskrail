@@ -96,12 +96,14 @@ export interface FrameworkManifest {
 export interface FrameworkCapabilityDefinition {
   id: string;
   apply(manifest: FrameworkManifest): Partial<FrameworkManifest>;
+  preconditions?(manifest: FrameworkManifest): string[];
 }
 
 export interface FrameworkProfileDefinition {
   id: string;
   frameworkCapabilities: string[];
   defaults: Partial<FrameworkManifest>;
+  preconditions?(manifest: FrameworkManifest): string[];
 }
 
 export type HealthCheckDefinition =
@@ -259,6 +261,7 @@ export interface DeployState {
   previousReleasePath?: string;
   currentReleaseId?: string;
   currentSha?: string;
+  currentFingerprint?: string;
   lastKnownGoodReleasePath?: string;
   lastKnownGoodReleaseId?: string;
   lastKnownGoodSha?: string;

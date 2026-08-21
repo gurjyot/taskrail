@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.6
+
+- Fixed canonical capability-root discovery across framework-managed source, staged candidates, releases, and live automation trees.
+- Hardened `taskrail upgrade --write` so legacy manifests infer profiles safely, preserve overrides, drop redundant capability roots, refuse ambiguity, and remain idempotent.
+- Added lightweight `change-detection@1` and `release-retention@1` behaviors for verified no-op redeploys and safe cleanup of proven TaskRail-owned stale candidates, backups, and releases.
+
 ## 2.0.5
 
 - Added environment-aware lifecycle helpers and concise agent-facing commands: `env`, `paths`, `bootstrap`, `drift`, `reconcile`, `explain`, `repair`, `ship`, and `upgrade`.
