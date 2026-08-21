@@ -74,7 +74,8 @@
     "taskrail": "./dist/src/taskrail-cli.js",
     "taskrail-supervise": "./dist/src/supervise-cli.js",
     "taskrail-heartbeat": "./dist/src/heartbeat-cli.js",
-    "taskrail-systemd-sync": "./dist/src/systemd-cli.js"
+    "taskrail-systemd-sync": "./dist/src/systemd-cli.js",
+    "taskrail-platform-bootstrap": "./dist/src/platform-bootstrap-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
