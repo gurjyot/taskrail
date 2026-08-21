@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { SecurityRegistry, securityControl } from './security-registry.js';
 
 const secretValuePatterns = [
   /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|passwd|secret)\s*[:=]\s*["'`]([^"'`\s]{8,})["'`]/i,
@@ -28,34 +29,6 @@ function containsInterpolatedSql(text: string) {
   });
 }
 
-const sourceWarnings: Array<{ code: string; test(text: string): boolean; message: string }> = [
-  {
-    code: 'shell-exec',
-    test: callsImportedExec,
-    message: 'direct shell execution detected; prefer argument-safe spawn/execFile APIs',
-  },
-  {
-    code: 'shell-true',
-    test: (text) => /shell\s*:\s*true/.test(text),
-    message: 'shell-enabled process execution expands command-injection risk',
-  },
-  {
-    code: 'sql-interpolation',
-    test: containsInterpolatedSql,
-    message: 'interpolated SQL template detected; use parameterized queries',
-  },
-  {
-    code: 'eval',
-    test: (text) => /(?:^|[^A-Za-z0-9_])eval\s*\(|new\s+Function\s*\(/m.test(text),
-    message: 'dynamic code evaluation detected',
-  },
-  {
-    code: 'insecure-http-listen',
-    test: (text) => /\.listen\s*\(\s*(?:80|8080|3000)\b/.test(text),
-    message: 'network listener detected; TaskRail core should not expose a network service by default',
-  },
-];
-
 export interface SecurityFinding {
   code: string;
   severity: 'warning' | 'error';
@@ -66,10 +39,37 @@ export interface SecurityFinding {
 export interface SecurityAuditResult {
   ok: boolean;
   findings: SecurityFinding[];
+  controls?: string[];
 }
+
+interface SourceEntry { file: string; text: string }
+interface SourceAuditInput { entries: SourceEntry[] }
 
 function containsSecretMaterial(text: string) {
   return secretValuePatterns.some((pattern) => pattern.test(text));
+}
+
+function sourceControl(id: string, message: string, test: (text: string) => boolean, severity: 'warning' | 'error' = 'warning') {
+  return securityControl<SourceAuditInput>({
+    id,
+    version: '1',
+    description: message,
+    contexts: ['source'],
+    tags: ['source-baseline'],
+    evaluate: ({ entries }) => entries
+      .filter((entry) => test(entry.text))
+      .map((entry) => ({ control: id, code: id, severity, target: entry.file, message })),
+  });
+}
+
+export function createSourceSecurityRegistry() {
+  return new SecurityRegistry()
+    .register(sourceControl('secret-material', 'likely literal secret material found in source', containsSecretMaterial, 'error'))
+    .register(sourceControl('shell-exec', 'direct shell execution detected; prefer argument-safe spawn/execFile APIs', callsImportedExec))
+    .register(sourceControl('shell-true', 'shell-enabled process execution expands command-injection risk', (text) => /shell\s*:\s*true/.test(text)))
+    .register(sourceControl('sql-interpolation', 'interpolated SQL template detected; use parameterized queries', containsInterpolatedSql))
+    .register(sourceControl('eval', 'dynamic code evaluation detected', (text) => /(?:^|[^A-Za-z0-9_])eval\s*\(|new\s+Function\s*\(/m.test(text)))
+    .register(sourceControl('insecure-http-listen', 'network listener detected; TaskRail core should not expose a network service by default', (text) => /\.listen\s*\(\s*(?:80|8080|3000)\b/.test(text)));
 }
 
 export async function scanForSecrets(files: string[]): Promise<string[]> {
@@ -83,18 +83,22 @@ export async function scanForSecrets(files: string[]): Promise<string[]> {
 }
 
 export async function auditSourceSecurity(files: string[], strict = false): Promise<SecurityAuditResult> {
-  const findings: SecurityFinding[] = [];
+  const entries: SourceEntry[] = [];
   for (const file of files) {
     const text = await readFile(file, 'utf8').catch(() => '');
-    if (!text) continue;
-    if (containsSecretMaterial(text)) {
-      findings.push({ code: 'secret-material', severity: 'error', file, message: 'likely literal secret material found in source' });
-    }
-    for (const warning of sourceWarnings) {
-      if (warning.test(text)) findings.push({ code: warning.code, severity: strict ? 'error' : 'warning', file, message: warning.message });
-    }
+    if (text) entries.push({ file, text });
   }
-  return { ok: findings.every((finding) => finding.severity !== 'error'), findings };
+  const report = await createSourceSecurityRegistry().run({ name: strict ? 'source-strict' : 'source', tags: ['source-baseline'], strict }, { entries });
+  return {
+    ok: report.ok,
+    controls: report.controls,
+    findings: report.findings.map((finding) => ({
+      code: finding.code,
+      severity: finding.severity,
+      file: finding.target || '',
+      message: finding.message,
+    })),
+  };
 }
 
 export async function auditPrivateFile(file: string): Promise<SecurityFinding[]> {
@@ -119,5 +123,6 @@ export function securityPrinciples() {
     sql: 'parameterized-only',
     aiContent: 'untrusted-data-never-authority',
     diagnostics: 'local-preview-opt-in-submission',
+    controls: 'modular-versioned-profiled',
   } as const;
 }
