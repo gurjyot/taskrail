@@ -1,4 +1,3 @@
-import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AutomationPlugin, DeployState, FrameworkManifest } from './types.js';
 import { check, safeDeploy, type DeployOptions, type DeployOutcome } from './deployment.js';
@@ -11,6 +10,7 @@ import {
   type UpdateCheckpoint,
 } from './update-transaction.js';
 import { recordRecoveryReadiness, validateLastKnownGoodRecovery } from './recovery-readiness.js';
+import { readPrivateState, writePrivateState } from './private-state.js';
 
 export interface TransactionalDeployOptions extends DeployOptions {
   changeClass?: UpdateChangeClass;
@@ -33,16 +33,11 @@ function deployStateFile(manifest: FrameworkManifest, projectRoot: string) {
 }
 
 async function readDeployState(manifest: FrameworkManifest, projectRoot: string): Promise<DeployState | null> {
-  try {
-    return JSON.parse(await readFile(deployStateFile(manifest, projectRoot), 'utf8')) as DeployState;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
+  return readPrivateState<DeployState & Record<string, unknown>>(deployStateFile(manifest, projectRoot), { allowLegacy: true });
 }
 
 async function restorePriorState(manifest: FrameworkManifest, projectRoot: string, priorState: DeployState) {
-  await writeFile(deployStateFile(manifest, projectRoot), `${JSON.stringify(priorState, null, 2)}\n`);
+  await writePrivateState(deployStateFile(manifest, projectRoot), priorState as DeployState & Record<string, unknown>);
 }
 
 async function latestCheckpoint(root: string, name: string) {
@@ -55,7 +50,16 @@ export async function transactionalDeploy(
   options: TransactionalDeployOptions = {},
 ): Promise<TransactionalDeployResult> {
   const projectRoot = options.projectRoot || process.cwd();
-  const priorState = await readDeployState(manifest, projectRoot);
+  let priorState: DeployState | null;
+  try {
+    priorState = await readDeployState(manifest, projectRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: `deployment state cannot be trusted: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
   if (!priorState?.lastKnownGoodReleasePath || !priorState.lastKnownGoodReleaseId) {
     return {
       ok: false,
@@ -63,6 +67,8 @@ export async function transactionalDeploy(
       reason: 'transactional update requires an existing last-known-good release; use the normal initial ship path for first deployment',
     };
   }
+
+  await writePrivateState(deployStateFile(manifest, projectRoot), priorState as DeployState & Record<string, unknown>);
 
   let checkpoint = await createUpdateCheckpoint(projectRoot, {
     targetKind: 'automation',
@@ -111,6 +117,8 @@ export async function transactionalDeploy(
     activationAttempted = true;
     const outcome = await safeDeploy(manifest, plugin, options);
     if (outcome.deployed) {
+      const currentState = await readPrivateState<DeployState & Record<string, unknown>>(deployStateFile(manifest, projectRoot), { allowLegacy: true });
+      if (currentState) await writePrivateState(deployStateFile(manifest, projectRoot), currentState);
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'activated', `release activated: ${outcome.releaseId || 'unknown'}`, {
         currentRelease: outcome.releaseId,
         currentReleasePath: outcome.releasePath,
