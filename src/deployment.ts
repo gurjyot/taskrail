@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, unlink, writeFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { TASKRAIL_VERSION } from './version.js';
 import type {
   AutomationPlugin,
@@ -182,6 +183,50 @@ async function pruneBackups(workspace: string, name: string, retain = 0) {
   for (const old of stats.slice(retain)) await rm(old.backup, { recursive: true, force: true });
 }
 
+function hasFrameworkCapability(manifest: FrameworkManifest, prefix: string) {
+  return (manifest.frameworkCapabilities ?? []).some((item) => item === prefix || item.startsWith(`${prefix}@`));
+}
+
+function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {
+  const payload = {
+    sha: git.sha || '',
+    compatibility: manifest.taskrailCompatibility || '',
+    validationCommand: manifest.validationCommand,
+    testCommand: manifest.testCommand,
+    buildCommand: runtimeInstallCommand(manifest) || '',
+    healthCommand: manifest.healthCommand || manifest.runtimeHealthCommand || '',
+    migrations: manifest.migrations || null,
+    dependencyManager: manifest.dependencyManager || null,
+    serviceManager: manifest.serviceManager || null,
+    capabilities: manifest.capabilities || [],
+    taskrailVersion: TASKRAIL_VERSION,
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+async function pruneReleases(releaseRoot: string, preserve: Set<string>, retain = 0) {
+  const entries = await readdir(releaseRoot, { withFileTypes: true }).catch(() => []);
+  const dirs = entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(releaseRoot, entry.name));
+  const removable = [] as Array<{ target: string; mtime: number }>;
+  for (const dir of dirs) {
+    if (preserve.has(dir)) continue;
+    try {
+      removable.push({ target: dir, mtime: (await stat(dir)).mtimeMs });
+    } catch {
+      continue;
+    }
+  }
+  removable.sort((a, b) => b.mtime - a.mtime);
+  for (const old of removable.slice(retain)) await rm(old.target, { recursive: true, force: true });
+}
+
+async function cleanupOwnedArtifacts(workspace: string, manifest: FrameworkManifest, releaseRoot: string, state: DeployState | null, preserveReleasePath?: string) {
+  await rm(path.join(workspace, `${manifest.name}.candidate`), { recursive: true, force: true }).catch(() => undefined);
+  await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
+  const preserve = new Set<string>([preserveReleasePath, state?.releasePath, state?.previousReleasePath, state?.lastKnownGoodReleasePath].filter(Boolean) as string[]);
+  await pruneReleases(releaseRoot, preserve, manifest.backup?.retain ?? 0);
+}
+
 async function currentLivePath(target: string) {
   if (await isSymlink(target)) {
     const pointer = await readlink(target);
@@ -331,6 +376,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   const backup = path.join(workspace, `${manifest.name}.backup-${Date.now()}`);
   const strategy = manifest.deployStrategy?.type || 'replace-in-place';
   const git = inspectGitState(projectRoot);
+  const fingerprint = fingerprintInputs(manifest, git);
 
   if (envInfo.name === 'production') {
     if (!git.available || !git.sha) return { deployed: false, rolledBack: false, failure: 'production deploy requires git sha' };
@@ -347,6 +393,19 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
       failure: 'preflight failed',
       report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: 'preflight checks failed', rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),
     };
+  }
+
+  const priorState = await readState(stateFile);
+  if (hasFrameworkCapability(manifest, 'change-detection') && priorState?.currentSha === git.sha && priorState?.currentFingerprint === fingerprint && priorState?.releasePath && await pathExists(target)) {
+    const existingReleasePath = priorState.releasePath;
+    const drift = await detectDrift(await currentLivePath(target).catch(() => target), existingReleasePath, manifest);
+    if (!drift.drifted) {
+      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+      if (health.ok) {
+        await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, priorState, existingReleasePath);
+        return { deployed: true, rolledBack: false, releaseId: priorState.currentReleaseId, releasePath: existingReleasePath, sha: git.sha };
+      }
+    }
   }
 
   const lock = await acquireLock(lockDir, { operation: 'deploy', releaseId: git.sha || options.sourceRevision, cwd: projectRoot });
@@ -414,15 +473,18 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
       previousReleasePath,
       currentReleaseId: release.releaseId,
       currentSha: git.sha,
+      currentFingerprint: fingerprint,
     };
     await writeState(stateFile, nextState);
-    await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
+    if (hasFrameworkCapability(manifest, 'release-retention')) await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, state, release.path);
+    else await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
 
     const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
     if (health.ok) {
       nextState.lastKnownGoodReleasePath = release.path;
       nextState.lastKnownGoodReleaseId = release.releaseId;
       nextState.lastKnownGoodSha = git.sha;
+      nextState.currentFingerprint = fingerprint;
       await writeState(stateFile, nextState);
       const receiptPath = await writeReceipt(workspace, {
         automation: manifest.name,

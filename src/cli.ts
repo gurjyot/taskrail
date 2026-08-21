@@ -36,6 +36,23 @@ function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 function compact(lines: Array<string | undefined>) { console.log(lines.filter(Boolean).join('\n')); }
 function passLine(ok: boolean) { return ok ? 'PASS' : 'FAIL'; }
 
+function normalizedRoots(roots: string[], cwd: string) {
+  return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(cwd, root))).sort();
+}
+
+function canonicalizeUpgradeManifest(rawManifest: FrameworkManifest, cwd: string) {
+  const profile = inferProfile(rawManifest, cwd);
+  const candidate: FrameworkManifest = {
+    ...rawManifest,
+    profile: rawManifest.profile || profile || undefined,
+    frameworkCapabilities: rawManifest.frameworkCapabilities ?? [],
+  };
+  const defaultRoots = normalizedRoots(capabilityRootsFor({ ...candidate, capabilityRoots: [] }, cwd), cwd);
+  const explicitRoots = normalizedRoots(rawManifest.capabilityRoots ?? [], cwd);
+  if (explicitRoots.length && explicitRoots.every((root) => defaultRoots.includes(root))) delete candidate.capabilityRoots;
+  return { candidate, inferredProfile: profile };
+}
+
 async function loadConfigManifest(cwd = process.cwd()): Promise<FrameworkManifest> {
   try {
     return resolveFrameworkManifest(JSON.parse(await readFile(path.join(cwd, 'automation.json'), 'utf8')) as FrameworkManifest);
@@ -282,18 +299,24 @@ async function commandExplain(topic: string | undefined, manifest: FrameworkMani
 }
 
 async function commandUpgrade(rawManifest: FrameworkManifest, manifest: FrameworkManifest, manifestPath: string, cwd: string, write = false) {
-  const profile = inferProfile(rawManifest);
-  const nextRaw: FrameworkManifest = {
-    ...rawManifest,
-    profile: rawManifest.profile || profile || undefined,
-    frameworkCapabilities: rawManifest.frameworkCapabilities ?? [],
-  };
-  const compacted = compactManifest(nextRaw);
+  const { candidate, inferredProfile } = canonicalizeUpgradeManifest(rawManifest, cwd);
+  const compacted = compactManifest(candidate);
   const changed = JSON.stringify(rawManifest, null, 2) !== JSON.stringify(compacted, null, 2);
   const unsupportedCaps = (compacted.frameworkCapabilities ?? []).filter((item) => !frameworkCapabilities[item]);
   const unsupportedProfile = compacted.profile ? !frameworkProfiles[compacted.profile] : false;
+  const ambiguous = !compacted.profile && (rawManifest.profile ? false : true);
+  if (ambiguous && !write) {
+    compact([`STATUS: FAIL`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CAUSE: ambiguous profile upgrade`, `NEXT: inspect service/timer contract`]);
+    process.exitCode = 1;
+    return;
+  }
   if ((unsupportedCaps.length || unsupportedProfile) && !write) {
     compact([`STATUS: FAIL`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CAUSE: breaking migration required`, `NEXT: inspect profile/capability versions`]);
+    process.exitCode = 1;
+    return;
+  }
+  if (ambiguous && write) {
+    compact([`STATUS: FAIL`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CAUSE: ambiguous profile upgrade`, `NEXT: inspect service/timer contract`]);
     process.exitCode = 1;
     return;
   }
@@ -304,7 +327,7 @@ async function commandUpgrade(rawManifest: FrameworkManifest, manifest: Framewor
   compact([
     `STATUS: ${passLine(checked.ok && tested.verdict === 'PASS' && unsupportedCaps.length === 0 && !unsupportedProfile)}`,
     `ENV: ${detectEnvironment(resolved, cwd).name}`,
-    `PROFILE: ${compacted.profile || 'none'}`,
+    `PROFILE: ${compacted.profile || inferredProfile || 'none'}`,
     `CHANGED: ${changed && write ? 'yes' : 'no'}`,
     `NEXT: ${checked.ok && tested.verdict === 'PASS' ? 'taskrail ship' : 'taskrail explain upgrade'}`,
   ]);

@@ -97,6 +97,71 @@ test('upgrade infers profile, writes safe declarative manifest, and is idempoten
   await rm(base, { recursive: true, force: true });
 });
 
+test('upgrade infers timer profile from project unit files and drops redundant shared capability roots', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'framework-managed/capabilities/telegram-send/capability.json': JSON.stringify({
+      name: 'telegram-send',
+      version: '1.0.0',
+      description: 'Send Telegram',
+      runtime: 'node',
+      canonicalPath: 'index.js',
+    }, null, 2),
+    'framework-managed/capabilities/telegram-send/index.js': 'module.exports = {}',
+    'framework-managed/demo/src/main.js': 'process.exit(0)',
+    'framework-managed/demo/tests/self-test.js': 'process.exit(0)',
+    'framework-managed/demo/service/demo.service': '[Service]',
+    'framework-managed/demo/timer/demo.timer': '[Timer]',
+    'framework-managed/demo/automation.json': JSON.stringify({
+      name: 'demo',
+      taskrailCompatibility: '2.0.x',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: '/opt/smg-automations/automations/demo',
+      validationCommand: 'node src/main.js',
+      testCommand: 'node tests/self-test.js',
+      capabilities: ['telegram-send'],
+      capabilityRoots: ['../capabilities'],
+    }, null, 2),
+  });
+  const cwd = path.join(base, 'framework-managed/demo');
+  const output = execFileSync(process.execPath, [cli, 'upgrade', '--write'], { cwd, encoding: 'utf8', env: { ...process.env, TASKRAIL_ENV: 'local' } });
+  assert.match(output, /STATUS: PASS/);
+  const parsed = JSON.parse(await readFile(path.join(cwd, 'automation.json'), 'utf8'));
+  assert.equal(parsed.profile, 'smg-node-timer@1');
+  assert.equal('capabilityRoots' in parsed, false);
+  const second = execFileSync(process.execPath, [cli, 'upgrade', '--write'], { cwd, encoding: 'utf8', env: { ...process.env, TASKRAIL_ENV: 'local' } });
+  assert.match(second, /STATUS: PASS/);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('upgrade refuses ambiguous legacy manifests', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/main.js': 'process.exit(0)',
+    'tests/self-test.js': 'process.exit(0)',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      taskrailCompatibility: '2.0.x',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: '/opt/smg-automations/automations/demo',
+      validationCommand: 'node src/main.js',
+      testCommand: 'node tests/self-test.js',
+    }, null, 2),
+  });
+  try {
+    execFileSync(process.execPath, [cli, 'upgrade', '--write'], { cwd: base, encoding: 'utf8', env: { ...process.env, TASKRAIL_ENV: 'local' } });
+    assert.fail('expected upgrade to fail');
+  } catch (error: any) {
+    const body = `${error.stdout || ''}${error.stderr || ''}`;
+    assert.match(body, /ambiguous profile upgrade/);
+  }
+  await rm(base, { recursive: true, force: true });
+});
+
 test('inferProfile preserves backward compatibility for current manifests', () => {
   assert.equal(inferProfile({
     name: 'demo',

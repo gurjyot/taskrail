@@ -37,8 +37,5 @@
   "capabilities": [
     "telegram-send",
     "twenty-api"
-  ],
-  "capabilityRoots": [
-    "../capabilities"
   ]
 }

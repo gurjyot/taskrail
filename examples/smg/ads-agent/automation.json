@@ -56,9 +56,6 @@
     "telegram-send",
     "meta-api"
   ],
-  "capabilityRoots": [
-    "../capabilities"
-  ],
   "requiredChecks": [
     "validation",
     "test",

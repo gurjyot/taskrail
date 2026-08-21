@@ -345,6 +345,76 @@ test('runtime health command failure is reported by health', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+test('change-detection returns a verified no-op for the same healthy sha', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'source/package-lock.json': '{"name":"demo","lockfileVersion":3,"packages":{"":{"name":"demo","version":"1.0.0"}}}',
+    'deploy/main.js': 'old',
+  });
+  execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
+  const manifest = {
+    name: 'demo',
+    taskrailCompatibility: '2.0.x',
+    profile: 'smg-node-service@1',
+    runtime: 'node' as const,
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file' as const, path: 'main.js' },
+    dependencyManager: { tool: 'npm' as const, manifest: 'package.json', lockfile: 'package-lock.json', installCommand: 'npm ci --omit=dev' },
+    frameworkCapabilities: ['change-detection@1', 'release-retention@1'],
+    backup: { retain: 1 },
+  };
+  const first = await safeDeploy(manifest, undefined, { projectRoot: base });
+  assert.equal(first.deployed, true);
+  const second = await safeDeploy(manifest, undefined, { projectRoot: base });
+  assert.equal(second.deployed, true);
+  assert.equal(second.releaseId, first.releaseId);
+  await rm(base, { recursive: true, force: true });
+});
+
+test('release-retention prunes stale TaskRail-owned artifacts while preserving current release', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'deploy/main.js': 'old',
+  });
+  execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
+  const workspace = base;
+  await mkdir(path.join(workspace, '.taskrail', 'releases', 'old-a'), { recursive: true });
+  await mkdir(path.join(workspace, '.taskrail', 'releases', 'old-b'), { recursive: true });
+  await mkdir(path.join(workspace, 'demo.candidate'), { recursive: true });
+  await mkdir(path.join(workspace, 'demo.backup-1'), { recursive: true });
+  await mkdir(path.join(workspace, 'demo.backup-2'), { recursive: true });
+  const manifest = {
+    name: 'demo',
+    taskrailCompatibility: '2.0.x',
+    profile: 'smg-node-service@1',
+    runtime: 'node' as const,
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'file' as const, path: 'main.js' },
+    frameworkCapabilities: ['release-retention@1'],
+    backup: { retain: 1 },
+  };
+  const result = await safeDeploy(manifest, undefined, { projectRoot: base });
+  assert.equal(result.deployed, true);
+  await stat(path.join(workspace, '.taskrail', 'releases')).then(() => true);
+  await assert.rejects(stat(path.join(workspace, 'demo.candidate')));
+  await rm(base, { recursive: true, force: true });
+});
+
 test('backward compatibility still supports release metadata and default checks', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {

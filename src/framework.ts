@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition } from './types.js';
 
 function clone<T>(value: T): T {
@@ -79,12 +82,22 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
       generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'],
     }),
   },
+  'change-detection@1': {
+    id: 'change-detection@1',
+    apply: () => ({}),
+  },
+  'release-retention@1': {
+    id: 'release-retention@1',
+    apply: () => ({
+      generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'],
+    }),
+  },
 };
 
 export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   'smg-node-timer@1': {
     id: 'smg-node-timer@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1'],
+    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
     defaults: {
       managed: true,
       sourceDir: 'src',
@@ -101,7 +114,7 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   },
   'smg-node-service@1': {
     id: 'smg-node-service@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1'],
+    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
     defaults: {
       managed: true,
       sourceDir: '.',
@@ -115,7 +128,7 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   },
   'smg-node-postgres-service@1': {
     id: 'smg-node-postgres-service@1',
-    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'postgres-migrations@1', 'health@1', 'drift@1'],
+    frameworkCapabilities: ['node-runtime@1', 'systemd@1', 'immutable-deploy@1', 'postgres-migrations@1', 'health@1', 'drift@1', 'change-detection@1', 'release-retention@1'],
     defaults: {
       managed: true,
       sourceDir: '.',
@@ -128,6 +141,30 @@ export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
     },
   },
 };
+
+function hasFile(cwd: string, ...parts: string[]) {
+  return existsSync(path.join(cwd, ...parts));
+}
+
+function detectProjectUnitHints(manifest: FrameworkManifest, cwd: string) {
+  const serviceNames = [
+    `${manifest.name}.service`,
+    path.join('service', `${manifest.name}.service`),
+  ];
+  const timerNames = [
+    `${manifest.name}.timer`,
+    path.join('timer', `${manifest.name}.timer`),
+  ];
+  const service = serviceNames.some((file) => hasFile(cwd, file));
+  const timer = timerNames.some((file) => hasFile(cwd, file));
+  return { service, timer };
+}
+
+function detectSystemdUnitHints(manifest: FrameworkManifest) {
+  const service = spawnSync('systemctl', ['cat', `${manifest.name}.service`], { encoding: 'utf8' });
+  const timer = spawnSync('systemctl', ['cat', `${manifest.name}.timer`], { encoding: 'utf8' });
+  return { service: service.status === 0, timer: timer.status === 0 };
+}
 
 export function resolveFrameworkManifest(manifest: FrameworkManifest): FrameworkManifest {
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
@@ -181,11 +218,20 @@ export function compactManifest(manifest: FrameworkManifest): FrameworkManifest 
   return output as unknown as FrameworkManifest;
 }
 
-export function inferProfile(manifest: FrameworkManifest): string | null {
+export function inferProfile(manifest: FrameworkManifest, cwd = process.cwd()): string | null {
   if (manifest.profile) return manifest.profile;
   const units = manifest.serviceManager?.units ?? [];
   if (manifest.runtime === 'node' && units.some((unit) => unit.kind === 'timer')) return 'smg-node-timer@1';
   if (manifest.runtime === 'node' && manifest.database?.required) return 'smg-node-postgres-service@1';
   if (manifest.runtime === 'node' && units.length) return 'smg-node-service@1';
+  if (manifest.runtime !== 'node') return null;
+  const localHints = detectProjectUnitHints(manifest, cwd);
+  if (localHints.timer && localHints.service) return 'smg-node-timer@1';
+  if (manifest.database?.required && localHints.service) return 'smg-node-postgres-service@1';
+  if (localHints.service) return 'smg-node-service@1';
+  const systemdHints = detectSystemdUnitHints(manifest);
+  if (systemdHints.timer && systemdHints.service) return 'smg-node-timer@1';
+  if (manifest.database?.required && systemdHints.service) return 'smg-node-postgres-service@1';
+  if (systemdHints.service) return 'smg-node-service@1';
   return null;
 }

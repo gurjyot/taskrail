@@ -83,6 +83,30 @@ test('relative capability roots resolve from the project directory', async () =>
   await rm(base, { recursive: true, force: true });
 });
 
+test('framework-managed source discovers sibling shared capabilities without explicit roots', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'framework-managed/capabilities/telegram-send/capability.json': JSON.stringify({ name: 'telegram-send', version: '1.0.0', description: 'Send', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'framework-managed/capabilities/telegram-send/index.js': 'module.exports = {}',
+    'framework-managed/twenty/automation.json': JSON.stringify({
+      name: 'twenty',
+      taskrailCompatibility: '2.0.x',
+      runtime: 'node',
+      managed: true,
+      sourceDir: '.',
+      deployDir: '/opt/smg-automations/automations/twenty',
+      validationCommand: 'node -e "process.exit(0)"',
+      testCommand: 'node -e "process.exit(0)"',
+      capabilities: ['telegram-send'],
+    }, null, 2),
+  });
+  const manifest = JSON.parse(await readFile(path.join(base, 'framework-managed/twenty/automation.json'), 'utf8'));
+  const roots = capabilityRootsFor(manifest, path.join(base, 'framework-managed/twenty'));
+  const cap = await getCapability('telegram-send', roots);
+  assert.equal(cap?.canonicalPath, path.join(base, 'framework-managed/capabilities/telegram-send/index.js'));
+  await rm(base, { recursive: true, force: true });
+});
+
 test('capability registry discovers, inspects, and tracks consumers', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
