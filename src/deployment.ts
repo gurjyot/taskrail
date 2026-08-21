@@ -26,6 +26,7 @@ import { inspectGitState } from './git.js';
 import { detectEnvironment } from './env.js';
 import { inspectChange } from './change.js';
 import { capabilityRootsFor } from './capabilities.js';
+import { readPrivateState, writePrivateState } from './private-state.js';
 
 export interface DeployOutcome extends DeployResult {
   backupPath?: string;
@@ -153,14 +154,19 @@ function runtimeInstallCommand(manifest: FrameworkManifest) {
 
 async function readState(stateFile: string): Promise<DeployState | null> {
   try {
-    return JSON.parse(await readFile(stateFile, 'utf8')) as DeployState;
-  } catch {
-    return null;
+    const raw = JSON.parse(await readFile(stateFile, 'utf8')) as Record<string, unknown>;
+    const state = await readPrivateState<DeployState & Record<string, unknown>>(stateFile, { allowLegacy: true });
+    if (!state) return null;
+    if (!('_taskrailIntegrity' in raw)) await writePrivateState(stateFile, state);
+    return state as DeployState;
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
   }
 }
 
 async function writeState(stateFile: string, state: DeployState) {
-  await writeFile(stateFile, JSON.stringify(state, null, 2));
+  await writePrivateState(stateFile, state as unknown as Record<string, unknown>);
 }
 
 async function writeReceipt(workspace: string, receipt: Record<string, unknown>) {
