@@ -314,6 +314,31 @@ test('impact aliases capability-impact and returns consumers', async () => {
 });
 
 
+
+test('runtime health command runs alongside file health checks', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'src/check.js': 'process.exit(0)',
+    'deploy/index.txt': 'ok',
+    'src/runtime-health.js': 'process.exit(0)',
+    'automation.json': JSON.stringify({
+      name: 'demo',
+      runtime: 'node',
+      managed: true,
+      sourceDir: 'src',
+      deployDir: 'deploy',
+      validationCommand: 'node check.js',
+      testCommand: 'node check.js',
+      healthCheck: { type: 'file', path: 'index.txt' },
+      runtimeHealthCommand: 'node runtime-health.js',
+      backup: { retain: 1 },
+    }, null, 2),
+  });
+  const output = execFileSync(process.execPath, [cli, 'health'], { cwd: base, encoding: 'utf8' });
+  assert.match(output, /"ok":true/);
+  await rm(base, { recursive: true, force: true });
+});
+
 test('backward compatibility still supports release metadata and default checks', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
