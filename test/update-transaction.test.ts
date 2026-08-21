@@ -26,7 +26,9 @@ test('update transaction requires a proven rollback path before activation', asy
       fromVersion: '1.0.0',
       toVersion: '1.1.0',
       currentRelease: 'cap-1.0.0',
+      currentReleasePath: '/releases/cap-1.0.0',
       lastKnownGoodRelease: 'cap-1.0.0',
+      lastKnownGoodReleasePath: '/releases/cap-1.0.0',
       affectedAutomations: ['beta', 'alpha', 'alpha'],
     });
     assert.equal(created.phase, 'discovered');
@@ -70,7 +72,9 @@ test('invalid transition fails without corrupting the durable checkpoint', async
       targetName: 'seo-agent',
       changeClass: 'patch',
       currentRelease: 'rel-a',
+      currentReleasePath: '/releases/rel-a',
       lastKnownGoodRelease: 'rel-a',
+      lastKnownGoodReleasePath: '/releases/rel-a',
       affectedAutomations: ['seo-agent'],
     });
     await assert.rejects(
@@ -86,7 +90,7 @@ test('invalid transition fails without corrupting the durable checkpoint', async
   }
 });
 
-test('active transaction cannot be replaced by another update', async () => {
+test('active or recovery-required transaction cannot be replaced by another update', async () => {
   const root = await fixtureDir();
   try {
     const input = {
@@ -96,11 +100,16 @@ test('active transaction cannot be replaced by another update', async () => {
       fromVersion: '2.0.8',
       toVersion: '3.0.0',
       currentRelease: '2.0.8',
+      currentReleasePath: '/releases/2.0.8',
       lastKnownGoodRelease: '2.0.8',
+      lastKnownGoodReleasePath: '/releases/2.0.8',
       affectedAutomations: [],
     };
     await createUpdateCheckpoint(root, input);
     await assert.rejects(createUpdateCheckpoint(root, input), /active update transaction already exists/);
+    await transitionUpdate(root, 'framework', 'taskrail', 'recovery-required', 'simulated interruption');
+    await assert.rejects(createUpdateCheckpoint(root, input), /active update transaction already exists/);
+    assert.equal(canTransitionUpdate('recovery-required', 'rollback-required'), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -114,7 +123,9 @@ test('rollback after failure is revalidated before restore', async () => {
       targetName: 'publisher',
       changeClass: 'breaking',
       currentRelease: 'rel-new',
+      currentReleasePath: '/releases/rel-new',
       lastKnownGoodRelease: 'rel-old',
+      lastKnownGoodReleasePath: '/releases/rel-old',
       affectedAutomations: ['publisher'],
       recovery: {},
     });
