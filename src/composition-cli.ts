@@ -10,6 +10,7 @@ import { buildUsageGraph, usageImpact } from './usage-graph.js';
 import { planSharedUpdate } from './update-plan.js';
 import { auditFleetIsolation } from './isolation-audit.js';
 import { evaluateConformance } from './conformance.js';
+import { pauseSharedUpdateConsumers, resumeSharedUpdateConsumers } from './shared-update-control.js';
 
 function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 
@@ -49,7 +50,7 @@ function usage() {
     '  taskrail capability-check <name> [--strict]',
     '  taskrail usage',
     '  taskrail usage <component|capability|profile> <name>',
-    '  taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking]',
+    '  taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking] [--pause|--resume]',
     '  taskrail isolation-audit',
     '  taskrail conformance',
     '  taskrail init automation <name> --profile <profile> [--root <dir>]',
@@ -109,8 +110,19 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
     const kind = rest[0] as 'component' | 'capability' | undefined;
     const name = rest[1];
     if (!kind || !['component', 'capability'].includes(kind) || !name) {
-      console.error('usage: taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking]');
+      console.error('usage: taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking] [--pause|--resume]');
       process.exitCode = 1;
+      return;
+    }
+    if (hasFlag(rest, '--pause') && hasFlag(rest, '--resume')) {
+      console.error('--pause and --resume are mutually exclusive');
+      process.exitCode = 1;
+      return;
+    }
+    if (hasFlag(rest, '--resume')) {
+      const resumed = await resumeSharedUpdateConsumers(process.cwd(), kind, name);
+      output({ action: 'resume', targetKind: kind, targetName: name, ...resumed });
+      if (!resumed.ok) process.exitCode = 1;
       return;
     }
     const graph = await buildUsageGraph(process.cwd());
@@ -121,6 +133,12 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
       toVersion: flagValue(rest, '--to'),
       breaking: hasFlag(rest, '--breaking'),
     });
+    if (hasFlag(rest, '--pause')) {
+      const paused = await pauseSharedUpdateConsumers(process.cwd(), plan);
+      output({ ...plan, graphErrors: graph.errors, pause: paused });
+      if (plan.action === 'blocked' || !paused.ok) process.exitCode = 1;
+      return;
+    }
     output({ ...plan, graphErrors: graph.errors });
     if (plan.action === 'blocked') process.exitCode = 1;
     return;
