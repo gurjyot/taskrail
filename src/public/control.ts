@@ -13,6 +13,7 @@ export {
   recordRecoveryReadiness,
 } from '../recovery-readiness.js';
 export { transactionalDeploy } from '../transactional-deploy.js';
+export { recoverInterruptedAutomation } from '../recovery-resume.js';
 export {
   updatePauseFile,
   readUpdatePause,
@@ -38,5 +39,6 @@ export type {
 } from '../update-transaction.js';
 export type { RecoveryReadinessResult } from '../recovery-readiness.js';
 export type { TransactionalDeployOptions, TransactionalDeployResult } from '../transactional-deploy.js';
+export type { RecoveryResumeResult } from '../recovery-resume.js';
 export type { UpdatePauseRecord } from '../update-pause.js';
 export type { SharedPauseResult } from '../shared-update-control.js';
