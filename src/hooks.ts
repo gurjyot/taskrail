@@ -23,6 +23,7 @@ export interface LifecycleContext {
   automation?: string;
   transactionId?: string;
   releaseId?: string;
+  signal?: AbortSignal;
   data?: Readonly<Record<string, unknown>>;
 }
 
@@ -81,17 +82,19 @@ export class LifecycleBus {
       .sort((a, b) => (a.event === b.event ? (a.priority ?? 100) - (b.priority ?? 100) || a.name.localeCompare(b.name) : a.event.localeCompare(b.event)));
   }
 
-  async emit(event: LifecycleEvent, context: Omit<LifecycleContext, 'event'> = {}): Promise<LifecycleEmitResult> {
+  async emit(event: LifecycleEvent, context: Omit<LifecycleContext, 'event' | 'signal'> = {}): Promise<LifecycleEmitResult> {
     const hooks = this.hooks
       .filter((hook) => hook.event === event)
       .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100) || a.name.localeCompare(b.name));
-    const frozen = deepFreeze({ event, ...context }) as Readonly<LifecycleContext>;
     const outcomes: LifecycleHookOutcome[] = [];
 
     for (const hook of hooks) {
       const started = Date.now();
       try {
-        await withTimeout(Promise.resolve(hook.handler(frozen)), hook.timeoutMs ?? this.options.defaultTimeoutMs ?? 5_000);
+        await withTimeout(async (signal) => {
+          const frozen = deepFreeze({ event, ...context, signal }) as Readonly<LifecycleContext>;
+          await hook.handler(frozen);
+        }, hook.timeoutMs ?? this.options.defaultTimeoutMs ?? 5_000);
         outcomes.push({
           name: hook.name,
           event,
