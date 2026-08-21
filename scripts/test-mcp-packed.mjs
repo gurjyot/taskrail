@@ -4,11 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 
 const root = process.cwd();
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const run = (args, options = {}) => execFileSync(npm, args, { encoding: 'utf8', stdio: options.stdio ?? ['ignore', 'pipe', 'inherit'], cwd: options.cwd ?? root });
+
+function runNpm(args, options = {}) {
+  const execOptions = {
+    encoding: 'utf8',
+    stdio: options.stdio ?? ['ignore', 'pipe', 'inherit'],
+    cwd: options.cwd ?? root,
+  };
+  if (process.platform === 'win32') {
+    const npmCli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    return execFileSync(process.execPath, [npmCli, ...args], execOptions);
+  }
+  return execFileSync('npm', args, execOptions);
+}
 
 function pack(cwd) {
-  const raw = run(['pack', '--ignore-scripts', '--json'], { cwd });
+  const raw = runNpm(['pack', '--ignore-scripts', '--json'], { cwd });
   const result = JSON.parse(raw)[0];
   if (!result?.filename) throw new Error(`npm pack did not return an artifact for ${cwd}`);
   return { ...result, path: path.resolve(cwd, result.filename) };
@@ -21,7 +32,7 @@ const temp = await mkdtemp(path.join(os.tmpdir(), 'taskrail-mcp-packed-'));
 
 try {
   await writeFile(path.join(temp, 'package.json'), JSON.stringify({ name: 'taskrail-mcp-fixture', version: '1.0.0', private: true, type: 'module' }, null, 2));
-  execFileSync(npm, ['install', '--ignore-scripts', '--no-audit', '--no-fund', core.path, adapter.path, '@modelcontextprotocol/client@2.0.0'], { cwd: temp, stdio: 'inherit' });
+  runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', core.path, adapter.path, '@modelcontextprotocol/client@2.0.0'], { cwd: temp, stdio: 'inherit' });
 
   const installedCore = path.join(temp, 'node_modules', 'taskrail', 'package.json');
   const installedAdapter = path.join(temp, 'node_modules', '@taskrail', 'mcp', 'package.json');
