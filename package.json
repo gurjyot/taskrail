@@ -19,7 +19,7 @@
     "./src/*": "./src/*"
   },
   "bin": {
-    "taskrail": "./dist/src/cli.js",
+    "taskrail": "./dist/src/taskrail-cli.js",
     "taskrail-supervise": "./dist/src/supervise-cli.js",
     "taskrail-heartbeat": "./dist/src/heartbeat-cli.js",
     "taskrail-systemd-sync": "./dist/src/systemd-cli.js"
@@ -27,7 +27,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.js",
-    "check": "npm run build && node dist/src/cli.js --help && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"import('taskrail/components').then(m => { if (!m.http || !m.config) process.exit(1) })\""
+    "check": "npm run build && node dist/src/taskrail-cli.js --help && node dist/src/taskrail-cli.js components && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"import('taskrail/components').then(m => { if (!m.http || !m.config) process.exit(1) })\""
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
