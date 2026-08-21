@@ -6,7 +6,7 @@ export function validateConfig(config: FrameworkConfig): string[] {
   const errors: string[] = [];
   if (!config.projectName) errors.push('projectName is required');
   if (!config.manifest.name) errors.push('manifest.name is required');
-  if (!['node', 'python', 'shell'].includes(config.manifest.runtime)) errors.push('runtime must be node, python, or shell');
+  if (!['node', 'python', 'shell', 'php'].includes(config.manifest.runtime)) errors.push('runtime must be node, python, shell, or php');
   if (!config.manifest.sourceDir) errors.push('manifest.sourceDir is required');
   if (!config.manifest.deployDir) errors.push('manifest.deployDir is required');
   if (!config.manifest.validationCommand) errors.push('manifest.validationCommand is required');
