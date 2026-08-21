@@ -5,6 +5,8 @@ import { SecurityRegistry, securityControl } from '../src/security-registry.js';
 import { planRebootRecovery, rebootRecoverySafe } from '../src/reboot-recovery.js';
 import { planRetention } from '../src/retention-policy.js';
 import { assessPerformanceBudget } from '../src/performance-budget.js';
+import { assessBackwardCompatibility } from '../src/backward-compatibility.js';
+import { managedSystemdUnits } from '../src/systemd.js';
 
 test('validation modules are reusable across suites and dependencies run once', async () => {
   const registry = new ValidationRegistry()
@@ -67,6 +69,20 @@ test('reboot recovery supports catch-up skip and manual policies without affecti
   assert.equal(rebootRecoverySafe(actions), false);
 });
 
+test('systemd reboot readiness includes both declared services and timers', () => {
+  const units = managedSystemdUnits({
+    name: 'example', managed: true, runtime: 'node', sourceDir: '.', deployDir: '/tmp/example', validationCommand: 'true', testCommand: 'true',
+    serviceManager: { type: 'systemd', units: [
+      { name: 'example.timer', kind: 'timer' },
+      { name: 'example.service', kind: 'service' },
+    ] },
+  });
+  assert.deepEqual(units, [
+    { name: 'example.service', kind: 'service' },
+    { name: 'example.timer', kind: 'timer' },
+  ]);
+});
+
 test('retention prunes transient data but preserves deployment and failure history', () => {
   const now = new Date('2026-08-22T00:00:00.000Z');
   const result = planRetention([
@@ -84,4 +100,15 @@ test('performance budget blocks framework bloat and slow validation', () => {
   const failed = assessPerformanceBudget({ unpackedBytes: 3_000_000, validationMs: 10_000 });
   assert.equal(failed.ok, false);
   assert.deepEqual(failed.violations.map((item) => item.metric), ['unpackedBytes', 'validationMs']);
+});
+
+test('backward compatibility requires a major release before removing stable contracts', () => {
+  const previous = { schema: 1 as const, version: '2.0.8', publicExports: ['taskrail/components', 'taskrail/testing'], commands: ['doctor', 'ship'], manifestFields: ['name', 'runtime'] };
+  const additive = { schema: 1 as const, version: '2.1.0', publicExports: [...previous.publicExports, 'taskrail/control'], commands: [...previous.commands, 'recover'], manifestFields: [...previous.manifestFields, 'components'] };
+  assert.equal(assessBackwardCompatibility(previous, additive).compatible, true);
+  const breaking = { ...additive, publicExports: ['taskrail/testing'], commands: ['doctor'], manifestFields: ['name'] };
+  const assessment = assessBackwardCompatibility(previous, breaking);
+  assert.equal(assessment.compatible, false);
+  assert.equal(assessment.requiresMajorVersion, true);
+  assert.deepEqual(assessment.changes.map((change) => change.kind), ['removed-export', 'removed-command', 'removed-manifest-field']);
 });
