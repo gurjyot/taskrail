@@ -21,12 +21,13 @@ async function fixtureDir() {
 }
 
 test('execution contexts are unique and automation scoped', () => {
-  const first = createExecutionContext('seo-agent', '/tmp/seo-state');
-  const second = createExecutionContext('seo-agent', '/tmp/seo-state');
+  const requestedStateDir = path.join(os.tmpdir(), 'seo-state');
+  const first = createExecutionContext('seo-agent', requestedStateDir);
+  const second = createExecutionContext('seo-agent', requestedStateDir);
   assert.notEqual(first.executionId, second.executionId);
   assert.match(first.executionId, /^seo-agent-/);
   assert.equal(first.automation, 'seo-agent');
-  assert.equal(first.stateDir, '/tmp/seo-state');
+  assert.equal(first.stateDir, path.resolve(requestedStateDir));
 });
 
 test('local state store isolates namespaces and writes atomically', async () => {
