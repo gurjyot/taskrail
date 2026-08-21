@@ -6,6 +6,7 @@ import { isCompatible, resolvePaths } from './config.js';
 import { TASKRAIL_VERSION } from './version.js';
 import { capabilityRootsFor, discoverAutomationManifests, loadCapabilities } from './capabilities.js';
 import { detectEnvironment, appliesToEnvironment } from './env.js';
+import { readUpdatePause } from './update-pause.js';
 
 export interface PreflightResult {
   ok: boolean;
@@ -17,6 +18,8 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
   const paths = resolvePaths(manifest, cwd);
   const checks: PreflightResult['checks'] = [];
   const push = (name: string, ok: boolean, message?: string) => checks.push({ name, ok, message });
+  const updatePause = await readUpdatePause(manifest, cwd);
+  push('update-pause', !updatePause, updatePause ? `${updatePause.reason}${updatePause.targetName ? ` (${updatePause.targetKind}:${updatePause.targetName})` : ''}` : 'not paused');
   push('compatibility', isCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility));
   push('sourceDir', await stat(paths.sourceDir).then(() => true, () => false));
   if (envInfo.name === 'production') {
