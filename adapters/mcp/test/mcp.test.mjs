@@ -45,7 +45,7 @@ test('official MCP client can call TaskRail read tool over stdio and audit conta
     for (const name of names) assert.doesNotMatch(name, /(deploy|ship|update|recover|pause|resume|scaffold|write|delete)/i);
 
     const result = await client.callTool({ name: 'taskrail_agent_contract', arguments: {} });
-    assert.equal(result.isError, undefined);
+    assert.equal(result.isError, undefined, JSON.stringify(result.content));
     const text = result.content?.find((item) => item.type === 'text')?.text || '';
     assert.match(text, /stdio|readActionsDefault|controlActionsDefault/);
 
