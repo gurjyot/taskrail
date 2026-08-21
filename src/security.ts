@@ -14,7 +14,7 @@ const secretPatterns = [
 
 const sourceWarnings: Array<{ code: string; pattern: RegExp; message: string }> = [
   { code: 'shell-exec', pattern: /\bexec(?:Sync)?\s*\(/, message: 'direct shell execution detected; prefer argument-safe spawn/execFile APIs' },
-  { code: 'shell-true', pattern: /shell\s*:\s*true/, message: 'shell:true expands command-injection risk' },
+  { code: 'shell-true', pattern: /shell\s*:\s*true/, message: 'shell-enabled process execution expands command-injection risk' },
   { code: 'sql-interpolation', pattern: /(?:SELECT|INSERT|UPDATE|DELETE)[\s\S]{0,160}\$\{|(?:query|execute)\s*\(\s*`[^`]*\$\{/i, message: 'possible interpolated SQL; use parameterized queries' },
   { code: 'eval', pattern: /\beval\s*\(|new\s+Function\s*\(/, message: 'dynamic code evaluation detected' },
   { code: 'insecure-http-listen', pattern: /listen\s*\(\s*(?:80|8080|3000)\b/, message: 'network listener detected; TaskRail core should not expose a network service by default' },
