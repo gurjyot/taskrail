@@ -22,6 +22,9 @@ if (command === 'platform') {
     console.error('usage: taskrail platform <install|status>');
     process.exitCode = 1;
   }
+} else if (command === 'update') {
+  const { runTransactionalDeployCli } = await import('./transactional-deploy-cli.js');
+  await runTransactionalDeployCli(process.argv.slice(2));
 } else if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
   await runCompositionCli(process.argv.slice(2));
