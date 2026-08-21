@@ -3,7 +3,7 @@
 <p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, updating, supervising, and safely operating production automations.</strong></p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~199 KiB compressed / ~1049 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~209 KiB compressed / ~1095 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 TaskRail is a small control plane and SDK for reliable automation. It is designed to be especially easy for coding agents such as Codex and other AI development tools, while remaining deterministic and fully usable without AI. It provides reusable components, governed capabilities, thin automation scaffolds, deployment safety, transactional updates, rollback/recovery controls, supervision, privacy-safe diagnostics, optional agent adapters, and progressive-disclosure agent skills without requiring a database, queue, container platform, permanent daemon, vector store, or runtime model service.
@@ -233,6 +233,12 @@ taskrail-supervise
 
 TaskRail does not serialize independent automations just because they start at the same time. Performance budgets fail closed when measured framework size or execution overhead exceeds the configured ceiling rather than allowing gradual unnoticed bloat.
 
+## Runaway execution guardrails
+
+TaskRail can bound an execution by maximum observed steps, elapsed time, repeated state/fingerprint count, and consecutive failures. `RunawayExecutionGuard` trips deterministically when a budget is exceeded and remains tripped for that execution.
+
+Guardrail trips can be written as private metadata-only JSONL using `journalExecutionGuardTrip()`. The journal intentionally excludes arbitrary business payloads and repeated fingerprint values, and old transient evidence remains subject to TaskRail's retention policy.
+
 ## Hooks and lifecycle events
 
 The bounded lifecycle event bus lets integrations observe or explicitly authorized control-plane code participate in lifecycle events without bypassing TaskRail safety gates. Handlers are ordered, timeout-bounded, and classified as read-only or mutation-capable; mutation handlers require explicit authorization.
@@ -278,6 +284,8 @@ TaskRail diagnostic reports are deliberately minimized. Default reports exclude 
 Diagnostics are validated against a strict schema and maximum size before they are considered suitable for submission.
 
 The Error Intelligence layer groups valid reports by deterministic fingerprint, severity, TaskRail version, platform, and occurrence count. This allows a private intake or Sentinel workflow to deduplicate recurring failures without collecting the user's internal automation logic.
+
+Opt-in diagnostic submission envelopes are available through `taskrail/agent`. They revalidate every report, bound batch size, pseudonymize a local installation identifier and explicitly prohibit automatic submission or embedded credentials.
 
 End-user installations should never receive credentials for the maintainers' private diagnostics repository. Any future remote intake must be explicitly authorized, previewable, authenticated, rate-limited, and privacy-preserving.
 
@@ -333,6 +341,7 @@ taskrail/manifest
 taskrail/testing
 taskrail/control
 taskrail/agent
+taskrail/platform
 ```
 
 Examples:
@@ -340,9 +349,20 @@ Examples:
 - `taskrail/components` — stable vendor-neutral primitives
 - `taskrail/testing` — modular validation/security, conformance, compatibility, performance, isolation, fault-injection and certification helpers
 - `taskrail/control` — lifecycle/update controls plus compatibility, provenance, security-policy, reboot/retention and error-intelligence contracts
-- `taskrail/agent` — permissioned AI/agent-facing contracts and privacy-safe diagnostics
+- `taskrail/agent` — permissioned AI/agent-facing contracts, privacy-safe diagnostics and opt-in diagnostic submission envelopes
+- `taskrail/platform` — transport-neutral dashboard/app contracts, role-gated command intents, real-time event observers, test/status structures and runaway-execution guardrails
 
 Internal files can evolve more quickly without making every implementation detail part of TaskRail's semver promise.
+
+## Future dashboard and application hooks
+
+TaskRail core does not run a dashboard server or open a web port. `taskrail/platform` provides stable structures and hooks so a separate dashboard repository can expose authenticated HTTP, SSE, WebSocket or webhook transport without becoming a second control plane.
+
+Future clients can consume automation/component/capability inventories, health/state, per-automation test totals and failed test IDs, notifications and realtime lifecycle events. Control intents include start, stop, pause, resume, run, scheduler enable/disable, and notification acknowledgement/resolution.
+
+All mutations must pass through `PlatformCommandGateway`, which applies role checks before invoking a canonical TaskRail executor. The external service must bind that executor to the same TaskRail control functions used by CLI operations; clients never receive arbitrary shell execution access.
+
+See `docs/platform-and-insights-contract.md` for the integration boundary.
 
 ## Optional MCP adapter
 
@@ -491,6 +511,7 @@ TaskRail includes:
 - environment detection
 - structured logs/errors and secret redaction
 - privacy-safe diagnostic schema and validation
+- opt-in pseudonymous diagnostic submission envelopes
 - diagnostic deduplication/error intelligence
 - versioned security-policy declarations
 - provenance/checksum/signature verification contracts
@@ -498,7 +519,7 @@ TaskRail includes:
 - isolated local state
 - durable idempotency claims
 - decision journaling and heartbeats
-- bounded retries, timeouts, concurrency, and execution policies
+- bounded retries, timeouts, concurrency, execution policies and runaway-loop guardrails
 - CPU, memory, task, and process-priority guardrails
 - systemd resource drop-ins, reboot readiness and optional strict filesystem isolation
 - missed-run recovery policy per automation
@@ -516,6 +537,8 @@ TaskRail includes:
 - drift detection and reconciliation
 - compatibility checks and safe manifest upgrades
 - bounded lifecycle hooks with mutation authorization
+- transport-neutral dashboard/app platform hooks and realtime observer contract
+- role-gated future start/stop/pause/resume/run/scheduler command intents
 - executable engineering/conformance standard
 - reusable fault-injection harness
 - package/startup/validation/memory performance budgets
@@ -579,7 +602,7 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, `taskra
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~198 KiB compressed / ~1046 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~209 KiB compressed / ~1095 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
