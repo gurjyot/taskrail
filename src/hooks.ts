@@ -92,7 +92,8 @@ export class LifecycleBus {
       const started = Date.now();
       try {
         await withTimeout(async (signal) => {
-          const frozen = deepFreeze({ event, ...context, signal }) as Readonly<LifecycleContext>;
+          const data = context.data ? deepFreeze({ ...context.data }) : undefined;
+          const frozen = Object.freeze({ event, ...context, data, signal }) as Readonly<LifecycleContext>;
           await hook.handler(frozen);
         }, hook.timeoutMs ?? this.options.defaultTimeoutMs ?? 5_000);
         outcomes.push({
