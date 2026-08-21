@@ -79,6 +79,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:install-release": "npm run build && node scripts/build-install-release.mjs",
     "test": "npm run build && node --test dist/test/*.js",
     "check": "npm run build && node dist/src/taskrail-cli.js --help && node dist/src/taskrail-cli.js components && node dist/src/supervise-cli.js --help && node dist/src/heartbeat-cli.js --help && node dist/src/systemd-cli.js --help && node -e \"Promise.all([import('taskrail/components'), import('taskrail/capabilities'), import('taskrail/manifest'), import('taskrail/testing'), import('taskrail/control')]).then(([components, capabilities, manifest, testing, control]) => { if (!components.http || !components.config || !capabilities.buildUsageGraph || !manifest.validateConfig || !testing.evaluateConformance || !control.LifecycleBus) process.exit(1) })\"",
     "prepack": "npm run build && npm test && npm run check"
