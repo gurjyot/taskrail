@@ -18,7 +18,16 @@ export interface SupervisionResult {
 }
 
 export async function inspectTarget(target: SupervisionTarget, now = Date.now()): Promise<SupervisionResult> {
-  const heartbeat = await readHeartbeat(target.stateDir);
+  let heartbeat;
+  try {
+    heartbeat = await readHeartbeat(target.stateDir);
+  } catch (error) {
+    return {
+      name: target.name,
+      status: 'failed',
+      details: `heartbeat unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
   if (!heartbeat) {
     const stateExists = await stat(target.stateDir).then(() => true, () => false);
     return {
