@@ -160,17 +160,17 @@ async function readState(stateFile: string): Promise<DeployState | null> {
 }
 
 async function writeState(stateFile: string, state: DeployState) {
-  await writeFile(stateFile, JSON.stringify(state, null, 2), { mode: 0o600 });
+  await writeFile(stateFile, JSON.stringify(state, null, 2));
 }
 
 async function writeReceipt(workspace: string, receipt: Record<string, unknown>) {
   const dir = path.join(workspace, '.taskrail', 'receipts');
-  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await mkdir(dir, { recursive: true });
   const latest = path.join(dir, 'latest.json');
   const dated = path.join(dir, `${String(receipt.releaseId || 'unknown')}.json`);
   const body = JSON.stringify(receipt, null, 2);
-  await writeFile(latest, body, { mode: 0o600 });
-  await writeFile(dated, body, { mode: 0o600 });
+  await writeFile(latest, body);
+  await writeFile(dated, body);
   return latest;
 }
 
