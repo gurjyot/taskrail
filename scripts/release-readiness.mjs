@@ -13,6 +13,7 @@ const platformManifest = JSON.parse(await readFile(path.join(root, 'platform-ins
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const architecture = await readFile(path.join(root, 'docs', 'taskrail-3-reliability-architecture.md'), 'utf8');
 const diagnosticsSecurity = await readFile(path.join(root, 'docs', 'diagnostics-and-security.md'), 'utf8');
+const releaseWorkflow = await readFile(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
 
 add('version:package-source', versionMatch?.[1] === pkg.version, `${pkg.version} / ${versionMatch?.[1] || 'missing'}`);
 add('version:platform-manifest', platformManifest.taskrailVersion === pkg.version, `${pkg.version} / ${platformManifest.taskrailVersion}`);
@@ -22,6 +23,8 @@ add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
 add('check:strict-security', String(pkg.scripts?.check || '').includes('security audit --strict --root src'), 'npm run check');
 add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:contract');
 add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
+add('release:sigstore-attestation', releaseWorkflow.includes('actions/attest@v4') && releaseWorkflow.includes('id-token: write') && releaseWorkflow.includes('attestations: write'), 'actions/attest@v4');
+add('release:certification', releaseWorkflow.includes('npm run certify'), 'npm run certify');
 
 for (const file of [
   'installers/taskrail-install-linux.sh',
@@ -44,8 +47,10 @@ for (const file of [
   'test/diagnostics-security.test.ts',
   'test/agent-surface.test.ts',
   'test/modular-hardening.test.ts',
+  'test/deployment-private-state.test.ts',
   'test/platform-bootstrap.test.ts',
   'scripts/certify-release.mjs',
+  'scripts/test-mcp-packed.mjs',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
