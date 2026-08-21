@@ -2,6 +2,10 @@
 
 <p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, supervising, and safely operating production automations.</strong></p>
 
+<p align="center"><strong>⚡ Tiny framework footprint: ~110 KB compressed / ~601 KB unpacked, with zero runtime npm dependencies.</strong></p>
+
+<!-- taskrail-package-size:110463:601274 -->
+
 TaskRail is designed for coding agents such as Codex and other AI development tools, but remains deterministic and useful without AI. It provides a small control plane, reusable component SDK, governed capabilities, deployment safety, runtime guardrails, and progressive-disclosure agent instructions without requiring a database, queue, container platform, daemon, vector store, or runtime AI service.
 
 **Keywords:** automation framework, AI automation, coding agents, agentic automation, workflow automation, Node.js automation, TypeScript automation, deployment automation, CLI framework, automation SDK, reusable components, reusable integrations, capability registry, idempotency, retries, health checks, rollback, drift detection, systemd automation, production automation, Codex skills, AI developer tooling.
@@ -156,8 +160,8 @@ Profiles provide reusable operational defaults such as runtime, deployment strat
 
 TaskRail currently includes:
 
+- **Tiny package footprint: ~110 KB compressed / ~601 KB unpacked, with zero runtime npm dependencies**
 - CLI-first control plane
-- zero runtime dependencies
 - public TypeScript/Node.js library API
 - component SDK
 - governed capability registry
@@ -332,9 +336,13 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, and `ta
 
 ## Framework footprint
 
-TaskRail is intentionally small. GitHub currently reports the repository at approximately **196 KB** before installed development dependencies/build artifacts. The runtime package has zero npm runtime dependencies.
+**TaskRail 2.0.8 package footprint: ~110 KB compressed / ~601 KB unpacked. Runtime npm dependencies: 0.**
 
-For release-quality size claims, TaskRail should measure and publish the exact `npm pack` compressed/unpacked size in CI for every release rather than relying only on repository size.
+The exact measured values for the current package are **110,463 bytes compressed** and **601,274 bytes unpacked**. These are measured from the actual `npm pack` artifact rather than inferred from repository size.
+
+The Golden Path release gate measures this on every change. If the package size changes and the README size marker is not updated, CI fails. This keeps the published footprint synchronized with the framework as it evolves.
+
+A separate **2 MB unpacked size guardrail** currently prevents accidental framework bloat.
 
 ## What TaskRail deliberately does not include
 
