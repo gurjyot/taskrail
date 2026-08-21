@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const root = process.cwd();
@@ -7,9 +8,12 @@ const readmePath = path.join(root, 'README.md');
 const checkOnly = process.argv.includes('--check');
 const npmExecPath = process.env.npm_execpath;
 const args = ['pack', '--ignore-scripts', '--json'];
+const require = createRequire(import.meta.url);
 const raw = npmExecPath
   ? execFileSync(process.execPath, [npmExecPath, ...args], { cwd: root, encoding: 'utf8' })
-  : execFileSync(process.platform === 'win32' ? process.execPath : 'npm', process.platform === 'win32' ? [require.resolve('npm/bin/npm-cli.js'), ...args] : args, { cwd: root, encoding: 'utf8' });
+  : process.platform === 'win32'
+    ? execFileSync(process.execPath, [require.resolve('npm/bin/npm-cli.js'), ...args], { cwd: root, encoding: 'utf8' })
+    : execFileSync('npm', args, { cwd: root, encoding: 'utf8' });
 const packed = JSON.parse(raw)[0];
 if (!packed?.filename) throw new Error('npm pack did not return package metadata');
 
