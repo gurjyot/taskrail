@@ -315,12 +315,12 @@ test('impact aliases capability-impact and returns consumers', async () => {
 
 
 
-test('runtime health command runs alongside file health checks', async () => {
+test('runtime health command failure is reported by health', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
     'src/check.js': 'process.exit(0)',
     'deploy/index.txt': 'ok',
-    'src/runtime-health.js': 'process.exit(0)',
+    'src/runtime-health.js': 'process.exit(1)',
     'automation.json': JSON.stringify({
       name: 'demo',
       runtime: 'node',
@@ -334,8 +334,14 @@ test('runtime health command runs alongside file health checks', async () => {
       backup: { retain: 1 },
     }, null, 2),
   });
-  const output = execFileSync(process.execPath, [cli, 'health'], { cwd: base, encoding: 'utf8' });
-  assert.match(output, /"ok":true/);
+  let failed = false;
+  try {
+    execFileSync(process.execPath, [cli, 'health'], { cwd: base, encoding: 'utf8' });
+  } catch (error: any) {
+    failed = true;
+    assert.match(String(error.stdout ?? ''), /"ok":false/);
+  }
+  assert.equal(failed, true);
   await rm(base, { recursive: true, force: true });
 });
 
