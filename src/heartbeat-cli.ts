@@ -4,6 +4,10 @@ import { createExecutionContext, writeHeartbeat } from './execution.js';
 
 type RequestedStatus = 'starting' | 'running' | 'ok' | 'failed' | 'systemd';
 
+function normalizeAutomation(value: string) {
+  return value.replace(/\.(service|timer)$/, '');
+}
+
 function systemdStatus(): { status: 'ok' | 'failed'; details: string } {
   const result = process.env.SERVICE_RESULT || 'unknown';
   const exitCode = process.env.EXIT_CODE || '';
@@ -13,12 +17,13 @@ function systemdStatus(): { status: 'ok' | 'failed'; details: string } {
 }
 
 async function main() {
-  const [automation, requested, ...args] = process.argv.slice(2);
-  if (!automation || !requested || args.includes('--help') || automation === '--help') {
-    console.log('taskrail-heartbeat <automation> <starting|running|ok|failed|systemd> [--state=/path] [--execution=id] [--details=text]');
+  const [incomingAutomation, requested, ...args] = process.argv.slice(2);
+  if (!incomingAutomation || !requested || args.includes('--help') || incomingAutomation === '--help') {
+    console.log('taskrail-heartbeat <automation|unit.service> <starting|running|ok|failed|systemd> [--state=/path] [--execution=id] [--details=text]');
     return;
   }
   if (!['starting', 'running', 'ok', 'failed', 'systemd'].includes(requested)) throw new Error('invalid heartbeat status');
+  const automation = normalizeAutomation(incomingAutomation);
   const stateArg = args.find((arg) => arg.startsWith('--state='));
   const executionArg = args.find((arg) => arg.startsWith('--execution='));
   const detailsArg = args.find((arg) => arg.startsWith('--details='));
