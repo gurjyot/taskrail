@@ -23,22 +23,25 @@ async function main() {
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 256) throw new Error('concurrency must be an integer between 1 and 256');
 
   const manifests = await discoverAutomationManifests(process.cwd());
+  const seenAutomations = new Set<string>();
   const byName = new Map<string, SupervisionTarget>();
   for (const manifestPath of manifests) {
     const raw = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
-    if (!raw.managed) continue;
+    if (!raw.managed || seenAutomations.has(raw.name)) continue;
+    seenAutomations.add(raw.name);
     const manifest = resolveFrameworkManifest(raw);
     const fallbackFreshness = effectiveExecutionPolicy(manifest.execution).staleAfterMs;
     const services = (manifest.serviceManager?.units ?? []).filter((unit) => unit.kind === 'service');
     if (services.length) {
       for (const unit of services) {
         const name = serviceName(unit.name);
+        if (byName.has(name)) continue;
         const stateDir = name === manifest.name && manifest.statePath
           ? (path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(path.dirname(manifestPath), manifest.statePath))
           : path.resolve(`/opt/smg-automations/state/${name}`);
         byName.set(name, { name, stateDir, staleAfterMs: unit.staleAfterMs ?? fallbackFreshness });
       }
-    } else if (manifest.statePath) {
+    } else if (manifest.statePath && !byName.has(manifest.name)) {
       const stateDir = path.isAbsolute(manifest.statePath) ? manifest.statePath : path.resolve(path.dirname(manifestPath), manifest.statePath);
       byName.set(manifest.name, { name: manifest.name, stateDir, staleAfterMs: fallbackFreshness });
     }
