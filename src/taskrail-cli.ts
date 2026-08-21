@@ -28,6 +28,15 @@ if (command === 'platform') {
 } else if (command === 'recover') {
   const { runRecoveryResumeCli } = await import('./recovery-resume-cli.js');
   await runRecoveryResumeCli(process.argv.slice(2));
+} else if (command === 'diagnostics') {
+  const { runDiagnosticsCli } = await import('./diagnostics-cli.js');
+  await runDiagnosticsCli(process.argv.slice(2));
+} else if (command === 'security') {
+  const { runSecurityCli } = await import('./security-cli.js');
+  await runSecurityCli(process.argv.slice(2));
+} else if (command === 'agent') {
+  const { runAgentCli } = await import('./agent-cli.js');
+  await runAgentCli(process.argv.slice(2));
 } else if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
   await runCompositionCli(process.argv.slice(2));
