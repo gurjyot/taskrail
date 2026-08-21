@@ -8,6 +8,7 @@ import { scaffoldCapability } from './capability-scaffold.js';
 import { scaffoldAutomation } from './automation-scaffold.js';
 import { buildUsageGraph, usageImpact } from './usage-graph.js';
 import { planSharedUpdate } from './update-plan.js';
+import { auditFleetIsolation } from './isolation-audit.js';
 
 function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 
@@ -48,6 +49,7 @@ function usage() {
     '  taskrail usage',
     '  taskrail usage <component|capability|profile> <name>',
     '  taskrail update-plan <component|capability> <name> [--from <version>] [--to <version>] [--breaking]',
+    '  taskrail isolation-audit',
     '  taskrail init automation <name> --profile <profile> [--root <dir>]',
     '  taskrail init capability <name> --description <text> --purpose <text> --domain <name> --operation <op> [--operation <op> ...]',
   ].join('\n'));
@@ -119,6 +121,12 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
     });
     output({ ...plan, graphErrors: graph.errors });
     if (plan.action === 'blocked') process.exitCode = 1;
+    return;
+  }
+  if (command === 'isolation-audit') {
+    const audit = await auditFleetIsolation(process.cwd());
+    output(audit);
+    if (!audit.ok) process.exitCode = 1;
     return;
   }
   if (command === 'capability-find') {
