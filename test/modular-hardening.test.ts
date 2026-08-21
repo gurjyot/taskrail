@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { createAgentGrant, authorizeAgentGrant } from '../src/agent-grants.js';
 import { assessSharedArtifactUpdate, satisfiesSimpleRange } from '../src/compatibility-contract.js';
 import { certifyTaskRail } from '../src/certification.js';
 import { createDiagnosticReport } from '../src/diagnostics.js';
@@ -90,4 +91,21 @@ test('certification aggregates independent gates and fails closed', () => {
   const fail = certifyTaskRail([{ name: 'core-ci', ok: true }, { name: 'fault-injection', ok: false }]);
   assert.equal(fail.certified, false);
   assert.deepEqual(fail.failed, ['fault-injection']);
+});
+
+test('agent mutation grants are narrow, session-bound, expiring, and proof-bound', () => {
+  const now = new Date('2026-08-22T00:00:00.000Z');
+  const grant = createAgentGrant({
+    grantId: 'g1',
+    sessionId: 'session-a',
+    actions: ['automation.scaffold'],
+    nonce: 'one-time-proof',
+    ttlMs: 60_000,
+    now,
+  });
+  assert.equal(authorizeAgentGrant({ grant, action: 'automation.scaffold', sessionId: 'session-a', nonce: 'one-time-proof', now }).allowed, true);
+  assert.equal(authorizeAgentGrant({ grant, action: 'automation.update', sessionId: 'session-a', nonce: 'one-time-proof', now }).allowed, false);
+  assert.equal(authorizeAgentGrant({ grant, action: 'automation.scaffold', sessionId: 'session-b', nonce: 'one-time-proof', now }).allowed, false);
+  assert.equal(authorizeAgentGrant({ grant, action: 'automation.scaffold', sessionId: 'session-a', nonce: 'wrong-proof', now }).allowed, false);
+  assert.equal(authorizeAgentGrant({ grant, action: 'automation.scaffold', sessionId: 'session-a', nonce: 'one-time-proof', now: new Date(now.getTime() + 61_000) }).allowed, false);
 });
