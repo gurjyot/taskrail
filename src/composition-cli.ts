@@ -6,6 +6,7 @@ import { findSimilarCapabilities } from './capability-governance.js';
 import { checkCapability } from './capability-check.js';
 import { scaffoldCapability } from './capability-scaffold.js';
 import { scaffoldAutomation } from './automation-scaffold.js';
+import { buildUsageGraph, usageImpact } from './usage-graph.js';
 
 function output(value: unknown) { console.log(JSON.stringify(value, null, 2)); }
 
@@ -43,6 +44,8 @@ function usage() {
     '  taskrail component <name>',
     '  taskrail capability-find <query>',
     '  taskrail capability-check <name> [--strict]',
+    '  taskrail usage',
+    '  taskrail usage <component|capability|profile> <name>',
     '  taskrail init automation <name> --profile <profile> [--root <dir>]',
     '  taskrail init capability <name> --description <text> --purpose <text> --domain <name> --operation <op> [--operation <op> ...]',
   ].join('\n'));
@@ -69,6 +72,32 @@ export async function runCompositionCli(args = process.argv.slice(2)) {
       return;
     }
     return output(component);
+  }
+  if (command === 'usage') {
+    const graph = await buildUsageGraph(process.cwd());
+    const kind = rest[0] as 'component' | 'capability' | 'profile' | undefined;
+    const name = rest[1];
+    if (!kind) {
+      return output({
+        summary: {
+          automations: graph.automations.length,
+          capabilities: graph.capabilities.length,
+          components: graph.components.length,
+          profiles: graph.profiles.length,
+          errors: graph.errors.length,
+        },
+        ...graph,
+      });
+    }
+    if (!['component', 'capability', 'profile'].includes(kind) || !name) {
+      console.error('usage: taskrail usage <component|capability|profile> <name>');
+      process.exitCode = 1;
+      return;
+    }
+    const impact = usageImpact(graph, kind, name);
+    output({ ...impact, errors: graph.errors });
+    if (!impact.exists || graph.errors.length) process.exitCode = 1;
+    return;
   }
   if (command === 'capability-find') {
     const query = rest.filter((item) => !item.startsWith('--')).join(' ').trim();
