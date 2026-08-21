@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AutomationPlugin, DeployState, FrameworkManifest } from './types.js';
 import { check, safeDeploy, type DeployOptions, type DeployOutcome } from './deployment.js';
@@ -27,15 +27,22 @@ export interface TransactionalDeployResult {
   checkpoint?: UpdateCheckpoint;
 }
 
-async function readDeployState(manifest: FrameworkManifest, projectRoot: string): Promise<DeployState | null> {
+function deployStateFile(manifest: FrameworkManifest, projectRoot: string) {
   const target = resolvePaths(manifest, projectRoot).deployDir;
-  const file = path.join(path.dirname(target), `${manifest.name}.deploy-state.json`);
+  return path.join(path.dirname(target), `${manifest.name}.deploy-state.json`);
+}
+
+async function readDeployState(manifest: FrameworkManifest, projectRoot: string): Promise<DeployState | null> {
   try {
-    return JSON.parse(await readFile(file, 'utf8')) as DeployState;
+    return JSON.parse(await readFile(deployStateFile(manifest, projectRoot), 'utf8')) as DeployState;
   } catch (error: any) {
     if (error?.code === 'ENOENT') return null;
     throw error;
   }
+}
+
+async function restorePriorState(manifest: FrameworkManifest, projectRoot: string, priorState: DeployState) {
+  await writeFile(deployStateFile(manifest, projectRoot), `${JSON.stringify(priorState, null, 2)}\n`);
 }
 
 async function latestCheckpoint(root: string, name: string) {
@@ -64,7 +71,9 @@ export async function transactionalDeploy(
     fromVersion: options.fromVersion,
     toVersion: options.toVersion,
     currentRelease: priorState.currentReleaseId,
+    currentReleasePath: priorState.releasePath,
     lastKnownGoodRelease: priorState.lastKnownGoodReleaseId,
+    lastKnownGoodReleasePath: priorState.lastKnownGoodReleasePath,
     affectedAutomations: [manifest.name],
   });
   let activationAttempted = false;
@@ -104,11 +113,14 @@ export async function transactionalDeploy(
     if (outcome.deployed) {
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'activated', `release activated: ${outcome.releaseId || 'unknown'}`, {
         currentRelease: outcome.releaseId,
+        currentReleasePath: outcome.releasePath,
       });
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'verified', 'post-activation TaskRail health verification passed');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'transaction committed after successful verification', {
         currentRelease: outcome.releaseId,
+        currentReleasePath: outcome.releasePath,
         lastKnownGoodRelease: outcome.releaseId,
+        lastKnownGoodReleasePath: outcome.releasePath,
       });
       return { ok: true, outcome, checkpoint };
     }
@@ -127,10 +139,13 @@ export async function transactionalDeploy(
         return { ok: false, reason: outcome.failure || 'rollback requires recovery', outcome, checkpoint };
       }
       checkpoint = await recordRecoveryReadiness(projectRoot, checkpoint, rollbackReadiness);
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored and reverified');
+      await restorePriorState(manifest, projectRoot, priorState);
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored, state restored, and release reverified');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'failed update closed after successful restore', {
         currentRelease: priorState.lastKnownGoodReleaseId,
+        currentReleasePath: priorState.lastKnownGoodReleasePath,
         lastKnownGoodRelease: priorState.lastKnownGoodReleaseId,
+        lastKnownGoodReleasePath: priorState.lastKnownGoodReleasePath,
       });
       return { ok: false, reason: outcome.failure || 'update rolled back safely', outcome, checkpoint };
     }
@@ -142,9 +157,7 @@ export async function transactionalDeploy(
     const current = await latestCheckpoint(projectRoot, manifest.name).catch(() => null);
     if (current && !['committed', 'aborted', 'recovery-required'].includes(current.phase)) {
       const target = activationAttempted ? 'recovery-required' : 'aborted';
-      if (current.phase !== 'activated' || target === 'recovery-required') {
-        await transitionUpdate(projectRoot, 'automation', manifest.name, target, `transaction exception: ${message}`).catch(() => undefined);
-      }
+      await transitionUpdate(projectRoot, 'automation', manifest.name, target, `transaction exception: ${message}`).catch(() => undefined);
     }
     return {
       ok: false,
