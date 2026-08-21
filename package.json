@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.js",
-    "check": "npm run build && node dist/src/cli.js --help && node dist/src/supervise-cli.js --help >/dev/null 2>&1 || true"
+    "check": "npm run build && node dist/src/cli.js --help && node dist/src/supervise-cli.js --help"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
