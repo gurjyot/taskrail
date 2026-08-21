@@ -29,7 +29,9 @@ export interface UpdateCheckpoint {
   fromVersion?: string;
   toVersion?: string;
   currentRelease?: string;
+  currentReleasePath?: string;
   lastKnownGoodRelease?: string;
+  lastKnownGoodReleasePath?: string;
   affectedAutomations: string[];
   dependencySnapshotHash?: string;
   phase: UpdatePhase;
@@ -59,7 +61,7 @@ const allowedTransitions: Record<UpdatePhase, readonly UpdatePhase[]> = {
   'rollback-required': ['rollback-validated', 'recovery-required'],
   'rollback-validated': ['restored', 'recovery-required'],
   'restored': ['committed', 'recovery-required'],
-  'recovery-required': [],
+  'recovery-required': ['rollback-required'],
 };
 
 function sanitize(value: string) {
@@ -96,7 +98,7 @@ export async function readUpdateCheckpoint(root: string, targetKind: UpdateTarge
 export async function createUpdateCheckpoint(root: string, input: Omit<UpdateCheckpoint, 'transactionId' | 'phase' | 'createdAt' | 'updatedAt' | 'history'>): Promise<UpdateCheckpoint> {
   const file = transactionFile(root, input.targetKind, input.targetName);
   const existing = await readUpdateCheckpoint(root, input.targetKind, input.targetName);
-  if (existing && !['committed', 'aborted', 'recovery-required'].includes(existing.phase)) {
+  if (existing && !['committed', 'aborted'].includes(existing.phase)) {
     throw new Error(`active update transaction already exists: ${existing.transactionId} (${existing.phase})`);
   }
   const now = new Date().toISOString();
@@ -120,6 +122,7 @@ export function canTransitionUpdate(from: UpdatePhase, to: UpdatePhase) {
 export function rollbackReadiness(checkpoint: UpdateCheckpoint) {
   const reasons: string[] = [];
   if (!checkpoint.lastKnownGoodRelease) reasons.push('last-known-good release is not recorded');
+  if (!checkpoint.lastKnownGoodReleasePath) reasons.push('last-known-good release path is not recorded');
   if (!checkpoint.recovery?.previousReleaseVerified) reasons.push('previous release is not verified');
   if (!checkpoint.recovery?.configurationVerified) reasons.push('previous configuration is not verified');
   if (checkpoint.recovery?.migrationCompatible !== true) reasons.push('migration rollback compatibility is not verified');
@@ -132,7 +135,7 @@ export async function transitionUpdate(
   targetName: string,
   to: UpdatePhase,
   details?: string,
-  patch: Partial<Pick<UpdateCheckpoint, 'currentRelease' | 'lastKnownGoodRelease' | 'dependencySnapshotHash' | 'recovery'>> = {},
+  patch: Partial<Pick<UpdateCheckpoint, 'currentRelease' | 'currentReleasePath' | 'lastKnownGoodRelease' | 'lastKnownGoodReleasePath' | 'dependencySnapshotHash' | 'recovery'>> = {},
 ): Promise<UpdateCheckpoint> {
   const checkpoint = await readUpdateCheckpoint(root, targetKind, targetName);
   if (!checkpoint) throw new Error(`update transaction not found: ${targetKind}:${targetName}`);
