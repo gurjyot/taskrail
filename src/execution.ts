@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, rename, rm, stat, writeFile, appendFile } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { ExecutionPolicy } from './types.js';
 
 export interface ExecutionContext {
@@ -44,7 +44,12 @@ export interface IdempotencyClaim {
 }
 
 function safeName(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, '_');
+  return value.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 72) || 'item';
+}
+
+function stableFileName(value: string) {
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 16);
+  return `${safeName(value)}-${digest}`;
 }
 
 async function atomicWrite(file: string, content: string) {
@@ -69,7 +74,7 @@ export class LocalStateStore {
   constructor(private readonly root: string) {}
 
   private file(namespace: string, key: string) {
-    return path.join(this.root, safeName(namespace), `${safeName(key)}.json`);
+    return path.join(this.root, stableFileName(namespace), `${stableFileName(key)}.json`);
   }
 
   async get<T>(namespace: string, key: string): Promise<T | null> {
@@ -94,7 +99,7 @@ export class IdempotencyStore {
   constructor(private readonly root: string) {}
 
   private file(scope: string, key: string) {
-    return path.join(this.root, safeName(scope), `${safeName(key)}.json`);
+    return path.join(this.root, stableFileName(scope), `${stableFileName(key)}.json`);
   }
 
   async claim(scope: string, key: string, data: Record<string, unknown> = {}): Promise<IdempotencyClaim> {
@@ -171,11 +176,18 @@ export async function withRetry<T>(operation: (attempt: number) => Promise<T>, o
 export async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('timeoutMs must be > 0');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(`operation timed out after ${timeoutMs}ms`)), timeoutMs);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`operation timed out after ${timeoutMs}ms`);
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
   try {
-    return await operation(controller.signal);
+    return await Promise.race([operation(controller.signal), timeout]);
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
