@@ -19,8 +19,28 @@ test('diagnostic reports redact secrets and never claim automatic submission', (
   });
   assert.equal(report.privacy.networkSubmitted, false);
   assert.equal(report.privacy.secretsIncluded, false);
+  assert.equal(report.privacy.automationIdentityIncluded, false);
+  assert.equal(report.privacy.filesystemPathsIncluded, false);
   assert.doesNotMatch(JSON.stringify(report), /super-secret-value|dont-share|abcdefghijklmnopqrstuvwxyz123456/);
   assert.match(JSON.stringify(report), /REDACTED/);
+});
+
+test('diagnostics strip filesystem paths, addresses, email identities, and connection strings', () => {
+  const report = createDiagnosticReport({
+    code: 'DEPLOY_FAILED',
+    severity: 'error',
+    stage: 'activation',
+    message: 'failed at /home/alice/private/customer-a/config.json from 10.20.30.40 for alice@example.com',
+    details: {
+      path: 'C:\\Users\\Alice\\Secrets\\config.json',
+      connectionString: 'postgres://admin:password@db.internal/customer',
+      reason: 'health check failed',
+    },
+  });
+  const text = JSON.stringify(report);
+  assert.doesNotMatch(text, /alice|customer-a|10\.20\.30\.40|example\.com|admin:password|db\.internal/i);
+  assert.match(text, /PRIVATE|REDACTED/);
+  assert.match(text, /health check failed/);
 });
 
 test('diagnostic sanitizer bounds arrays, depth, and secret-shaped keys', () => {
