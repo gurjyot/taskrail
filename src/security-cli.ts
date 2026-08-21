@@ -5,6 +5,11 @@ import { auditSourceSecurity, securityPrinciples } from './security.js';
 const ignored = new Set(['.git', 'node_modules', 'dist', 'release-install', '.taskrail']);
 const extensions = new Set(['.js', '.mjs', '.cjs', '.ts', '.tsx', '.py', '.php', '.sh', '.ps1']);
 
+function flagValue(args: string[], flag: string) {
+  const index = args.indexOf(flag);
+  return index >= 0 && args[index + 1] ? args[index + 1] : undefined;
+}
+
 async function collect(root: string) {
   const files: string[] = [];
   async function walk(current: string) {
@@ -27,12 +32,13 @@ export async function runSecurityCli(args = process.argv.slice(2)) {
     return;
   }
   if (subcommand !== 'audit') {
-    console.error('usage: taskrail security <audit|principles> [--strict]');
+    console.error('usage: taskrail security <audit|principles> [--strict] [--root <dir>]');
     process.exitCode = 1;
     return;
   }
-  const files = await collect(process.cwd());
+  const root = path.resolve(process.cwd(), flagValue(args, '--root') || '.');
+  const files = await collect(root);
   const report = await auditSourceSecurity(files, args.includes('--strict'));
-  console.log(JSON.stringify({ ...report, filesScanned: files.length }, null, 2));
+  console.log(JSON.stringify({ ...report, root, filesScanned: files.length }, null, 2));
   if (!report.ok) process.exitCode = 1;
 }
