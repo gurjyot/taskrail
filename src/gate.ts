@@ -91,7 +91,12 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
 
   const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];
   if (healthDef) {
-    const health = await runHealthCheck(healthDef, path.resolve(cwd, manifest.deployDir), plugins[0]);
+    const health = await runHealthCheck(
+      healthDef,
+      path.resolve(cwd, manifest.sourceDir),
+      plugins[0],
+      manifest.healthCommand || manifest.runtimeHealthCommand,
+    );
     steps.push({ name: 'health', ok: health.ok, required: required.has('health'), message: health.details });
   } else if (required.has('health')) {
     steps.push({ name: 'health', ok: false, required: true, message: 'missing health check' });

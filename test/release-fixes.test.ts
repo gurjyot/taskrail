@@ -191,6 +191,34 @@ test('real managed source drift still blocks deploy', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+test('deploy can repair a broken live target when source health passes', async () => {
+  const base = await fixtureDir();
+  await gitInit(base);
+  await writeFixture(base, {
+    'source/main.js': 'process.exit(0)',
+    'source/package.json': '{"name":"demo","version":"1.0.0"}',
+    'deploy': '#!/usr/bin/env bash\nexit 1\n',
+  });
+  execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
+  const result = await safeDeploy({
+    name: 'demo',
+    runtime: 'node',
+    managed: true,
+    sourceDir: path.join(base, 'source'),
+    deployDir: path.join(base, 'deploy'),
+    validationCommand: 'node main.js',
+    testCommand: 'node main.js',
+    healthCheck: { type: 'command', command: 'node main.js' },
+    backup: { retain: 1 },
+    requiredChecks: ['validation', 'test', 'health'],
+  }, undefined, { projectRoot: base });
+  assert.equal(result.deployed, true);
+  const deployed = await stat(path.join(base, 'deploy'));
+  assert.equal(deployed.isDirectory(), true);
+  await rm(base, { recursive: true, force: true });
+});
+
 test('rollback CLI uses the active manifest state file', async () => {
   const base = await fixtureDir();
   await gitInit(base);
