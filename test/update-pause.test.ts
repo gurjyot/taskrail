@@ -11,13 +11,13 @@ import type { SharedUpdatePlan } from '../src/update-plan.js';
 
 async function root() { return mkdtemp(path.join(os.tmpdir(), 'taskrail-pause-')); }
 
-function manifest(base: string, name = 'demo'): FrameworkManifest {
+function manifest(base: string, name = 'demo', deployRoot = base): FrameworkManifest {
   return {
     name,
     runtime: 'node',
     managed: true,
     sourceDir: path.join(base, 'src'),
-    deployDir: path.join(base, 'live', name),
+    deployDir: path.join(deployRoot, 'live', name),
     validationCommand: 'node check.js',
     testCommand: 'node check.js',
   };
@@ -79,10 +79,10 @@ test('breaking shared update pauses only the declared impact scope and resumes b
 
   for (const name of ['alpha', 'beta']) {
     const app = path.join(base, 'automations', name);
-    assert.equal((await readUpdatePause(manifest(app, name), app))?.targetName, 'shared-api');
+    assert.equal((await readUpdatePause(manifest(app, name, base), app))?.targetName, 'shared-api');
   }
   const gammaApp = path.join(base, 'automations', 'gamma');
-  assert.equal(await readUpdatePause(manifest(gammaApp, 'gamma'), gammaApp), null);
+  assert.equal(await readUpdatePause(manifest(gammaApp, 'gamma', base), gammaApp), null);
 
   const resumed = await resumeSharedUpdateConsumers(base, 'capability', 'shared-api');
   assert.equal(resumed.ok, true);
