@@ -59,6 +59,17 @@ export function isCompatible(current: string, declared?: string): boolean {
   return evalComparator(current, normalized);
 }
 
+export function isTaskRailCompatible(current: string, declared?: string): boolean {
+  if (isCompatible(current, declared)) return true;
+  if (!declared) return true;
+  const currentVersion = parseVersion(current);
+  if (!currentVersion || currentVersion[0] !== 3) return false;
+  const normalized = declared.trim();
+  if (normalized === '2.0.x') return true;
+  const legacyExact = parseVersion(normalized);
+  return Boolean(legacyExact && legacyExact[0] === 2 && legacyExact[1] === 0 && /^2\.0\.\d+$/.test(normalized));
+}
+
 export function resolvePaths(manifest: FrameworkManifest, cwd = process.cwd()) {
   return {
     sourceDir: path.resolve(cwd, manifest.sourceDir),

@@ -162,7 +162,7 @@ test('upgrade refuses ambiguous legacy manifests', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
-test('upgrade normalizes exact compatible patch declarations to 2.0.x', async () => {
+test('upgrade preserves exact released 2.0 patch declarations on TaskRail 3', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {
     'src/main.js': 'process.exit(0)',
@@ -183,7 +183,7 @@ test('upgrade normalizes exact compatible patch declarations to 2.0.x', async ()
   const output = execFileSync(process.execPath, [cli, 'upgrade', '--write'], { cwd: base, encoding: 'utf8', env: { ...process.env, TASKRAIL_ENV: 'local' } });
   assert.match(output, /STATUS: PASS/);
   const parsed = JSON.parse(await readFile(path.join(base, 'automation.json'), 'utf8'));
-  assert.equal(parsed.taskrailCompatibility, '2.0.x');
+  assert.equal(parsed.taskrailCompatibility, '2.0.3');
   await rm(base, { recursive: true, force: true });
 });
 

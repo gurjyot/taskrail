@@ -1,6 +1,6 @@
 {
   "name": "taskrail",
-  "version": "2.0.8",
+  "version": "3.0.0",
   "private": false,
   "type": "module",
   "description": "Lightweight AI-first automation framework with reusable components, governed capabilities, safe deployment, supervision, rollback, and agent skills.",
