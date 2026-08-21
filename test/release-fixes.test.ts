@@ -400,9 +400,9 @@ test('change-detection returns a verified no-op for the same healthy sha', async
     backup: { retain: 1 },
   };
   const first = await safeDeploy(manifest, undefined, { projectRoot: base });
-  assert.equal(first.deployed, true);
+  assert.equal(first.deployed, true, JSON.stringify(first));
   const second = await safeDeploy(manifest, undefined, { projectRoot: base });
-  assert.equal(second.deployed, true);
+  assert.equal(second.deployed, true, JSON.stringify(second));
   assert.equal(second.releaseId, first.releaseId);
   await rm(base, { recursive: true, force: true });
 });
@@ -477,7 +477,7 @@ test('paths reports resolved dirs and last known good metadata', async () => {
   const payload = JSON.parse(output);
   assert.equal(payload.currentRelease, 'rel-current');
   assert.equal(payload.lastKnownGood, 'rel-good');
-  assert.match(payload.sourceDir, /\/taskrail-fix-.*\/src$/);
+  assert.equal(path.resolve(payload.sourceDir), path.resolve(base, 'src'));
   await rm(base, { recursive: true, force: true });
 });
 
