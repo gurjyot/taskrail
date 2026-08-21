@@ -36,6 +36,7 @@ export interface FrameworkManifest {
   buildCommand?: string;
   releaseCommand?: string;
   healthCommand?: string;
+  components?: string[];
   capabilities?: string[];
   capabilityRoots?: string[];
   healthCheck?: HealthCheckDefinition;
