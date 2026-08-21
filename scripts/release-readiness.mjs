@@ -23,6 +23,7 @@ add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
 add('check:strict-security', String(pkg.scripts?.check || '').includes('security audit --strict --root src'), 'npm run check');
 add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:contract');
 add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
+add('script:size-sync', Boolean(pkg.scripts?.['size:sync']), 'size:sync');
 add('release:sigstore-attestation', releaseWorkflow.includes('actions/attest@v4') && releaseWorkflow.includes('id-token: write') && releaseWorkflow.includes('attestations: write'), 'actions/attest@v4');
 add('release:certification', releaseWorkflow.includes('npm run certify'), 'npm run certify');
 
@@ -36,7 +37,13 @@ for (const file of [
   'src/diagnostics.ts',
   'src/error-intelligence.ts',
   'src/security.ts',
+  'src/security-registry.ts',
   'src/security-policy.ts',
+  'src/validation-registry.ts',
+  'src/reboot-recovery.ts',
+  'src/retention-policy.ts',
+  'src/performance-budget.ts',
+  'src/backward-compatibility.ts',
   'src/provenance.ts',
   'src/compatibility-contract.ts',
   'src/certification.ts',
@@ -47,10 +54,12 @@ for (const file of [
   'test/diagnostics-security.test.ts',
   'test/agent-surface.test.ts',
   'test/modular-hardening.test.ts',
+  'test/modular-architecture.test.ts',
   'test/deployment-private-state.test.ts',
   'test/platform-bootstrap.test.ts',
   'scripts/certify-release.mjs',
   'scripts/test-mcp-packed.mjs',
+  'scripts/update-readme-size.mjs',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
@@ -59,6 +68,7 @@ for (const file of [
   '.github/workflows/fault-injection.yml',
   '.github/workflows/release.yml',
   '.github/workflows/sentinel.yml',
+  '.github/workflows/size-sync.yml',
   'skills/taskrail/SKILL.md',
   'skills/taskrail-capability/SKILL.md',
   'skills/taskrail-core/SKILL.md',
