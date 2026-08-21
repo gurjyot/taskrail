@@ -15,6 +15,7 @@ export interface FrameworkManifest {
   capabilityRoots?: string[];
   healthCheck?: HealthCheckDefinition;
   healthChecks?: HealthCheckDefinition[];
+  runtimeHealthCommand?: string;
   backup?: BackupPolicy;
   plugins?: PluginReference[];
   requiredEnv?: string[];

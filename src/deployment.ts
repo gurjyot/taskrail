@@ -112,24 +112,41 @@ export async function loadPlugins(manifest: FrameworkManifest): Promise<Automati
   return plugins;
 }
 
-export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin) {
-  if (!health) return { ok: true, tier: 'process' as const };
-  if (health.type === 'command') {
-    const result = await runCommand(health.command, cwd);
-    return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
+  const checks: Array<Promise<{ ok: boolean; tier: 'process' | 'integration' | 'end-to-end'; details?: string }>> = [];
+  if (health) {
+    checks.push((async () => {
+      if (health.type === 'command') {
+        const result = await runCommand(health.command, cwd);
+        return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+      }
+      if (health.type === 'file') {
+        return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
+      }
+      if (health.type === 'http') {
+        const response = await fetch(health.url);
+        return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+      }
+      return { ok: true, tier: 'process' as const };
+    })());
   }
-  if (health.type === 'file') {
-    return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
-  }
-  if (health.type === 'http') {
-    const response = await fetch(health.url);
-    return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+  if (runtimeHealthCommand) {
+    checks.push((async () => {
+      const result = await runCommand(runtimeHealthCommand, cwd);
+      return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+    })());
   }
   if (plugin?.healthCheck) {
-    const result = await plugin.healthCheck();
-    return { ok: result.ok, tier: 'integration' as const, details: result.details };
+    const healthCheck = plugin.healthCheck;
+    checks.push((async () => {
+      const result = await healthCheck();
+      return { ok: result.ok, tier: 'integration' as const, details: result.details };
+    })());
   }
-  return { ok: true, tier: 'process' as const };
+  if (!checks.length) return { ok: true, tier: 'process' as const };
+  const results = await Promise.all(checks);
+  const firstFailure = results.find((result) => !result.ok);
+  return firstFailure ?? results[0];
 }
 
 async function readState(stateFile: string): Promise<{ backupPath: string; targetPath: string; releasePath?: string } | null> {
@@ -288,7 +305,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     if (await pathExists(target)) {
       const state = await readState(stateFile);
       if (state?.releasePath) {
-        const drift = await detectDrift(target, state.releasePath);
+        const drift = await detectDrift(target, source);
         if (drift.drifted) return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
       }
       await rename(target, backup);
