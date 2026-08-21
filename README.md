@@ -1,4 +1,4 @@
-# TaskRail v2.0.4
+# TaskRail v2.0.5
 
 TaskRail is a lightweight framework for building, validating, deploying, and safely operating automations.
 It gives coding agents a small, deterministic contract for structure, guardrails, deployment safety, and discovery.
@@ -6,7 +6,7 @@ It does not provide intelligence.
 
 ## Core workflow
 
-`doctor -> source change -> gate -> verify-change -> plan -> deploy -> health`
+`doctor -> check -> test -> plan -> ship`
 
 ## Runtime rules
 
@@ -18,10 +18,11 @@ It does not provide intelligence.
 
 - CLI-first control plane.
 - Zero runtime dependencies.
-- Validation, preflight, and deploy-time gates.
-- Atomic deployment, backup, rollback, drift detection, and locks.
+- Environment-aware validation, preflight, and deploy-time gates.
+- Atomic deployment, backup, rollback, last-known-good tracking, drift detection, and locks.
 - Concise agent guidance through local `AGENTS.md`.
-- Optional reusable capabilities with deterministic discovery.
+- Optional reusable business capabilities with deterministic discovery.
+- Versioned framework capabilities and versioned profiles for reusable operational behavior.
 
 ## Discovery
 
@@ -32,26 +33,43 @@ It does not provide intelligence.
 - `taskrail capability <name>`
 - `taskrail impact <name>`
 
+## Environment and operations
+
+- `taskrail env`
+- `taskrail paths`
+- `taskrail bootstrap`
+- `taskrail drift`
+- `taskrail reconcile`
+- `taskrail explain`
+- `taskrail repair`
+- `taskrail ship <automation>`
+- `taskrail upgrade <automation>`
+
 ## Capability rule
 
 Check existing capabilities first, reuse when the contract fits, and create a new capability only for small generic technical functionality that is likely useful across multiple automations.
 
-## v2.0.4 scope
+## v2.0.5 scope
 
 - manifest/config contract
 - lifecycle
 - validation
+- environment detection
 - plugins/adapters
 - structured logs/errors
 - `doctor` and `doctor --json`
 - `status --json` and `inspect --json`
 - `plan`
 - `gate` and `verify-change`
+- `env`, `paths`, `bootstrap`, `drift`, `reconcile`, `explain`, `repair`
+- `ship`
+- `upgrade`
 - deployment locks
 - immutable releases
 - backup
 - atomic deploy
 - rollback
+- last-known-good metadata
 - drift detection
 - secret guardrail
 - compatibility checks
@@ -59,6 +77,9 @@ Check existing capabilities first, reuse when the contract fits, and create a ne
 - lightweight audit history
 - idempotency helper
 - capability registry and discovery
+- versioned framework capabilities
+- versioned profiles
+- effective manifest resolution
 - concise `AGENTS.md`
 - optional `skills/taskrail/SKILL.md`
 
@@ -77,17 +98,26 @@ Check existing capabilities first, reuse when the contract fits, and create a ne
 
 ## Freeze policy
 
-After `v2.0.4`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
+After `v2.0.5`, add a new core feature only when a real managed application exposes a generic problem that cannot be solved cleanly through the existing contracts or an optional adapter.
 
 ## Commands
 
 - `taskrail check`
+- `taskrail env`
+- `taskrail paths`
+- `taskrail bootstrap`
 - `taskrail gate`
 - `taskrail verify-change`
 - `taskrail plan`
 - `taskrail doctor`
 - `taskrail test`
+- `taskrail drift`
+- `taskrail reconcile`
+- `taskrail explain`
+- `taskrail repair`
 - `taskrail deploy`
+- `taskrail ship`
+- `taskrail upgrade`
 - `taskrail health`
 - `taskrail rollback`
 - `taskrail list`

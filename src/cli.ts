@@ -13,7 +13,8 @@ import { detectEnvironment } from './env.js';
 import { inspectGitState } from './git.js';
 import { detectDrift } from './drift.js';
 import { preflight } from './preflight.js';
-import { resolvePaths } from './config.js';
+import { loadManifest, resolvePaths } from './config.js';
+import { compactManifest, inferProfile, resolveFrameworkManifest, frameworkCapabilities, frameworkProfiles } from './framework.js';
 import { isStale, readLock, releaseLock } from './locks.js';
 
 const fallbackManifest: FrameworkManifest = {
@@ -37,7 +38,7 @@ function passLine(ok: boolean) { return ok ? 'PASS' : 'FAIL'; }
 
 async function loadConfigManifest(cwd = process.cwd()): Promise<FrameworkManifest> {
   try {
-    return JSON.parse(await readFile(path.join(cwd, 'automation.json'), 'utf8')) as FrameworkManifest;
+    return resolveFrameworkManifest(JSON.parse(await readFile(path.join(cwd, 'automation.json'), 'utf8')) as FrameworkManifest);
   } catch {
     return fallbackManifest;
   }
@@ -45,11 +46,16 @@ async function loadConfigManifest(cwd = process.cwd()): Promise<FrameworkManifes
 
 async function resolveContext(nameOrPath?: string) {
   const baseCwd = process.cwd();
-  if (!nameOrPath) return { cwd: baseCwd, manifestPath: path.join(baseCwd, 'automation.json'), manifest: await loadConfigManifest(baseCwd) };
+  if (!nameOrPath) {
+    const manifestPath = path.join(baseCwd, 'automation.json');
+    const rawManifest = await loadManifest(manifestPath).catch(() => fallbackManifest);
+    return { cwd: baseCwd, manifestPath, rawManifest, manifest: resolveFrameworkManifest(rawManifest) };
+  }
   const manifestPath = await findAutomation(nameOrPath, baseCwd);
   if (!manifestPath) throw new Error(`automation not found: ${nameOrPath}`);
   const cwd = path.dirname(manifestPath);
-  return { cwd, manifestPath, manifest: JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest };
+  const rawManifest = await loadManifest(manifestPath);
+  return { cwd, manifestPath, rawManifest, manifest: resolveFrameworkManifest(rawManifest) };
 }
 
 function takeTarget(rest: string[]) {
@@ -115,6 +121,8 @@ async function commandInspect(nameOrPath: string | undefined) {
   const used = (manifest.capabilities ?? []).map((name) => registry.capabilities.find((capability) => capability.name === name)).filter(Boolean);
   output({
     name: manifest.name,
+    profile: manifest.profile || null,
+    frameworkCapabilities: manifest.frameworkCapabilities ?? [],
     manifestPath,
     sourceDir: manifest.sourceDir,
     deployDir: manifest.deployDir,
@@ -273,6 +281,36 @@ async function commandExplain(topic: string | undefined, manifest: FrameworkMani
   compact([`STATUS: PASS`, `CODE: ${topic || 'unknown'}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CAUSE: see latest command output or failure report`, `NEXT: inspect the failing stage only`]);
 }
 
+async function commandUpgrade(rawManifest: FrameworkManifest, manifest: FrameworkManifest, manifestPath: string, cwd: string, write = false) {
+  const profile = inferProfile(rawManifest);
+  const nextRaw: FrameworkManifest = {
+    ...rawManifest,
+    profile: rawManifest.profile || profile || undefined,
+    frameworkCapabilities: rawManifest.frameworkCapabilities ?? [],
+  };
+  const compacted = compactManifest(nextRaw);
+  const changed = JSON.stringify(rawManifest, null, 2) !== JSON.stringify(compacted, null, 2);
+  const unsupportedCaps = (compacted.frameworkCapabilities ?? []).filter((item) => !frameworkCapabilities[item]);
+  const unsupportedProfile = compacted.profile ? !frameworkProfiles[compacted.profile] : false;
+  if ((unsupportedCaps.length || unsupportedProfile) && !write) {
+    compact([`STATUS: FAIL`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CAUSE: breaking migration required`, `NEXT: inspect profile/capability versions`]);
+    process.exitCode = 1;
+    return;
+  }
+  if (write && changed) await import('node:fs/promises').then(({ writeFile }) => writeFile(manifestPath, `${JSON.stringify(compacted, null, 2)}\n`));
+  const resolved = resolveFrameworkManifest(compacted);
+  const checked = await frameworkCheck(resolved, { cwd });
+  const tested = await runGate(resolved, cwd, await loadPlugins(resolved).catch(() => []));
+  compact([
+    `STATUS: ${passLine(checked.ok && tested.verdict === 'PASS' && unsupportedCaps.length === 0 && !unsupportedProfile)}`,
+    `ENV: ${detectEnvironment(resolved, cwd).name}`,
+    `PROFILE: ${compacted.profile || 'none'}`,
+    `CHANGED: ${changed && write ? 'yes' : 'no'}`,
+    `NEXT: ${checked.ok && tested.verdict === 'PASS' ? 'taskrail ship' : 'taskrail explain upgrade'}`,
+  ]);
+  if (!checked.ok || tested.verdict !== 'PASS' || unsupportedCaps.length || unsupportedProfile) process.exitCode = 1;
+}
+
 async function commandShip(manifest: FrameworkManifest, cwd: string) {
   const doctor = await frameworkDoctor(manifest, { cwd });
   if (!doctor.deployable || !doctor.compatible || !doctor.manifestValid) {
@@ -307,11 +345,11 @@ async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? '--help';
   const incoming = args.slice(1);
-  const targetCommands = new Set(['env', 'paths', 'bootstrap', 'repair', 'check', 'plan', 'doctor', 'drift', 'reconcile', 'test', 'deploy', 'health', 'rollback', 'gate', 'verify-change', 'ship']);
+  const targetCommands = new Set(['env', 'paths', 'bootstrap', 'repair', 'check', 'plan', 'doctor', 'drift', 'reconcile', 'test', 'deploy', 'health', 'rollback', 'gate', 'verify-change', 'ship', 'upgrade']);
   const { target, rest } = targetCommands.has(cmd) ? takeTarget(incoming) : { target: undefined, rest: incoming };
 
   if (cmd === '--help' || cmd === 'help') {
-    console.log('taskrail env|paths|bootstrap|repair|check|plan|doctor|drift|reconcile|test|deploy|health|rollback|gate|verify-change|ship|explain|list|status|inspect|capabilities|capability|impact');
+    console.log('taskrail env|paths|bootstrap|repair|upgrade|check|plan|doctor|drift|reconcile|test|deploy|health|rollback|gate|verify-change|ship|explain|list|status|inspect|capabilities|capability|impact');
     return;
   }
 
@@ -319,7 +357,7 @@ async function main() {
   if (cmd === 'status') return commandStatus(rest.includes('--json'));
   if (cmd === 'inspect') return commandInspect(target || rest[0]);
 
-  const { cwd, manifest } = await resolveContext(target);
+  const { cwd, manifest, rawManifest, manifestPath } = await resolveContext(target);
   process.chdir(cwd);
 
   if (cmd === 'env') return commandEnv(manifest, cwd, rest.includes('--json'));
@@ -331,6 +369,7 @@ async function main() {
   if (cmd === 'drift') return commandDrift(manifest, cwd, rest.includes('--json'));
   if (cmd === 'reconcile') return commandReconcile(manifest, cwd, rest.includes('--json'));
   if (cmd === 'repair') return commandRepair(manifest, cwd, rest.includes('--json'));
+  if (cmd === 'upgrade') return commandUpgrade(rawManifest, manifest, manifestPath, cwd, rest.includes('--write'));
   if (cmd === 'explain') return commandExplain(rest[0], manifest, cwd);
 
   if (cmd === 'check') {

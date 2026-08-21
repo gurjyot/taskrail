@@ -163,7 +163,7 @@ export async function getCapability(name: string, roots: string[]) {
 
 export async function discoverAutomationManifests(cwd = process.cwd(), limit = 4): Promise<string[]> {
   const results: string[] = [];
-  const skipNames = new Set(['node_modules', '.git', '.taskrail', 'dist', 'backups', 'state', 'automations']);
+  const skipNames = new Set(['node_modules', '.git', '.taskrail', 'dist', 'backups', 'state']);
   async function walk(dir: string, depth: number) {
     if (depth > limit) return;
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -175,7 +175,12 @@ export async function discoverAutomationManifests(cwd = process.cwd(), limit = 4
     }
   }
   await walk(cwd, 0);
-  return results.sort();
+  return results.sort((left, right) => {
+    const leftWeight = left.includes('/framework-managed/') ? 0 : left.includes('/automations/') ? 1 : 2;
+    const rightWeight = right.includes('/framework-managed/') ? 0 : right.includes('/automations/') ? 1 : 2;
+    if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+    return left.localeCompare(right);
+  });
 }
 
 export async function findAutomation(nameOrPath: string, cwd = process.cwd()) {
