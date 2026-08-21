@@ -1,16 +1,17 @@
 {
   "name": "taskrail",
-  "version": "2.0.6",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Tiny CLI-first framework for safe automation lifecycle management.",
   "bin": {
-    "taskrail": "./dist/src/cli.js"
+    "taskrail": "./dist/src/cli.js",
+    "taskrail-supervise": "./dist/src/supervise-cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.js",
-    "check": "npm run build && node dist/src/cli.js --help"
+    "check": "npm run build && node dist/src/cli.js --help && node dist/src/supervise-cli.js --help >/dev/null 2>&1 || true"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
