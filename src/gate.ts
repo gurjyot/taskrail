@@ -67,7 +67,7 @@ function stateFileFor(manifest: FrameworkManifest, cwd: string) {
 export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<GateResult> {
   const required = new Set(manifest.requiredChecks ?? ['validation', 'test']);
   const steps: GateStep[] = [];
-  const preflightResult = await preflight(manifest);
+  const preflightResult = await preflight(manifest, cwd);
   steps.push({ name: 'preflight', ok: preflightResult.ok, required: true, message: preflightResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ') || 'ok' });
 
   if (required.has('validation')) {
@@ -99,7 +99,11 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
 
   if (required.has('drift')) {
     try {
-      const drift = await detectDrift(path.resolve(cwd, manifest.deployDir), path.resolve(cwd, manifest.sourceDir));
+      const statePath = stateFileFor(manifest, cwd);
+      const state = JSON.parse(await readFile(statePath, 'utf8')) as { releasePath?: string };
+      const liveTarget = path.resolve(cwd, manifest.deployDir);
+      const compareTarget = state.releasePath ? state.releasePath : path.resolve(cwd, manifest.sourceDir);
+      const drift = await detectDrift(liveTarget, compareTarget, manifest);
       steps.push({ name: 'drift', ok: !drift.drifted, required: true, message: drift.files.join(', ') || 'clean' });
     } catch {
       steps.push({ name: 'drift', ok: false, required: true, message: 'missing source state' });

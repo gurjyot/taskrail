@@ -62,7 +62,9 @@ async function readJson<T>(file: string): Promise<T | null> {
 }
 
 export function projectDirForManifest(manifest: FrameworkManifest, cwd = process.cwd()) {
-  return path.dirname(path.resolve(cwd, manifest.sourceDir));
+  const resolved = path.resolve(cwd, manifest.sourceDir);
+  if (manifest.sourceDir === '.' || manifest.sourceDir === './' || manifest.sourceDir === '') return resolved;
+  return path.dirname(resolved);
 }
 
 export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
@@ -161,11 +163,12 @@ export async function getCapability(name: string, roots: string[]) {
 
 export async function discoverAutomationManifests(cwd = process.cwd(), limit = 4): Promise<string[]> {
   const results: string[] = [];
+  const skipNames = new Set(['node_modules', '.git', '.taskrail', 'dist', 'backups', 'state', 'automations']);
   async function walk(dir: string, depth: number) {
     if (depth > limit) return;
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.taskrail' || entry.name === 'dist') continue;
+      if (skipNames.has(entry.name) || entry.name.startsWith('.taskrail') || entry.name.includes('.backup-') || entry.name.endsWith('.candidate')) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full, depth + 1);
       else if (entry.name === 'automation.json') results.push(full);

@@ -1,9 +1,63 @@
 export type Severity = 'debug' | 'info' | 'warn' | 'error';
+export type TaskrailEnv = 'local' | 'ci' | 'production';
+export type RuntimeKind = 'node' | 'python' | 'shell';
+export type HealthTier = 'process' | 'integration' | 'end-to-end';
+export type GateVerdict = 'PASS' | 'FAIL' | 'MISCONFIGURED';
+export type ChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
+export type DeployEligibility = 'allowed' | 'blocked';
+export type DriftKind = 'source' | 'runtime' | 'generated';
+export type ServiceManagerType = 'systemd';
+export type DeployStrategyType = 'replace-in-place' | 'release-symlink';
+export type DependencyManagerTool = 'npm' | 'pnpm' | 'bun' | 'pip';
+
+export interface ManifestPathRule {
+  path: string;
+  environments?: TaskrailEnv[];
+  mode?: 'must-exist' | 'writable';
+  secret?: boolean;
+}
+
+export interface DependencyManagerConfig {
+  tool: DependencyManagerTool;
+  lockfile?: string;
+  manifest?: string;
+  installCommand?: string;
+}
+
+export interface RuntimeRequirement {
+  kind: RuntimeKind;
+  version?: string;
+  command?: string;
+}
+
+export interface ServiceUnitDefinition {
+  name: string;
+  kind: 'service' | 'timer';
+  oneshotOkay?: boolean;
+  user?: string;
+}
+
+export interface ServiceManagerDefinition {
+  type: ServiceManagerType;
+  units: ServiceUnitDefinition[];
+}
+
+export interface MigrationHooks {
+  checkCommand?: string;
+  applyCommand?: string;
+  destructive?: boolean;
+}
+
+export interface DeployStrategy {
+  type: DeployStrategyType;
+  releaseRoot?: string;
+}
 
 export interface FrameworkManifest {
   name: string;
   taskrailCompatibility?: string;
-  runtime: 'node';
+  runtime: RuntimeKind;
+  runtimeVersion?: string;
   managed: boolean;
   sourceDir: string;
   deployDir: string;
@@ -11,6 +65,7 @@ export interface FrameworkManifest {
   testCommand: string;
   buildCommand?: string;
   releaseCommand?: string;
+  healthCommand?: string;
   capabilities?: string[];
   capabilityRoots?: string[];
   healthCheck?: HealthCheckDefinition;
@@ -19,9 +74,21 @@ export interface FrameworkManifest {
   backup?: BackupPolicy;
   plugins?: PluginReference[];
   requiredEnv?: string[];
-  requiredSharedFiles?: string[];
-  requiredChecks?: Array<'validation' | 'test' | 'build' | 'health' | 'drift'>;
+  requiredSharedFiles?: Array<string | ManifestPathRule>;
+  requiredChecks?: Array<'validation' | 'test' | 'build' | 'health' | 'drift' | 'migrate'>;
   protectedPaths?: string[];
+  releaseOwnedPaths?: string[];
+  runtimePaths?: string[];
+  generatedPaths?: string[];
+  dependencyManager?: DependencyManagerConfig;
+  deployStrategy?: DeployStrategy;
+  serviceManager?: ServiceManagerDefinition;
+  migrations?: MigrationHooks;
+  statePath?: string;
+  database?: {
+    required?: boolean;
+    schema?: string;
+  };
 }
 
 export type HealthCheckDefinition =
@@ -62,6 +129,12 @@ export interface FrameworkConfig {
   manifest: FrameworkManifest;
 }
 
+export interface EnvironmentInfo {
+  name: TaskrailEnv;
+  overridden: boolean;
+  reason: string;
+}
+
 export interface LogEvent {
   level: Severity;
   message: string;
@@ -83,6 +156,15 @@ export interface DeployResult {
   rolledBack: boolean;
 }
 
+export interface GitState {
+  available: boolean;
+  repoRoot?: string;
+  sha?: string;
+  clean?: boolean;
+  changedFiles?: string[];
+  error?: string;
+}
+
 export interface ReleaseMeta {
   releaseId: string;
   project: string;
@@ -90,6 +172,9 @@ export interface ReleaseMeta {
   sourceRevision?: string;
   createdAt: string;
   path: string;
+  environment?: TaskrailEnv;
+  manifestHash?: string;
+  receiptPath?: string;
 }
 
 export interface FailureReport {
@@ -104,6 +189,7 @@ export interface FailureReport {
   rollbackAttempted: boolean;
   rollbackResult?: 'success' | 'failed' | 'not-needed';
   nextStep?: string;
+  environment?: TaskrailEnv;
 }
 
 export interface PluginContext {
@@ -134,10 +220,6 @@ export interface ChangeReviewResult {
   summary?: string;
 }
 
-export type GateVerdict = 'PASS' | 'FAIL' | 'MISCONFIGURED';
-export type ChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
-export type DeployEligibility = 'allowed' | 'blocked';
-
 export interface DeploymentContext {
   sourceDir: string;
   deployDir: string;
@@ -145,10 +227,26 @@ export interface DeploymentContext {
   backupDir: string;
 }
 
-export type HealthTier = 'process' | 'integration' | 'end-to-end';
-
 export interface HealthCheckOutcome {
   tier: HealthTier;
   ok: boolean;
   details?: string;
+}
+
+export interface DriftItem {
+  path: string;
+  kind: DriftKind;
+  reason: string;
+}
+
+export interface DeployState {
+  backupPath?: string;
+  targetPath: string;
+  releasePath?: string;
+  previousReleasePath?: string;
+  currentReleaseId?: string;
+  currentSha?: string;
+  lastKnownGoodReleasePath?: string;
+  lastKnownGoodReleaseId?: string;
+  lastKnownGoodSha?: string;
 }

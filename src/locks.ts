@@ -5,22 +5,31 @@ export interface LockInfo {
   pid: number;
   host: string;
   startedAt: string;
+  operation?: string;
+  releaseId?: string;
+  cwd?: string;
 }
 
-export async function acquireLock(lockDir: string): Promise<{ ok: true; info: LockInfo } | { ok: false; holder?: string }> {
+export async function acquireLock(lockDir: string, infoOverride: Partial<LockInfo> = {}): Promise<{ ok: true; info: LockInfo } | { ok: false; holder?: string; info?: LockInfo; stale?: boolean }> {
   try {
     await mkdir(path.dirname(lockDir), { recursive: true });
     await mkdir(lockDir);
-    const info: LockInfo = { pid: process.pid, host: process.env.HOSTNAME || 'unknown', startedAt: new Date().toISOString() };
+    const info: LockInfo = {
+      pid: process.pid,
+      host: process.env.HOSTNAME || 'unknown',
+      startedAt: new Date().toISOString(),
+      cwd: process.cwd(),
+      ...infoOverride,
+    };
     await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify(info, null, 2));
     return { ok: true, info };
   } catch {
     const holder = await readLock(lockDir);
     if (holder && await isStale(holder, lockDir)) {
       await rm(lockDir, { recursive: true, force: true });
-      return acquireLock(lockDir);
+      return acquireLock(lockDir, infoOverride);
     }
-    return { ok: false, holder: holder ? `${holder.host}:${holder.pid} ${holder.startedAt}` : undefined };
+    return { ok: false, holder: holder ? `${holder.host}:${holder.pid} ${holder.startedAt}` : undefined, info: holder ?? undefined, stale: false };
   }
 }
 
