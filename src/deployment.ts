@@ -112,7 +112,7 @@ export async function loadPlugins(manifest: FrameworkManifest): Promise<Automati
   return plugins;
 }
 
-export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin) {
+export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
   const checks: Array<Promise<{ ok: boolean; tier: 'process' | 'integration' | 'end-to-end'; details?: string }>> = [];
   if (health) {
     checks.push((async () => {
@@ -128,6 +128,12 @@ export async function runHealthCheck(health: HealthCheckDefinition | undefined, 
         return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
       }
       return { ok: true, tier: 'process' as const };
+    })());
+  }
+  if (runtimeHealthCommand) {
+    checks.push((async () => {
+      const result = await runCommand(runtimeHealthCommand, cwd);
+      return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
     })());
   }
   if (plugin?.healthCheck) {

@@ -266,7 +266,7 @@ async function main() {
     return;
   }
   if (cmd === 'health') {
-    const result = await runHealthCheck(config.manifest.healthCheck, config.manifest.deployDir, plugin);
+    const result = await runHealthCheck(config.manifest.healthCheck, config.manifest.deployDir, plugin, config.manifest.runtimeHealthCommand);
     if (!result.ok) process.exitCode = 1;
     console.log(log({ level: result.ok ? 'info' : 'error', message: 'health', data: result }));
     return;
