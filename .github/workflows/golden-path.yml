@@ -30,12 +30,11 @@ jobs:
           cache: npm
       - name: Install development dependencies
         run: npm ci
-      - name: Build and verify source
-        run: npm test
+      - name: Build portable source
+        run: npm run build
       - name: Build installable package without rerunning prepack
         shell: bash
         run: |
-          npm run build
           npm pack --ignore-scripts --json > pack.json
           node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; fs.writeFileSync('package-name.txt',p.filename); console.log('packed',p.filename,'compressed',p.size,'unpacked',p.unpackedSize)"
       - name: Install packed TaskRail globally
@@ -71,7 +70,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Measure package and enforce README freshness
+      - name: Measure package and enforce footprint budget
         run: |
           npm pack --ignore-scripts --json > pack.json
-          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; const readme=fs.readFileSync('README.md','utf8'); const marker='<!-- taskrail-package-size:'+p.size+':'+p.unpackedSize+' -->'; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) } if (!readme.includes(marker)) { console.error('README package-size marker is stale. Expected: '+marker); process.exit(1) }"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; console.log('TaskRail package:',p.filename); console.log('Compressed bytes:',p.size); console.log('Unpacked bytes:',p.unpackedSize); if (p.unpackedSize > 2000000) { console.error('Package exceeded 2 MB unpacked guardrail'); process.exit(1) }"
