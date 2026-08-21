@@ -1,10 +1,38 @@
-# TaskRail 2.0.8
+<h1 align="center">TASKRAIL</h1>
 
-**TaskRail is a lightweight, AI-first automation framework for building, validating, deploying, supervising, and safely operating production automations.**
+<p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, supervising, and safely operating production automations.</strong></p>
 
-It is designed for coding agents such as Codex and other AI development tools, but remains deterministic and useful without AI. TaskRail provides a small control plane, a reusable component SDK, governed capabilities, deployment safety, runtime guardrails, and progressive-disclosure agent instructions without requiring a database, queue, container platform, daemon, vector store, or runtime AI service.
+TaskRail is designed for coding agents such as Codex and other AI development tools, but remains deterministic and useful without AI. It provides a small control plane, reusable component SDK, governed capabilities, deployment safety, runtime guardrails, and progressive-disclosure agent instructions without requiring a database, queue, container platform, daemon, vector store, or runtime AI service.
 
 **Keywords:** automation framework, AI automation, coding agents, agentic automation, workflow automation, Node.js automation, TypeScript automation, deployment automation, CLI framework, automation SDK, reusable components, reusable integrations, capability registry, idempotency, retries, health checks, rollback, drift detection, systemd automation, production automation, Codex skills, AI developer tooling.
+
+## How TaskRail works
+
+```text
+ REQUIREMENT / IDEA
+        │
+        ▼
+ ┌────────────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
+ │ TASKRAIL + SKILLS  │──────▶│ COMPONENT CATALOG    │──────▶│ CAPABILITY REGISTRY  │
+ │ understand + plan  │       │ stable core building │       │ reuse / extend /     │
+ │ before coding      │       │ blocks               │       │ create / keep local  │
+ └────────────────────┘       └──────────────────────┘       └──────────┬───────────┘
+                                                                       │
+                                                                       ▼
+                                                             ┌──────────────────────┐
+                                                             │ THIN AUTOMATION      │
+                                                             │ business logic only  │
+                                                             └──────────┬───────────┘
+                                                                        │
+                                                                        ▼
+ ┌────────────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
+ │ SUPERVISE + LEARN  │◀──────│ EXECUTE SAFELY       │◀──────│ VERIFY + SHIP        │
+ │ health / heartbeat │       │ isolation / limits   │       │ doctor / check /     │
+ │ drift / decisions  │       │ retry / idempotency  │       │ test / plan / ship   │
+ └────────────────────┘       └──────────────────────┘       └──────────────────────┘
+```
+
+The diagram is intentionally plain text: it renders directly in GitHub, stays version-controlled, works without external image assets, and remains easy for humans and coding agents to parse.
 
 ## Why TaskRail
 
