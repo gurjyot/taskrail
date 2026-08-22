@@ -1,9 +1,10 @@
 {
   "name": "@taskrail/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Optional stdio MCP adapter for TaskRail. Keeps MCP dependencies outside the TaskRail core package.",
+  "reviewedForTaskRail": "3.0.6",
   "engines": {
     "node": ">=22"
   },
