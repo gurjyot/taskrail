@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import type { AutomationPlugin, FrameworkManifest, GateVerdict } from './types.js';
 import { runHealthCheck } from './deployment.js';
 import { preflight } from './preflight.js';
 import { detectDrift } from './drift.js';
+import { runBoundedCommand } from './bounded-command.js';
 
 export interface GateStep {
   name: string;
@@ -25,43 +25,12 @@ export interface GateResult {
   deployAllowed: boolean;
 }
 
-function parseCommand(command: string) {
-  const parts: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  for (const match of command.matchAll(re)) parts.push(match[1] ?? match[2] ?? match[3]);
-  return parts;
-}
-
-function runCommand(command: string, cwd: string) {
-  const [rawBin, ...args] = parseCommand(command);
-  const result = spawnSync(rawBin === 'node' ? process.execPath : rawBin, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  const stderr = typeof result.stderr === 'string' ? result.stderr : '';
-  const exitCode = typeof result.status === 'number' ? result.status : result.signal ? 128 : null;
-  if (result.error) {
-    return {
-      ok: false,
-      command,
-      cwd,
-      exitCode,
-      stdout,
-      stderr,
-      message: (result.error as NodeJS.ErrnoException).code === 'ENOENT' ? `missing executable: ${rawBin}` : result.error.message || 'command failed',
-    };
-  }
-  return {
-    ok: exitCode === 0,
-    command,
-    cwd,
-    exitCode,
-    stdout,
-    stderr,
-    message: exitCode === 0 ? 'ok' : `exit ${exitCode ?? 1}`,
-  };
-}
-
 function stateFileFor(manifest: FrameworkManifest, cwd: string) {
   return path.join(path.dirname(path.resolve(cwd, manifest.deployDir)), `${manifest.name}.deploy-state.json`);
+}
+
+async function runGateCommand(command: string, cwd: string) {
+  return runBoundedCommand({ command, cwd, timeoutMs: 300_000, maxOutputBytes: 256 * 1024 });
 }
 
 export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<GateResult> {
@@ -71,21 +40,21 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
   steps.push({ name: 'preflight', ok: preflightResult.ok, required: true, message: preflightResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ') || 'ok' });
 
   if (required.has('validation')) {
-    const result = runCommand(manifest.validationCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.validationCommand, path.resolve(cwd, manifest.sourceDir));
     steps.push({ name: 'validation', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'validation', ok: true, required: false, message: 'not required' });
   }
 
   if (required.has('test')) {
-    const result = runCommand(manifest.testCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.testCommand, path.resolve(cwd, manifest.sourceDir));
     steps.push({ name: 'test', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'test', ok: true, required: false, message: 'not required' });
   }
 
   if (manifest.buildCommand) {
-    const result = runCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
     steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   }
 
