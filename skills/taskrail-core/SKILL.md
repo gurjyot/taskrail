@@ -1,7 +1,7 @@
 ---
 name: taskrail-core
 description: Maintain TaskRail core and its fixed component platform with strict compatibility and component acceptance gates.
-reviewed_for_taskrail: 3.0.5
+reviewed_for_taskrail: 3.0.6
 ---
 # TaskRail Core / Component Maintenance
 
@@ -64,6 +64,14 @@ Do not close existing stable import paths accidentally. New code should use the 
 
 Additive public APIs may ship within the major line. Breaking contract changes require a major TaskRail version and an explicit migration path.
 
+## Update surface gate
+
+Every TaskRail core change must review the surfaces that can drift with the framework: MCP, packaged skills, platform/install assets, public APIs, critical docs, tests, security/fault/performance gates, examples/contracts, and release packaging.
+
+Run `npm run surfaces:check` before considering a framework change complete. Every top-level TaskRail CLI command must be classified in `adapters/mcp/compatibility.json` as either MCP-exposed or intentionally excluded. A new or removed CLI command must fail the gate until that MCP review is recorded.
+
+Run `npm run mcp:check` for the packed MCP consumer test. Release certification must include both update-surface and packed-MCP gates; do not rely only on the standalone MCP workflow.
+
 ## Release skill freshness gate
 
 Skills are part of the framework contract. Every TaskRail version must explicitly review every packaged `skills/*/SKILL.md` file. The `reviewed_for_taskrail` value must exactly match `package.json` and `npm run skills:check` must pass.
@@ -80,4 +88,4 @@ Do not introduce caches, persistent inventories, indexes, daemons, worker pools,
 
 TaskRail remains an SDK/control plane, not a central execution engine. Do not introduce mandatory storage, worker pools, schedulers, vector stores, AI calls, or runtime services to solve development-time convenience problems.
 
-Once correctness, compatibility, security, release gates, performance budgets, and skill freshness are green, freeze core and return effort to automations rather than continuing speculative framework expansion.
+Once correctness, compatibility, security, release gates, performance budgets, update surfaces, MCP compatibility, and skill freshness are green, freeze core and return effort to automations rather than continuing speculative framework expansion.

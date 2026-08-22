@@ -10,6 +10,7 @@ const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const versionSource = await readFile(path.join(root, 'src', 'version.ts'), 'utf8');
 const versionMatch = versionSource.match(/TASKRAIL_VERSION\s*=\s*['"]([^'"]+)['"]/);
 const platformManifest = JSON.parse(await readFile(path.join(root, 'platform-install', 'manifest.json'), 'utf8'));
+const mcpCompatibility = JSON.parse(await readFile(path.join(root, 'adapters', 'mcp', 'compatibility.json'), 'utf8'));
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const architecture = await readFile(path.join(root, 'docs', 'taskrail-3-reliability-architecture.md'), 'utf8');
 const diagnosticsSecurity = await readFile(path.join(root, 'docs', 'diagnostics-and-security.md'), 'utf8');
@@ -17,6 +18,7 @@ const releaseWorkflow = await readFile(path.join(root, '.github', 'workflows', '
 
 add('version:package-source', versionMatch?.[1] === pkg.version, `${pkg.version} / ${versionMatch?.[1] || 'missing'}`);
 add('version:platform-manifest', platformManifest.taskrailVersion === pkg.version, `${pkg.version} / ${platformManifest.taskrailVersion}`);
+add('version:mcp-review', mcpCompatibility.reviewedForTaskRail === pkg.version, `${pkg.version} / ${mcpCompatibility.reviewedForTaskRail}`);
 add('runtime-dependencies:none', !pkg.dependencies || Object.keys(pkg.dependencies).length === 0, String(Object.keys(pkg.dependencies || {}).length));
 add('package:platform-assets-excluded', !pkg.files?.some((item) => String(item).startsWith('platform-install') || String(item).startsWith('installers') || String(item).startsWith('adapters/mcp')), JSON.stringify(pkg.files || []));
 add('package:agent-api', Boolean(pkg.exports?.['./agent']), './agent');
@@ -27,7 +29,10 @@ add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
 add('script:size-sync', Boolean(pkg.scripts?.['size:sync']), 'size:sync');
 add('script:size-check', Boolean(pkg.scripts?.['size:check']), 'size:check');
 add('script:skills-check', Boolean(pkg.scripts?.['skills:check']), 'skills:check');
+add('script:surfaces-check', Boolean(pkg.scripts?.['surfaces:check']), 'surfaces:check');
+add('script:mcp-check', Boolean(pkg.scripts?.['mcp:check']), 'mcp:check');
 add('check:skills-freshness', String(pkg.scripts?.check || '').includes('npm run skills:check'), 'npm run check');
+add('check:update-surfaces', String(pkg.scripts?.check || '').includes('npm run surfaces:check'), 'npm run check');
 add('release:sigstore-attestation', releaseWorkflow.includes('actions/attest@v4') && releaseWorkflow.includes('id-token: write') && releaseWorkflow.includes('attestations: write'), 'actions/attest@v4');
 add('release:certification', releaseWorkflow.includes('npm run certify'), 'npm run certify');
 
@@ -71,8 +76,10 @@ for (const file of [
   'test/platform-contract.test.ts',
   'scripts/certify-release.mjs',
   'scripts/test-mcp-packed.mjs',
+  'scripts/check-update-surfaces.mjs',
   'scripts/sync-readme-size.mjs',
   'scripts/check-skills-freshness.mjs',
+  'adapters/mcp/compatibility.json',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
