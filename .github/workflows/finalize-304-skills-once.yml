@@ -1,0 +1,63 @@
+name: Finalize 3.0.4 skills once
+
+on:
+  push:
+    branches:
+      - maintenance/skills-freshness
+    paths:
+      - .github/workflows/finalize-304-skills-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance/skills-freshness
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Record skills freshness release contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text()
+          section = '''## 3.0.4\n\n- Refreshed all packaged TaskRail agent skills for the current canonical CLI, plugin, command-execution, package-surface, deployment, performance, and framework-restraint contracts.\n- Added `reviewed_for_taskrail` version markers plus `npm run skills:check`, dynamically covering every packaged `skills/*/SKILL.md`.\n- Made skill freshness part of `npm run check`, release certification, CI, and regression coverage so a future framework version cannot be certified while its skills remain stale.\n\n'''
+          if '## 3.0.4\n' not in text:
+              text = text.replace('# Changelog\n\n', '# Changelog\n\n' + section, 1)
+              changelog.write_text(text)
+
+          readiness = Path('scripts/release-readiness.mjs')
+          text = readiness.read_text()
+          if "add('script:skills-check'" not in text:
+              text = text.replace(
+                  "add('script:size-check', Boolean(pkg.scripts?.['size:check']), 'size:check');",
+                  "add('script:size-check', Boolean(pkg.scripts?.['size:check']), 'size:check');\nadd('script:skills-check', Boolean(pkg.scripts?.['skills:check']), 'skills:check');\nadd('check:skills-freshness', String(pkg.scripts?.check || '').includes('npm run skills:check'), 'npm run check');",
+                  1,
+              )
+          if "'scripts/check-skills-freshness.mjs'," not in text:
+              text = text.replace(
+                  "  'scripts/sync-readme-size.mjs',",
+                  "  'scripts/sync-readme-size.mjs',\n  'scripts/check-skills-freshness.mjs',",
+                  1,
+              )
+          readiness.write_text(text)
+          PY
+      - name: Sync canonical README footprint
+        run: |
+          npm run size:sync
+          rm .github/workflows/finalize-304-skills-once.yml
+      - name: Commit final 3.0.4 candidate metadata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md README.md scripts/release-readiness.mjs .github/workflows/finalize-304-skills-once.yml
+          git commit -m "Finalize TaskRail 3.0.4 skill freshness release [skip ci]"
+          git push origin HEAD:maintenance/skills-freshness
