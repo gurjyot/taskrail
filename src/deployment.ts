@@ -405,14 +405,17 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
 
   const installCommand = dependencyInstallCommand(manifest);
   const buildCommand = manifest.buildCommand;
-  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target };
-  const preflightResult = await preflight(resolvedManifest);
+  const preflightResult = await preflight(manifest, projectRoot);
   if (!preflightResult.ok) {
+    const failedChecks = preflightResult.checks
+      .filter((check) => !check.ok)
+      .map((check) => `${check.name}${check.message ? `: ${check.message}` : ''}`)
+      .join('; ');
     return {
       deployed: false,
       rolledBack: false,
-      failure: 'preflight failed',
-      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: 'preflight checks failed', rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),
+      failure: `preflight failed${failedChecks ? `: ${failedChecks}` : ''}`,
+      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: `preflight checks failed${failedChecks ? `: ${failedChecks}` : ''}`, rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),
     };
   }
 
