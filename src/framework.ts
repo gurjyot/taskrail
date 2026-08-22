@@ -39,7 +39,7 @@ function interpolate(value: unknown, automation: string): unknown {
 const runtimePaths = ['node_modules', 'logs', 'state', 'tmp', 'cache'];
 
 export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition> = {
-  'node-runtime@1': { id: 'node-runtime@1', apply: () => ({ runtime: 'node', runtimeVersion: '>=22', runtimePaths }) },
+  'node-runtime@1': { id: 'node-runtime@1', apply: () => ({ runtime: 'node', runtimeVersion: '>=22.0.0', runtimePaths }) },
   'shell-runtime@1': { id: 'shell-runtime@1', apply: () => ({ runtime: 'shell', runtimePaths: ['logs', 'state', 'tmp', 'cache'] }) },
   'php-runtime@1': { id: 'php-runtime@1', apply: () => ({ runtime: 'php', runtimePaths: ['logs', 'state', 'tmp', 'cache'] }) },
   'systemd@1': {
