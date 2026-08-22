@@ -1,0 +1,39 @@
+name: Patch 3.0.5 preflight once
+
+on:
+  push:
+    branches:
+      - hotfix/3.0.5-preflight-root
+    paths:
+      - .github/workflows/patch-305-preflight-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/3.0.5-preflight-root
+      - name: Patch safeDeploy preflight boundary and diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/deployment.ts')
+          text = p.read_text()
+          old = '''  const installCommand = dependencyInstallCommand(manifest);\n  const buildCommand = manifest.buildCommand;\n  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target };\n  const preflightResult = await preflight(resolvedManifest);\n  if (!preflightResult.ok) {\n    return {\n      deployed: false,\n      rolledBack: false,\n      failure: 'preflight failed',\n      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: 'preflight checks failed', rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),\n'''
+          new = '''  const installCommand = dependencyInstallCommand(manifest);\n  const buildCommand = manifest.buildCommand;\n  const preflightResult = await preflight(manifest, projectRoot);\n  if (!preflightResult.ok) {\n    const failedChecks = preflightResult.checks\n      .filter((check) => !check.ok)\n      .map((check) => `${check.name}${check.message ? `: ${check.message}` : ''}`)\n      .join('; ');\n    return {\n      deployed: false,\n      rolledBack: false,\n      failure: `preflight failed${failedChecks ? `: ${failedChecks}` : ''}`,\n      report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'preflight', category: 'preflight_failed', message: `preflight checks failed${failedChecks ? `: ${failedChecks}` : ''}`, rollbackAttempted: false, rollbackResult: 'not-needed', nextStep: 'fix the reported preflight checks', environment: envInfo.name }),\n'''
+          if old not in text:
+              raise SystemExit('Expected safeDeploy preflight block not found; refusing blind patch')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/patch-305-preflight-once.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/deployment.ts .github/workflows/patch-305-preflight-once.yml
+          git commit -m "Fix safeDeploy preflight project-root boundary [skip ci]"
+          git push origin HEAD:hotfix/3.0.5-preflight-root
