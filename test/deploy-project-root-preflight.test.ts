@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { safeDeploy } from '../src/deployment.js';
+import { preflight } from '../src/preflight.js';
 
 async function write(root: string, relative: string, content: string) {
   const file = path.join(root, relative);
@@ -51,4 +52,38 @@ test('safeDeploy runs preflight from the automation project root', async () => {
   assert.equal(result.deployed, true, result.failure || result.report);
 
   await rm(base, { recursive: true, force: true });
+});
+
+test('production preflight allows a missing deploy target when its immediate parent is writable', async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'taskrail-first-deploy-'));
+  const app = path.join(base, 'app');
+  const runtimeRoot = path.join(base, 'runtime');
+  await mkdir(path.join(app, 'src'), { recursive: true });
+  await mkdir(runtimeRoot, { recursive: true });
+  await write(app, 'src/main.js', 'process.exit(0);\n');
+
+  const manifest = {
+    name: 'first-production-deploy',
+    taskrailCompatibility: '3.0.x',
+    runtime: 'shell',
+    managed: true,
+    sourceDir: 'src',
+    deployDir: path.join(runtimeRoot, 'first-production-deploy'),
+    validationCommand: 'true',
+    testCommand: 'true',
+    requiredChecks: ['validation', 'test'],
+  } as any;
+
+  const before = process.env.TASKRAIL_ENV;
+  process.env.TASKRAIL_ENV = 'production';
+  try {
+    const result = await preflight(manifest, app);
+    assert.equal(result.ok, true, JSON.stringify(result.checks));
+    assert.equal(result.checks.find((check) => check.name === 'deployDir')?.ok, true);
+    assert.equal(result.checks.find((check) => check.name === 'deployWritable')?.ok, true);
+  } finally {
+    if (before === undefined) delete process.env.TASKRAIL_ENV;
+    else process.env.TASKRAIL_ENV = before;
+    await rm(base, { recursive: true, force: true });
+  }
 });
