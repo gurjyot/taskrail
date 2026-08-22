@@ -67,6 +67,7 @@
     "release:readiness": "node scripts/release-readiness.mjs",
     "fault:contract": "npm run build && node --test dist/test/modular-hardening.test.js dist/test/modular-architecture.test.js",
     "certify": "node scripts/certify-release.mjs",
+    "performance:check": "npm run build && node scripts/performance-check.mjs",
     "size:sync": "node scripts/sync-readme-size.mjs",
     "size:check": "node scripts/sync-readme-size.mjs --check",
     "test": "npm run build && node --test dist/test/*.js",
