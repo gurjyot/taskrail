@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { AutomationPlugin, ChangeRisk, ChangeReviewInput, FrameworkManifest, GateVerdict } from './types.js';
 import { writeEvidence } from './evidence.js';
 import { runGate } from './gate.js';
+import { runBoundedCommand } from './bounded-command.js';
 
 export interface VerifyChangeResult {
   changedFiles: string[];
@@ -11,11 +11,19 @@ export interface VerifyChangeResult {
   gate: GateVerdict;
   deployAllowed: boolean;
   evidencePath: string;
+  gitAvailable: boolean;
+  gitError?: string;
 }
 
-function git(args: string[], cwd: string) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  return result.status === 0 && typeof result.stdout === 'string' ? result.stdout.replace(/\r?\n$/, '') : '';
+async function git(args: string[], cwd: string) {
+  const quoted = args.map((value) => JSON.stringify(value)).join(' ');
+  const result = await runBoundedCommand({
+    command: `git ${quoted}`,
+    cwd,
+    timeoutMs: 30_000,
+    maxOutputBytes: 256 * 1024,
+  });
+  return { ok: result.ok, output: result.stdout.replace(/\r?\n$/, ''), error: result.ok ? undefined : result.message };
 }
 
 function scoreRisk(files: string[], protectedPaths: string[]): ChangeRisk {
@@ -47,18 +55,24 @@ function matchProtected(files: string[], protectedPaths: string[], cwd: string) 
 
 export async function inspectChange(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<VerifyChangeResult> {
   let changedFiles: string[] = [];
-  try {
-    const status = git(['status', '--porcelain'], cwd);
-    const tracked = status ? status.split('\n').map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean) : [];
-    const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd).split('\n').map((line) => line.trim()).filter(Boolean);
+  let gitAvailable = true;
+  let gitError: string | undefined;
+
+  const status = await git(['status', '--porcelain'], cwd);
+  const untrackedResult = await git(['ls-files', '--others', '--exclude-standard'], cwd);
+  if (!status.ok || !untrackedResult.ok) {
+    gitAvailable = false;
+    gitError = status.error || untrackedResult.error || 'git inspection failed';
+  } else {
+    const tracked = status.output ? status.output.split('\n').map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean) : [];
+    const untracked = untrackedResult.output.split('\n').map((line) => line.trim()).filter(Boolean);
     changedFiles = Array.from(new Set([...tracked, ...untracked].map((file) => file.replace(/^"|"$/g, '')))).filter((file) => !isGeneratedTaskrailPath(file)).sort();
-  } catch {
-    changedFiles = [];
   }
+
   const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? [], cwd);
   const risk = scoreRisk(changedFiles, protectedPaths);
   const gate = await runGate(manifest, cwd, plugins);
-  const deployAllowed = gate.verdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
+  const deployAllowed = gitAvailable && gate.verdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
   const evidencePath = await writeEvidence(cwd, {
     kind: 'verify-change',
     project: manifest.name,
@@ -66,9 +80,11 @@ export async function inspectChange(manifest: FrameworkManifest, cwd = process.c
     protectedPaths,
     risk,
     gate,
+    gitAvailable,
+    gitError,
     deployAllowed,
   });
-  return { changedFiles, protectedPaths, risk, gate: gate.verdict, deployAllowed, evidencePath };
+  return { changedFiles, protectedPaths, risk, gate: gate.verdict, deployAllowed, evidencePath, gitAvailable, gitError };
 }
 
 export function reviewInputFromChange(change: VerifyChangeResult): ChangeReviewInput {
