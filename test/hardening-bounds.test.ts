@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isStale } from '../src/locks.js';
 import { runBoundedCommand } from '../src/bounded-command.js';
+import { resolveFrameworkManifest } from '../src/framework.js';
 
 test('a live local lock does not expire because of age', async () => {
   const root = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'taskrail-lock-')));
@@ -46,4 +47,41 @@ test('bounded command runner caps captured output', async () => {
   assert.equal(result.truncated, true);
   assert.ok(result.stdout.length < 256);
   assert.match(result.stdout, /TRUNCATED/);
+});
+
+test('framework resolution rejects unknown profiles', () => {
+  assert.throws(() => resolveFrameworkManifest({
+    name: 'example',
+    profile: 'missing-profile@1',
+    runtime: 'node',
+    sourceDir: '.',
+    deployDir: './live',
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
+  }), /unknown TaskRail profile/);
+});
+
+test('framework resolution rejects unknown framework capabilities', () => {
+  assert.throws(() => resolveFrameworkManifest({
+    name: 'example',
+    runtime: 'node',
+    sourceDir: '.',
+    deployDir: './live',
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
+    frameworkCapabilities: ['change-detections@1'],
+  }), /unknown TaskRail framework capability/);
+});
+
+test('node runtime profile requires Node 22 or newer', () => {
+  const manifest = resolveFrameworkManifest({
+    name: 'example',
+    profile: 'portable-node@1',
+    runtime: 'node',
+    sourceDir: '.',
+    deployDir: './live',
+    validationCommand: 'node -e "process.exit(0)"',
+    testCommand: 'node -e "process.exit(0)"',
+  });
+  assert.equal(manifest.runtimeVersion, '>=22');
 });
