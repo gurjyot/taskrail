@@ -52,9 +52,10 @@ export async function readLock(lockDir: string): Promise<LockInfo | null> {
 export async function isStale(info: LockInfo, lockDir: string, maxAgeMs = 15 * 60 * 1000) {
   try {
     const st = await stat(path.join(lockDir, 'lock.json'));
-    const ageMs = Date.now() - st.mtimeMs;
+    const startedAtMs = Date.parse(info.startedAt);
+    const leaseAgeMs = Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : Date.now() - st.mtimeMs;
 
-    if (info.host !== currentHost()) return ageMs > maxAgeMs;
+    if (info.host !== currentHost()) return leaseAgeMs > maxAgeMs;
 
     try {
       process.kill(info.pid, 0);
