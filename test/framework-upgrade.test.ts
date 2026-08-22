@@ -56,7 +56,7 @@ test('shared capability defaults benefit multiple automations without per-automa
     testCommand: 'node -e "process.exit(0)"',
   });
   assert.deepEqual(first.frameworkCapabilities, second.frameworkCapabilities);
-  assert.equal(first.runtimeVersion, '>=18.0.0 <23.0.0');
+  assert.equal(first.runtimeVersion, '>=22.0.0');
   assert.equal(second.runtimePaths?.includes('node_modules'), true);
 });
 
