@@ -21,7 +21,7 @@ const compositionMatch = source.match(/compositionCommands\s*=\s*new Set\(\[([^\
 const compositionCommands = compositionMatch
   ? [...compositionMatch[1].matchAll(/['\"]([^'\"]+)['\"]/g)].map((match) => match[1])
   : [];
-const routedCommands = [...source.matchAll(/command\s*===\s*['\"]([^'\"]+)['\"]/g)].map((match) => match[1]);
+const routedCommands = [...source.matchAll(/\b(?:if|else if)\s*\(command\s*===\s*['\"]([^'\"]+)['\"]/g)].map((match) => match[1]);
 const cliCommands = [...new Set([...compositionCommands, ...routedCommands])].sort();
 const exposed = new Set(mcpCompatibility.exposedCommands || []);
 const excluded = new Set(Object.keys(mcpCompatibility.excludedCommands || {}));
