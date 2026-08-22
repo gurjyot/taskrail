@@ -462,10 +462,11 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     const migrateCheck = await migrationPreflight(manifest, candidate);
     if (!migrateCheck.ok) return { deployed: false, rolledBack: false, failure: migrateCheck.error || 'migration preflight failed' };
 
-    const controlsEnabled = Boolean(manifest.requiredChecks?.length || manifest.protectedPaths?.length);
-    if (controlsEnabled) {
+    if (manifest.requiredChecks?.length) {
       const liveGate = await runGate(manifest, projectRoot, plugin ? [plugin] : []);
       if (liveGate.verdict !== 'PASS') return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
+    }
+    if ((manifest.protectedPaths?.length ?? 0) > 0 || hasFrameworkCapability(manifest, 'change-detection')) {
       const change = await inspectChange(manifest, projectRoot);
       if (!change.deployAllowed) return { deployed: false, rolledBack: false, failure: `protected change blocked: ${change.gitError || change.protectedPaths.join(', ') || 'unknown'}` };
     }
