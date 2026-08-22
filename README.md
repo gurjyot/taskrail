@@ -275,7 +275,7 @@ Internal implementation files can evolve without turning every source path into 
 <!-- taskrail-footprint:start -->
 **Current TaskRail package footprint: ~212 KiB compressed / ~1122 KiB unpacked. Runtime npm dependencies: 0.**
 
-Measured automatically from the actual `npm pack` artifact. CI fails when these README figures drift, and the release gate enforces the package-size budget.
+Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
 
 A separate **2 MiB unpacked guardrail** prevents accidental framework bloat. Platform installer assets and optional MCP dependencies are deliberately excluded from the core npm package.
