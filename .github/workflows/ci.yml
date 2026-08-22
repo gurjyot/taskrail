@@ -26,5 +26,13 @@ jobs:
       - run: npm test
       - run: npm run check
       - run: npm run performance:check
+      - name: Preserve performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskrail-performance-${{ github.sha }}
+          path: performance-report.json
+          if-no-files-found: warn
+          retention-days: 90
       - run: npm run size:check
       - run: npm run release:readiness
