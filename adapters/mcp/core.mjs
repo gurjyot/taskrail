@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 export const MCP_PROTOCOL_TARGET = '2026-07-28';
+export const MCP_ADAPTER_VERSION = '0.1.1';
 export const MAX_TOOL_OUTPUT_BYTES = 1024 * 1024;
 export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 
@@ -15,9 +16,19 @@ export const readTools = Object.freeze([
     cli: () => ['components'],
   },
   {
+    name: 'taskrail_component',
+    description: 'Inspect one TaskRail-owned reusable component by name.',
+    cli: ({ name }) => ['component', requireText(name, 'name', 128)],
+  },
+  {
     name: 'taskrail_capability_find',
     description: 'Search existing governed capabilities before considering a new capability.',
     cli: ({ query }) => ['capability-find', requireText(query, 'query', 500)],
+  },
+  {
+    name: 'taskrail_capability',
+    description: 'Inspect one governed TaskRail capability by name.',
+    cli: ({ name }) => ['capability', requireText(name, 'name', 128)],
   },
   {
     name: 'taskrail_usage',
