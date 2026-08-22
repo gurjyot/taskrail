@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewedForTaskRail": "3.0.5",
+  "reviewedForTaskRail": "3.0.6",
   "exposedCommands": [
     "components",
     "capability-find",
