@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching package version, for example v3.0.2
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,21 +23,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Verify tag matches package version
+
+      - name: Resolve and verify release target
+        id: release
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          test "v${VERSION}" = "${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="$MANUAL_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          VERSION="$(node -p "require('./package.json').version")"
+          test "v${VERSION}" = "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Install development dependencies
         run: npm ci
+
       - name: Run full release certification
         run: npm run certify
+
       - name: Build exact install payload
         run: npm run build:install-release
+
       - name: Add native setup files and checksums
         run: |
           cp installers/taskrail-install-linux.sh release-install/TaskRail-Install-Linux.sh
@@ -39,20 +62,47 @@ jobs:
           cp installers/TaskRail-Install.ps1 release-install/TaskRail-Install-Windows.ps1
           cd release-install
           sha256sum * > SHA256SUMS
+
+      - name: Create verified tag after certification
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TARGET_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          EXISTING="$(git ls-remote --tags origin "refs/tags/${TAG}" | awk '{print $1}')"
+          if [ -n "$EXISTING" ]; then
+            test "$EXISTING" = "$TARGET_SHA"
+            echo "Tag ${TAG} already points to certified commit ${TARGET_SHA}"
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${TAG}" \
+              -f "sha=${TARGET_SHA}"
+          fi
+
       - name: Attest release checksum manifest
         uses: actions/attest@v4
         with:
           subject-path: release-install/SHA256SUMS
+
       - name: Attest TaskRail install manifest
         uses: actions/attest@v4
         with:
           subject-path: release-install/taskrail-install-manifest.json
-      - name: Create GitHub release from verified artifacts
+
+      - name: Create or refresh GitHub release from verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" release-install/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --generate-notes \
-            --title "TaskRail ${GITHUB_REF_NAME}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-install/* --repo "$GITHUB_REPOSITORY" --clobber
+            echo "Release ${TAG} already existed; verified artifacts refreshed"
+          else
+            gh release create "$TAG" release-install/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "TaskRail ${TAG}"
+          fi
