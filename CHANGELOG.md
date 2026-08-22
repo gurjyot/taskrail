@@ -83,27 +83,18 @@
 
 ## 2.0.5
 
-- Fixed the deployment gate so source changes are verified against the candidate source before replacing a broken live target.
-- Added regression coverage for repairing broken live deployments without weakening pre-activation health checks.
+- Added environment-aware lifecycle helpers and concise agent-facing commands: `env`, `paths`, `bootstrap`, `drift`, `reconcile`, `explain`, `repair`, `ship`, and `upgrade`.
+- Added deploy receipts, explicit last-known-good release metadata, safer source/runtime discovery, and deterministic repair flows for stale locks and broken TaskRail symlinks.
+- Added versioned framework capabilities, versioned profiles, effective manifest resolution, and safe declarative manifest upgrades so non-breaking framework improvements can flow to managed automations without business-logic edits.
 
 ## 2.0.4
 
-- Added performance checkups and release budgets for package size, startup, validation, and memory.
-- Added machine-readable performance reports and regression detection so framework degradation is visible before release.
-
-## 2.0.3
-
-- Added component/capability usage graphs and impact analysis so shared changes can identify affected consumers before mutation.
-- Added scoped shared-update planning and pause/resume controls.
-
-## 2.0.2
-
-- Added capability discovery/governance and explicit TaskRail profiles to reduce repeated AI context and implementation duplication.
+- Documented sourceDir validation and test execution, deployDir health execution, and the pre-deploy health check tradeoff.
+- Improved gate failure details to include the command, cwd, exit code, stdout, and stderr.
+- Bumped the maintenance release to v2.0.4.
 
 ## 2.0.1
 
-- Added initial TaskRail 2 modular execution and deployment hardening.
-
-## 1.0.0
-
-- Initial stable TaskRail release.
+- Regenerated the package lockfile from `package.json`.
+- Added YAML frontmatter to `skills/taskrail/SKILL.md`.
+- Removed unused `LifecycleStep`.
