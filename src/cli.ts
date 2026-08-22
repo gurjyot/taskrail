@@ -12,7 +12,6 @@ import { capabilityImpact, capabilityRootsFor, findAutomation, getCapability, li
 import { detectEnvironment } from './env.js';
 import { inspectGitState } from './git.js';
 import { detectDrift } from './drift.js';
-import { preflight } from './preflight.js';
 import { isCompatible, loadManifest, resolvePaths } from './config.js';
 import { compactManifest, inferProfile, resolveFrameworkManifest, frameworkCapabilities, frameworkProfiles } from './framework.js';
 import { isStale, readLock, releaseLock } from './locks.js';
@@ -346,36 +345,6 @@ async function commandUpgrade(rawManifest: FrameworkManifest, manifest: Framewor
   if (!checked.ok || tested.verdict !== 'PASS' || unsupportedCaps.length || unsupportedProfile) process.exitCode = 1;
 }
 
-async function commandShip(manifest: FrameworkManifest, cwd: string) {
-  const doctor = await frameworkDoctor(manifest, { cwd });
-  if (!doctor.deployable || !doctor.compatible || !doctor.manifestValid) {
-    compact([`STATUS: FAIL`, `ENV: ${doctor.environment.name}`, `STEP: doctor`, `NEXT: taskrail explain doctor`]);
-    process.exitCode = 1;
-    return;
-  }
-  const checked = await frameworkCheck(manifest, { cwd });
-  if (!checked.ok) {
-    compact([`STATUS: FAIL`, `ENV: ${doctor.environment.name}`, `STEP: check`, `NEXT: taskrail explain check`]);
-    process.exitCode = 1;
-    return;
-  }
-  const gate = await runGate(manifest, cwd, await loadPlugins(manifest).catch(() => []));
-  if (gate.verdict !== 'PASS') {
-    compact([`STATUS: FAIL`, `ENV: ${doctor.environment.name}`, `STEP: gate`, `NEXT: taskrail explain gate`]);
-    process.exitCode = 1;
-    return;
-  }
-  const deployed = await safeDeploy(manifest, plugin, { sourceRevision: inspectGitState(cwd).sha, projectRoot: cwd });
-  if (!deployed.deployed) {
-    compact([`STATUS: FAIL`, `ENV: ${doctor.environment.name}`, `STEP: deploy`, `NEXT: taskrail explain deploy`]);
-    process.exitCode = 1;
-    return;
-  }
-  const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], resolvePaths(manifest, cwd).deployDir, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-  compact([`STATUS: ${passLine(health.ok)}`, `ENV: ${doctor.environment.name}`, `SHA: ${deployed.sha || 'unknown'}`, `RELEASE: ${deployed.releaseId || 'unknown'}`, `DEPLOYABLE: yes`, `NEXT: ${health.ok ? 'done' : 'taskrail explain health'}`]);
-  if (!health.ok) process.exitCode = 1;
-}
-
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] ?? '--help';
@@ -445,13 +414,6 @@ async function main() {
     return;
   }
 
-  if (cmd === 'test') {
-    const result = await preflight(manifest, cwd);
-    compact([`STATUS: ${passLine(result.ok)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `NEXT: ${result.ok ? 'taskrail plan' : 'taskrail explain test'}`]);
-    if (!result.ok) process.exitCode = 1;
-    return;
-  }
-
   if (cmd === 'deploy') {
     const errors = validateConfig({ projectName: manifest.name, environment: process.env, manifest });
     if (errors.length) {
@@ -480,7 +442,6 @@ async function main() {
     return;
   }
 
-  if (cmd === 'ship') return commandShip(manifest, cwd);
 
   console.error(`unknown command: ${cmd}`);
   process.exitCode = 1;
