@@ -6,7 +6,11 @@
 - Added explicit MCP command classification so every top-level TaskRail CLI command must be reviewed as MCP-exposed or intentionally excluded; new or removed commands now fail compatibility checks until reviewed.
 - Added the packed MCP consumer test to full release certification instead of relying only on the standalone MCP workflow.
 - Added MCP compatibility review metadata tied to the exact TaskRail version and updated TaskRail core agent instructions to require these checks for framework edits.
+- Synchronized MCP with every safe default read action, including TaskRail status and privacy-safe diagnostics preview, while keeping write/control operations deny-by-default.
+- Added a public first-party ecosystem gate that validates the capability catalog and every reference automation against the exact TaskRail candidate on PRs, main pushes, and releases.
+- Added automatic private ecosystem verification for new TaskRail main SHAs, with successful-SHA caching, retry-on-failure behavior, diagnostics evidence, and non-noisy Telegram reporting.
 - Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source, lockfile, and platform manifest versions.
+- Expanded update-surface self-protection so the release, MCP, ecosystem, installer, security/reliability, documentation, and compatibility gates themselves cannot be silently removed.
 
 ## 3.0.5
 
@@ -66,7 +70,7 @@
 
 - Added isolated per-service execution state, durable idempotency claims, decision journaling, heartbeats, bounded retry/timeout/concurrency helpers, and stable execution IDs.
 - Added read-only parallel supervision with per-service freshness SLAs so hourly, daily, weekly, and multi-service projects can be monitored correctly.
-- Added declarative CPU, memory, task, and priority guardrails plus TaskRail-managed systemd drop-ins that instrument services without changing business commands.
+- Added declarative CPU, memory, task, and priority guardrails plus TaskRail-managed systemd drop-ins that instrument services without changing business command.
 - Added `taskrail-supervise`, `taskrail-heartbeat`, and `taskrail-systemd-sync` CLIs.
 - Added agent-execution defaults to SMG profiles, first-class Shell/PHP timer profiles, a runnable automation blueprint, CI, and conformance tests including 1,000 isolated supervised workloads and high-contention idempotency.
 - Kept execution decentralized: no TaskRail daemon, no global runtime lock, no shared cross-domain memory, and no new runtime dependency.
@@ -79,18 +83,27 @@
 
 ## 2.0.5
 
-- Added environment-aware lifecycle helpers and concise agent-facing commands: `env`, `paths`, `bootstrap`, `drift`, `reconcile`, `explain`, `repair`, `ship`, and `upgrade`.
-- Added deploy receipts, explicit last-known-good release metadata, safer source/runtime discovery, and deterministic repair flows for stale locks and broken TaskRail symlinks.
-- Added versioned framework capabilities, versioned profiles, effective manifest resolution, and safe declarative manifest upgrades so non-breaking framework improvements can flow to managed automations without business-logic edits.
+- Fixed the deployment gate so source changes are verified against the candidate source before replacing a broken live target.
+- Added regression coverage for repairing broken live deployments without weakening pre-activation health checks.
 
 ## 2.0.4
 
-- Documented sourceDir validation and test execution, deployDir health execution, and the pre-deploy health check tradeoff.
-- Improved gate failure details to include the command, cwd, exit code, stdout, and stderr.
-- Bumped the maintenance release to v2.0.4.
+- Added performance checkups and release budgets for package size, startup, validation, and memory.
+- Added machine-readable performance reports and regression detection so framework degradation is visible before release.
+
+## 2.0.3
+
+- Added component/capability usage graphs and impact analysis so shared changes can identify affected consumers before mutation.
+- Added scoped shared-update planning and pause/resume controls.
+
+## 2.0.2
+
+- Added capability discovery/governance and explicit TaskRail profiles to reduce repeated AI context and implementation duplication.
 
 ## 2.0.1
 
-- Regenerated the package lockfile from `package.json`.
-- Added YAML frontmatter to `skills/taskrail/SKILL.md`.
-- Removed unused `LifecycleStep`.
+- Added initial TaskRail 2 modular execution and deployment hardening.
+
+## 1.0.0
+
+- Initial stable TaskRail release.
