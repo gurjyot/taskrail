@@ -113,7 +113,7 @@ export async function runBoundedCommand(options: BoundedCommandOptions): Promise
       });
     };
 
-    child.on('error', (error: NodeJS.ErrnoException) => finish(1, error));
+    child.on('error', (error: NodeJS.ErrnoException) => finish(null, error));
     child.on('exit', (code) => finish(code ?? 1));
   });
 }
