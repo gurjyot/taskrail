@@ -36,3 +36,29 @@ jobs:
           retention-days: 90
       - run: npm run size:check
       - run: npm run release:readiness
+
+  current-node-compatibility:
+    name: Node 26 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Verify public package surfaces
+        run: >-
+          node -e "Promise.all([
+          import('taskrail/components'),
+          import('taskrail/capabilities'),
+          import('taskrail/manifest'),
+          import('taskrail/testing'),
+          import('taskrail/control'),
+          import('taskrail/agent'),
+          import('taskrail/platform')
+          ]).then(([components, capabilities, manifest, testing, control, agent, platform]) => {
+          if (!components.http || !components.config || !capabilities.buildUsageGraph || !manifest.validateConfig || !testing.evaluateConformance || !control.transactionalDeploy || !agent.agentActions || !platform.PlatformEventBus) process.exit(1)
+          })"
