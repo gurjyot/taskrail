@@ -37,6 +37,9 @@ if (command === 'platform') {
 } else if (command === 'agent') {
   const { runAgentCli } = await import('./agent-cli.js');
   await runAgentCli(process.argv.slice(2));
+} else if (command === 'ecosystem') {
+  const { runEcosystemCli } = await import('./ecosystem-cli.js');
+  await runEcosystemCli(process.argv.slice(2));
 } else if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
   await runCompositionCli(process.argv.slice(2));
