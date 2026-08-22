@@ -24,6 +24,7 @@ function run(name, command, args, cwd, extraEnv = {}) {
     ok,
     exitCode: result.status ?? 1,
     error: result.error ? String(result.error.message || result.error) : undefined,
+    stdout: ok ? undefined : String(result.stdout || '').slice(-4000),
     stderr: ok ? undefined : String(result.stderr || '').slice(-4000),
   });
   return ok;
@@ -35,7 +36,7 @@ function requireDir(label, dir) {
   return ok;
 }
 
-function automationDirs(repoPath) {
+function automationManifests(repoPath) {
   const found = [];
   const skip = new Set(['node_modules', '.git', '.taskrail', 'dist', 'out']);
   function walk(dir) {
@@ -43,7 +44,7 @@ function automationDirs(repoPath) {
       if (skip.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.isFile() && entry.name === 'automation.json') found.push(path.dirname(full));
+      else if (entry.isFile() && entry.name === 'automation.json') found.push(full);
     }
   }
   walk(repoPath);
@@ -59,7 +60,6 @@ const capabilitiesPresent = requireDir('taskrail-capabilities', capabilitiesRepo
 const automationsPresent = requireDir('taskrail-automations', automationsRepo);
 
 if (capabilitiesPresent) {
-  run('capabilities:npm-ci', 'npm', ['ci'], capabilitiesRepo);
   run('capabilities:test', 'npm', ['test'], capabilitiesRepo);
   run('capabilities:check', 'npm', ['run', 'check'], capabilitiesRepo);
 
@@ -80,17 +80,16 @@ if (capabilitiesPresent) {
 }
 
 if (automationsPresent) {
-  run('automations:npm-ci', 'npm', ['ci'], automationsRepo);
   run('automations:test', 'npm', ['test'], automationsRepo);
   run('automations:check', 'npm', ['run', 'check'], automationsRepo);
 
-  const dirs = automationDirs(automationsRepo);
-  checks.push({ name: 'automations:discovered', ok: dirs.length > 0, count: dirs.length });
-  for (const dir of dirs) {
-    const label = path.relative(automationsRepo, dir) || '.';
+  const manifests = automationManifests(automationsRepo);
+  checks.push({ name: 'automations:discovered', ok: manifests.length > 0, count: manifests.length });
+  for (const manifestPath of manifests) {
+    const label = path.relative(automationsRepo, path.dirname(manifestPath)) || '.';
     const env = { TASKRAIL_CAPABILITY_ROOTS: capabilityRoot };
-    const checked = run(`automation:${label}:check`, process.execPath, [taskrailCli, 'check', dir], automationsRepo, env);
-    if (checked) run(`automation:${label}:test`, process.execPath, [taskrailCli, 'test', dir], automationsRepo, env);
+    const checked = run(`automation:${label}:check`, process.execPath, [taskrailCli, 'check', manifestPath], automationsRepo, env);
+    if (checked) run(`automation:${label}:test`, process.execPath, [taskrailCli, 'test', manifestPath], automationsRepo, env);
   }
 }
 
