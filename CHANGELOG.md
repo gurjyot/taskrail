@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.2
+
+- Fixed relative dependency lockfile resolution so `taskrail test` and preflight resolve lockfiles from the automation workspace instead of the caller's working directory.
+- Improved `taskrail ship` failure output so deployment-stage errors and failure-report paths are surfaced instead of collapsing to unknown release/SHA output.
+- Added regression coverage for workspace-relative lockfiles and kept the full cross-platform release matrix green.
+- Reworked the README into a shorter human-first overview with CI/version/runtime-dependency badges and reproducible startup/install measurements.
+- Hardened performance checks with multi-sample CLI startup statistics, p95 budget enforcement, machine-readable reports, GitHub job summaries, and retained CI artifacts.
+
 ## 3.0.0
 
 - Added modular validation and security registries so reusable checks can be composed by lifecycle context without duplicating logic.
