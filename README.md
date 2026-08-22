@@ -3,7 +3,7 @@
 <p align="center"><strong>Lightweight, AI-first automation framework for building, validating, deploying, updating, supervising, and safely operating production automations.</strong></p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~217 KiB compressed / ~1138 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~218 KiB compressed / ~1140 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 TaskRail is a small control plane and SDK for reliable automation. It is designed to be especially easy for coding agents such as Codex and other AI development tools, while remaining deterministic and fully usable without AI. It provides reusable components, governed capabilities, thin automation scaffolds, deployment safety, transactional updates, rollback/recovery controls, supervision, privacy-safe diagnostics, optional agent adapters, and progressive-disclosure agent skills without requiring a database, queue, container platform, permanent daemon, vector store, or runtime model service.
@@ -653,7 +653,7 @@ Additional utilities include `taskrail-supervise`, `taskrail-heartbeat`, `taskra
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~217 KiB compressed / ~1138 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~218 KiB compressed / ~1140 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
