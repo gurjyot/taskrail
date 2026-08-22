@@ -41,6 +41,14 @@ Operational rules:
 - keep secrets out of git and docs
 - read `FRAMEWORK.md` only when changing TaskRail itself
 
+When changing TaskRail itself:
+- use the `taskrail-core` skill
+- run `npm run surfaces:check`; MCP, skills, platform/install assets, public APIs, critical docs/contracts, and release surfaces must be reviewed together
+- classify every top-level CLI command in `adapters/mcp/compatibility.json` as MCP-exposed or intentionally excluded
+- run the packed MCP compatibility gate with `npm run mcp:check`
+- advance every packaged skill review marker when the TaskRail version advances
+- do not release unless full `npm run certify` passes
+
 Never:
 - add ad-hoc production edits
 - add duplicate integrations or semantically duplicate capabilities
