@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.7
+
+- Fixed production preflight so a first deployment may target a new directory when its immediate parent already exists and is writable, while existing targets must still be writable directories.
+- Added regression coverage for clean first-production deploy targets and kept production preflight fail-closed without recursively creating arbitrary parent paths.
+- Synchronized the measured package footprint, MCP compatibility review, packaged skills, source version, lockfile, and platform manifest for the release.
+
 ## 3.0.6
 
 - Added an automated update-surface gate covering MCP compatibility review, packaged skills, platform/install assets, public contracts, critical docs, and release surfaces.

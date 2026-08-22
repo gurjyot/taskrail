@@ -1,7 +1,7 @@
 ---
 name: taskrail
 description: Build and operate TaskRail-managed automations using stable components and governed capabilities.
-reviewed_for_taskrail: 3.0.6
+reviewed_for_taskrail: 3.0.7
 ---
 # TaskRail
 
