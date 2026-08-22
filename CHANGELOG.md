@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.6
+
+- Added an automated update-surface gate covering MCP compatibility review, packaged skills, platform/install assets, public contracts, critical docs, and release surfaces.
+- Added explicit MCP command classification so every top-level TaskRail CLI command must be reviewed as MCP-exposed or intentionally excluded; new or removed commands now fail compatibility checks until reviewed.
+- Added the packed MCP consumer test to full release certification instead of relying only on the standalone MCP workflow.
+- Added MCP compatibility review metadata tied to the exact TaskRail version and updated TaskRail core agent instructions to require these checks for framework edits.
+- Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source, lockfile, and platform manifest versions.
+
 ## 3.0.5
 
 - Fixed `safeDeploy` so deployment preflight always runs against the automation project root instead of a rewritten absolute-path manifest from the caller working directory.
