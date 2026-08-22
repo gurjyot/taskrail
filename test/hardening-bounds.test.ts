@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { isStale } from '../src/locks.js';
 import { runBoundedCommand } from '../src/bounded-command.js';
 import { resolveFrameworkManifest } from '../src/framework.js';
+import { preflight } from '../src/preflight.js';
+import type { FrameworkManifest } from '../src/types.js';
 
 test('a live local lock does not expire because of age', async () => {
   const root = await import('node:fs/promises').then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), 'taskrail-lock-')));
@@ -87,4 +89,29 @@ test('node runtime profile requires Node 22 or newer', () => {
     testCommand: 'node -e "process.exit(0)"',
   });
   assert.equal(manifest.runtimeVersion, '>=22.0.0');
+});
+
+test('preflight resolves relative dependency lockfiles from the automation workspace', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-relative-lockfile-'));
+  const manifest: FrameworkManifest = {
+    name: 'relative-lockfile',
+    managed: true,
+    runtime: 'shell',
+    sourceDir: '.',
+    deployDir: './live',
+    validationCommand: 'true',
+    testCommand: 'true',
+    dependencyManager: { tool: 'npm', lockfile: 'package-lock.json' },
+  };
+
+  try {
+    await writeFile(path.join(root, 'package-lock.json'), '{}\n');
+    await writeFile(path.join(root, 'automation.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const result = await preflight(manifest, root);
+    const lockfileCheck = result.checks.find((check) => check.name === 'lockfile:package-lock.json');
+    assert.ok(lockfileCheck);
+    assert.equal(lockfileCheck.ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
