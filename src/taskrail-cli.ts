@@ -37,6 +37,12 @@ if (command === 'platform') {
 } else if (command === 'agent') {
   const { runAgentCli } = await import('./agent-cli.js');
   await runAgentCli(process.argv.slice(2));
+} else if (command === 'test') {
+  const { runDeclaredTestCli } = await import('./test-command.js');
+  await runDeclaredTestCli(process.argv.slice(3));
+} else if (command === 'ship') {
+  const { runShipCli } = await import('./ship-command.js');
+  await runShipCli(process.argv.slice(3));
 } else if (compositionCommands.has(command)) {
   const { runCompositionCli } = await import('./composition-cli.js');
   await runCompositionCli(process.argv.slice(2));

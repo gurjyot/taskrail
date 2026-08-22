@@ -13,23 +13,41 @@ const ignoredPrefixes = ['.taskrail/'];
 const defaultRuntimePrefixes = ['node_modules/', 'logs/', 'state/', 'cache/', 'tmp/', 'temp/', 'run/', '.cache/', '.npm/'];
 const defaultGeneratedPrefixes = ['dist/', 'build/', '.next/'];
 
-async function walk(dir: string, base = dir, out: string[] = []): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) await walk(full, base, out);
-    else {
-      const rel = path.relative(base, full).replace(/\\/g, '/');
-      if (ignoredFiles.has(entry.name)) continue;
-      if (ignoredPrefixes.some((prefix) => rel === prefix.slice(0, -1) || rel.startsWith(prefix))) continue;
-      out.push(path.relative(base, full));
-    }
-  }
-  return out;
+function normalizePrefix(prefix: string) {
+  return prefix.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
-function normalizePrefix(prefix: string) {
-  return prefix.replace(/\\/g, '/').replace(/\/+$/, '');
+function traversalPrunePrefixes(manifest?: FrameworkManifest) {
+  return Array.from(new Set([
+    ...ignoredPrefixes.map(normalizePrefix),
+    ...defaultRuntimePrefixes.map(normalizePrefix),
+    ...defaultGeneratedPrefixes.map(normalizePrefix),
+    ...((manifest?.runtimePaths ?? []).map(normalizePrefix)),
+    ...((manifest?.generatedPaths ?? []).map(normalizePrefix)),
+  ].filter(Boolean)));
+}
+
+function pathMatchesPrefix(rel: string, prefixes: string[]) {
+  const normalized = rel.replace(/\\/g, '/');
+  return prefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`));
+}
+
+async function walk(dir: string, manifest?: FrameworkManifest, base = dir, out: string[] = []): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const prunePrefixes = traversalPrunePrefixes(manifest);
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    const rel = path.relative(base, full).replace(/\\/g, '/');
+    if (entry.isDirectory()) {
+      if (pathMatchesPrefix(rel, prunePrefixes)) continue;
+      await walk(full, manifest, base, out);
+      continue;
+    }
+    if (ignoredFiles.has(entry.name)) continue;
+    if (pathMatchesPrefix(rel, ignoredPrefixes.map(normalizePrefix))) continue;
+    out.push(path.relative(base, full));
+  }
+  return out;
 }
 
 function classifyPath(file: string, manifest?: FrameworkManifest): DriftItem['kind'] {
@@ -54,8 +72,8 @@ function inOwnedSet(file: string, manifest?: FrameworkManifest): boolean {
 }
 
 export async function detectDrift(liveDir: string, releaseDir: string, manifest?: FrameworkManifest): Promise<DriftResult> {
-  const liveFiles = new Set(await walk(liveDir));
-  const releaseFiles = new Set(await walk(releaseDir));
+  const liveFiles = new Set(await walk(liveDir, manifest));
+  const releaseFiles = new Set(await walk(releaseDir, manifest));
   const drifted: string[] = [];
   const items: DriftItem[] = [];
   const files = new Set([...liveFiles, ...releaseFiles]);

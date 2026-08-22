@@ -1,4 +1,4 @@
-export type CertificationGateName = 'core-ci' | 'package-golden-path' | 'installer-golden-path' | 'release-readiness' | 'fault-injection' | 'security-policy' | 'provenance' | 'compatibility' | 'mcp-adapter';
+export type CertificationGateName = 'core-ci' | 'package-golden-path' | 'installer-golden-path' | 'release-readiness' | 'fault-injection' | 'security-policy' | 'provenance' | 'compatibility' | 'mcp-adapter' | 'performance';
 
 export interface CertificationGate {
   name: CertificationGateName;

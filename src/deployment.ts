@@ -27,6 +27,7 @@ import { detectEnvironment } from './env.js';
 import { inspectChange } from './change.js';
 import { capabilityRootsFor } from './capabilities.js';
 import { readPrivateState, writePrivateState } from './private-state.js';
+import { runBoundedCommand } from './bounded-command.js';
 
 export interface DeployOutcome extends DeployResult {
   backupPath?: string;
@@ -74,21 +75,6 @@ export interface CheckResult {
   checks: Array<{ name: string; ok: boolean; message?: string }>;
 }
 
-function parseCommand(command: string) {
-  const parts: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  for (const match of command.matchAll(re)) parts.push(match[1] ?? match[2] ?? match[3]);
-  return parts;
-}
-
-function executableForPlatform(rawBin: string) {
-  if (rawBin === 'node') return process.execPath;
-  if (process.platform !== 'win32') return rawBin;
-  if (/\.(?:exe|cmd|bat)$/i.test(rawBin) || rawBin.includes('/') || rawBin.includes('\\')) return rawBin;
-  const windowsCommandShims = new Set(['npm', 'npx', 'pnpm', 'yarn', 'corepack']);
-  return windowsCommandShims.has(rawBin.toLowerCase()) ? `${rawBin}.cmd` : rawBin;
-}
-
 async function pathExists(target: string) {
   try {
     await stat(target);
@@ -111,7 +97,8 @@ async function copyDir(source: string, target: string, exclude: string[] = []) {
   async function walk(current: string, dest: string) {
     const resolved = path.resolve(current);
     if (excluded.some((item) => resolved === item || resolved.startsWith(`${item}${path.sep}`))) return;
-    const entryStat = await stat(current);
+    const entryStat = await lstat(current);
+    if (entryStat.isSymbolicLink()) throw new Error(`candidate staging rejects symlink: ${path.relative(source, current) || '.'}`);
     if (entryStat.isDirectory()) {
       await mkdir(dest, { recursive: true });
       const entries = await readdir(current, { withFileTypes: true });
@@ -135,18 +122,12 @@ async function stageCapabilities(manifest: FrameworkManifest, projectRoot: strin
   }
 }
 
-async function runCommand(command: string, cwd: string) {
-  const { spawn } = await import('node:child_process');
-  const [rawBin, ...args] = parseCommand(command);
-  return await new Promise<{ ok: boolean; code: number; error?: string }>((resolve) => {
-    const child = spawn(executableForPlatform(rawBin), args, { cwd, stdio: 'ignore' });
-    child.on('error', (error: NodeJS.ErrnoException) => resolve({ ok: false, code: 1, error: error.code === 'ENOENT' ? `missing executable: ${rawBin}` : error.message }));
-    child.on('exit', (code) => resolve({ ok: code === 0, code: code ?? 1 }));
-  });
+async function runCommand(command: string, cwd: string, timeoutMs = 300_000) {
+  const result = await runBoundedCommand({ command, cwd, timeoutMs, maxOutputBytes: 256 * 1024 });
+  return { ok: result.ok, code: result.exitCode ?? 1, error: result.ok ? undefined : result.message };
 }
 
-function runtimeInstallCommand(manifest: FrameworkManifest) {
-  if (manifest.buildCommand) return manifest.buildCommand;
+function dependencyInstallCommand(manifest: FrameworkManifest) {
   if (manifest.dependencyManager?.installCommand) return manifest.dependencyManager.installCommand;
   if (manifest.dependencyManager?.tool === 'npm') return 'npm ci --omit=dev';
   return undefined;
@@ -207,7 +188,8 @@ function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {
     compatibility: manifest.taskrailCompatibility || '',
     validationCommand: manifest.validationCommand,
     testCommand: manifest.testCommand,
-    buildCommand: runtimeInstallCommand(manifest) || '',
+    installCommand: dependencyInstallCommand(manifest) || '',
+    buildCommand: manifest.buildCommand || '',
     healthCommand: manifest.healthCommand || manifest.runtimeHealthCommand || '',
     migrations: manifest.migrations || null,
     dependencyManager: manifest.dependencyManager || null,
@@ -283,32 +265,55 @@ export async function loadPlugins(manifest: FrameworkManifest): Promise<Automati
   return plugins;
 }
 
+async function withHealthTimeout<T>(operation: Promise<T> | T, timeoutMs = 30_000): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`health check timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
   const checks: Array<Promise<{ ok: boolean; tier: 'process' | 'integration' | 'end-to-end'; details?: string }>> = [];
   if (health) {
     checks.push((async () => {
-      if (health.type === 'command') {
-        const result = await runCommand(health.command, cwd);
-        return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+      try {
+        if (health.type === 'command') {
+          const result = await runCommand(health.command, cwd, 30_000);
+          return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+        }
+        if (health.type === 'file') return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
+        if (health.type === 'http') {
+          const response = await fetch(health.url, { signal: AbortSignal.timeout(30_000) });
+          return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+        }
+        return { ok: true, tier: 'process' as const };
+      } catch (error) {
+        return { ok: false, tier: 'integration' as const, details: error instanceof Error ? error.message : String(error) };
       }
-      if (health.type === 'file') return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
-      if (health.type === 'http') {
-        const response = await fetch(health.url);
-        return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
-      }
-      return { ok: true, tier: 'process' as const };
     })());
   }
   if (runtimeHealthCommand) {
     checks.push((async () => {
-      const result = await runCommand(runtimeHealthCommand, cwd);
+      const result = await runCommand(runtimeHealthCommand, cwd, 30_000);
       return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
     })());
   }
   if (plugin?.healthCheck) {
     checks.push((async () => {
-      const result = await plugin.healthCheck!();
-      return { ok: result.ok, tier: 'integration' as const, details: result.details };
+      try {
+        const result = await withHealthTimeout(plugin.healthCheck!(), 30_000);
+        return { ok: result.ok, tier: 'integration' as const, details: result.details };
+      } catch (error) {
+        return { ok: false, tier: 'integration' as const, details: error instanceof Error ? error.message : String(error) };
+      }
     })());
   }
   if (!checks.length) return { ok: true, tier: 'process' as const };
@@ -317,12 +322,12 @@ export async function runHealthCheck(health: HealthCheckDefinition | undefined, 
 }
 
 async function migrationPreflight(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.checkCommand) return { ok: true, code: 0 };
+  if (!manifest.migrations?.checkCommand) return { ok: true, code: 0, error: undefined };
   return runCommand(manifest.migrations.checkCommand, cwd);
 }
 
 async function migrationApply(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.applyCommand) return { ok: true, code: 0 };
+  if (!manifest.migrations?.applyCommand) return { ok: true, code: 0, error: undefined };
   return runCommand(manifest.migrations.applyCommand, cwd);
 }
 
@@ -398,8 +403,9 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     if (!git.clean) return { deployed: false, rolledBack: false, failure: 'production deploy requires clean git tree' };
   }
 
-  const buildCommand = runtimeInstallCommand(manifest);
-  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target, buildCommand };
+  const installCommand = dependencyInstallCommand(manifest);
+  const buildCommand = manifest.buildCommand;
+  const resolvedManifest = { ...manifest, sourceDir: source, deployDir: target };
   const preflightResult = await preflight(resolvedManifest);
   if (!preflightResult.ok) {
     return {
@@ -436,10 +442,15 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   try {
     await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_attempted', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, sha: git.sha });
     await rm(candidate, { recursive: true, force: true });
-    const sourceExcludes = Array.from(new Set([candidate, backup, stateFile, releaseRoot, historyFile, lockDir]));
+    const runtimeExcludes = (manifest.runtimePaths ?? []).map((item) => path.resolve(source, item));
+    const sourceExcludes = Array.from(new Set([candidate, backup, stateFile, releaseRoot, historyFile, lockDir, ...runtimeExcludes]));
     await copyDir(source, candidate, sourceExcludes);
     await stageCapabilities(manifest, projectRoot, candidate);
 
+    if (installCommand) {
+      const install = await runCommand(installCommand, candidate);
+      if (!install.ok) return { deployed: false, rolledBack: false, failure: install.error || 'candidate dependency installation failed' };
+    }
     const validation = await runCommand(manifest.validationCommand, candidate);
     if (!validation.ok) return { deployed: false, rolledBack: false, failure: validation.error || 'candidate validation failed' };
     const tests = await runCommand(manifest.testCommand, candidate);
@@ -451,12 +462,13 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     const migrateCheck = await migrationPreflight(manifest, candidate);
     if (!migrateCheck.ok) return { deployed: false, rolledBack: false, failure: migrateCheck.error || 'migration preflight failed' };
 
-    const controlsEnabled = Boolean(manifest.requiredChecks?.length || manifest.protectedPaths?.length);
-    if (controlsEnabled) {
-      const liveGate = await runGate({ ...manifest, buildCommand }, projectRoot, plugin ? [plugin] : []);
+    if (manifest.requiredChecks?.length) {
+      const liveGate = await runGate(manifest, projectRoot, plugin ? [plugin] : []);
       if (liveGate.verdict !== 'PASS') return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
+    }
+    if ((manifest.protectedPaths?.length ?? 0) > 0 || hasFrameworkCapability(manifest, 'change-detection')) {
       const change = await inspectChange(manifest, projectRoot);
-      if (!change.deployAllowed) return { deployed: false, rolledBack: false, failure: `protected change blocked: ${change.protectedPaths.join(', ') || 'unknown'}` };
+      if (!change.deployAllowed) return { deployed: false, rolledBack: false, failure: `protected change blocked: ${change.gitError || change.protectedPaths.join(', ') || 'unknown'}` };
     }
 
     const state = await readState(stateFile);
@@ -466,7 +478,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
       if (drift.drifted) return { deployed: false, rolledBack: false, failure: `drift detected: ${drift.files.join(', ')}` };
     }
 
-    const release = await createRelease({ ...manifest, buildCommand }, candidate, releaseRoot, options.sourceRevision || git.sha);
+    const release = await createRelease(manifest, candidate, releaseRoot, options.sourceRevision || git.sha);
     await rm(candidate, { recursive: true, force: true });
     const migration = await migrationApply(manifest, release.path);
     if (!migration.ok) return { deployed: false, rolledBack: false, failure: migration.error || 'migration failed' };

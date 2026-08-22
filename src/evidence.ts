@@ -15,6 +15,8 @@ export interface EvidenceRecord {
   releaseId?: string;
   sha?: string;
   environment?: string;
+  gitAvailable?: boolean;
+  gitError?: string;
   ts?: string;
 }
 

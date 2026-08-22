@@ -25,5 +25,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
+      - run: npm run performance:check
       - run: npm run size:check
       - run: npm run release:readiness
