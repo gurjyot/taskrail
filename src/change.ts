@@ -80,7 +80,8 @@ export async function inspectChange(
 
   const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? [], cwd);
   const risk = scoreRisk(changedFiles, protectedPaths);
-  const gateVerdict = options.gateVerdict ?? (await runGate(manifest, cwd, plugins)).verdict;
+  const gateResult = options.gateVerdict ? undefined : await runGate(manifest, cwd, plugins);
+  const gateVerdict = options.gateVerdict ?? gateResult!.verdict;
   const deployAllowed = gitAvailable && gateVerdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
   const evidencePath = await writeEvidence(cwd, {
     kind: 'verify-change',
@@ -88,7 +89,7 @@ export async function inspectChange(
     changedFiles,
     protectedPaths,
     risk,
-    gate: options.gateVerdict ? undefined : await runGate(manifest, cwd, plugins),
+    gate: gateResult,
     gitAvailable,
     gitError,
     deployAllowed,
