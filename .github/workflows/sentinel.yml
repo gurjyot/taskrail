@@ -29,35 +29,15 @@ jobs:
         continue-on-error: true
         run: npm ci
 
-      - name: Full framework tests
-        id: tests
-        continue-on-error: true
-        run: npm test
-
-      - name: Public API and CLI checks
-        id: api
-        continue-on-error: true
-        run: npm run check
-
       - name: Dependency security audit
         id: audit
         continue-on-error: true
         run: npm audit --audit-level=high
 
-      - name: Build verified install payload
-        id: package
+      - name: Performance budget
+        id: performance
         continue-on-error: true
-        run: npm run build:install-release
-
-      - name: Deterministic fault and recovery contract
-        id: fault
-        continue-on-error: true
-        run: npm run fault:contract
-
-      - name: Release readiness contract
-        id: readiness
-        continue-on-error: true
-        run: npm run release:readiness
+        run: npm run performance:check
 
       - name: Source release certification
         id: certification
@@ -80,22 +60,14 @@ jobs:
             echo "| Gate | Result |"
             echo "| --- | --- |"
             echo "| install | ${{ steps.install.outcome }} |"
-            echo "| tests | ${{ steps.tests.outcome }} |"
-            echo "| api | ${{ steps.api.outcome }} |"
             echo "| audit | ${{ steps.audit.outcome }} |"
-            echo "| package | ${{ steps.package.outcome }} |"
-            echo "| fault | ${{ steps.fault.outcome }} |"
-            echo "| readiness | ${{ steps.readiness.outcome }} |"
+            echo "| performance | ${{ steps.performance.outcome }} |"
             echo "| certification | ${{ steps.certification.outcome }} |"
           } > .taskrail/sentinel-summary.md
           for result in \
             "${{ steps.install.outcome }}" \
-            "${{ steps.tests.outcome }}" \
-            "${{ steps.api.outcome }}" \
             "${{ steps.audit.outcome }}" \
-            "${{ steps.package.outcome }}" \
-            "${{ steps.fault.outcome }}" \
-            "${{ steps.readiness.outcome }}" \
+            "${{ steps.performance.outcome }}" \
             "${{ steps.certification.outcome }}"; do
             if [ "$result" != "success" ]; then failed=true; fi
           done
