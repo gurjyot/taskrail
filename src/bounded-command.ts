@@ -34,11 +34,15 @@ function executableForPlatform(rawBin: string) {
   return new Set(['npm', 'npx', 'pnpm', 'yarn', 'corepack']).has(rawBin.toLowerCase()) ? `${rawBin}.cmd` : rawBin;
 }
 
-function appendBounded(current: Buffer, chunk: Buffer, limit: number) {
-  if (current.length >= limit) return { value: current, truncated: true };
-  const remaining = limit - current.length;
-  if (chunk.length <= remaining) return { value: Buffer.concat([current, chunk]), truncated: false };
-  return { value: Buffer.concat([current, chunk.subarray(0, remaining)]), truncated: true };
+function appendBounded(current: string, currentBytes: number, chunk: Buffer, limit: number) {
+  if (currentBytes >= limit) return { value: current, bytes: currentBytes, truncated: true };
+  const remaining = limit - currentBytes;
+  const accepted = chunk.length <= remaining ? chunk : chunk.subarray(0, remaining);
+  return {
+    value: current + accepted.toString('utf8'),
+    bytes: currentBytes + accepted.length,
+    truncated: chunk.length > remaining,
+  };
 }
 
 export async function runBoundedCommand(options: BoundedCommandOptions): Promise<BoundedCommandResult> {
@@ -50,9 +54,12 @@ export async function runBoundedCommand(options: BoundedCommandOptions): Promise
   }
 
   return await new Promise((resolve) => {
-    let stdout = Buffer.alloc(0);
-    let stderr = Buffer.alloc(0);
-    let truncated = false;
+    let stdout = '';
+    let stderr = '';
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let timedOut = false;
     let settled = false;
 
@@ -71,23 +78,24 @@ export async function runBoundedCommand(options: BoundedCommandOptions): Promise
     timer.unref?.();
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      const next = appendBounded(stdout, Buffer.from(chunk), maxOutputBytes);
+      const next = appendBounded(stdout, stdoutBytes, chunk, maxOutputBytes);
       stdout = next.value;
-      truncated ||= next.truncated;
+      stdoutBytes = next.bytes;
+      stdoutTruncated ||= next.truncated;
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      const next = appendBounded(stderr, Buffer.from(chunk), maxOutputBytes);
+      const next = appendBounded(stderr, stderrBytes, chunk, maxOutputBytes);
       stderr = next.value;
-      truncated ||= next.truncated;
+      stderrBytes = next.bytes;
+      stderrTruncated ||= next.truncated;
     });
 
     const finish = (exitCode: number | null, error?: NodeJS.ErrnoException) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      const suffix = truncated ? '\n[TRUNCATED]' : '';
-      const out = stdout.toString('utf8') + (truncated && stdout.length >= maxOutputBytes ? suffix : '');
-      const err = stderr.toString('utf8') + (truncated && stderr.length >= maxOutputBytes ? suffix : '');
+      if (stdoutTruncated) stdout += '\n[TRUNCATED]';
+      if (stderrTruncated) stderr += '\n[TRUNCATED]';
       const message = error
         ? error.code === 'ENOENT' ? `missing executable: ${rawBin}` : error.message
         : timedOut ? `timed out after ${timeoutMs}ms`
@@ -97,10 +105,10 @@ export async function runBoundedCommand(options: BoundedCommandOptions): Promise
         command: options.command,
         cwd: options.cwd,
         exitCode,
-        stdout: out,
-        stderr: err,
+        stdout,
+        stderr,
         timedOut,
-        truncated,
+        truncated: stdoutTruncated || stderrTruncated,
         message,
       });
     };
