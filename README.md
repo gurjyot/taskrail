@@ -10,6 +10,57 @@ TaskRail is a small control plane and SDK for reliable automation. It is designe
 
 **Keywords:** automation framework, AI automation, coding agents, agentic automation, workflow automation, Node.js automation, TypeScript automation, deployment automation, automation SDK, reusable components, reusable integrations, capability registry, idempotency, transactional deployment, rollback, recovery, health checks, drift detection, systemd automation, cross-platform automation, production automation, MCP automation, Codex skills, AI developer tooling.
 
+<!-- taskrail-ai-efficiency:start -->
+## Built for AI agents: small context, fast automation work
+
+**An AI agent does not need to load or repeatedly scan the whole TaskRail framework to build an automation.** TaskRail is deliberately designed around progressive disclosure: the agent reads only the small amount of context needed for the current task, while the framework handles the reusable safety and operational machinery itself.
+
+For a normal automation, an agent typically needs only:
+
+- the short repository/agent instructions relevant to the task
+- the automation manifest and business requirement
+- the names/contracts of the components and capabilities it needs
+- the implementation of a specific component or capability only when modification is actually necessary
+
+It normally does **not** need the complete TaskRail source, every capability implementation, every test suite, or the internals of deployment, locking, rollback, drift, supervision, retries, timeouts, idempotency, security and release certification in its working context.
+
+```text
+USER REQUIREMENT
+      ↓
+SHORT TASKRAIL INSTRUCTIONS
+      ↓
+LOOK UP ONLY RELEVANT COMPONENTS / CAPABILITIES
+      ↓
+WRITE THIN BUSINESS LOGIC
+      ↓
+TASKRAIL HANDLES THE REUSABLE SAFETY + OPERATIONS
+```
+
+| Without a reusable framework | With TaskRail |
+| --- | --- |
+| Agent repeatedly reasons about retries, timeouts, state, deployment, rollback and safety | Agent reuses existing TaskRail contracts and concentrates on the business requirement |
+| More infrastructure code has to be generated and reviewed | Automation stays thin and composes proven components/capabilities |
+| Larger working context is often needed to remember project-specific infrastructure | Progressive-disclosure skills and discovery commands keep context focused |
+| Safety conventions can vary between automations | TaskRail validates and enforces common contracts deterministically |
+| More repeated implementation work | More lookup/reuse, less reinvention |
+
+This architecture is intended to reduce unnecessary AI context and token use, shorten implementation time, and make generated automations more consistent. Exact token savings depend on the agent, model and task, so TaskRail does not claim a fixed percentage. The structural advantage is simpler: **the agent works with the small interface it needs; TaskRail takes care of the rest.**
+
+Useful discovery commands are intentionally concise:
+
+```bash
+taskrail components
+taskrail component <name>
+taskrail capability-find "<needed behavior>"
+taskrail capability <name>
+taskrail doctor <automation>
+taskrail check <automation>
+taskrail test <automation>
+```
+
+The expected AI workflow is therefore **discover → reuse → implement thin logic → verify**, not **scan the entire framework → rebuild infrastructure → repeat**.
+<!-- taskrail-ai-efficiency:end -->
+
 ## How TaskRail works
 
 ```text
