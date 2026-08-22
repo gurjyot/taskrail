@@ -15,6 +15,10 @@ export interface VerifyChangeResult {
   gitError?: string;
 }
 
+export interface InspectChangeOptions {
+  gateVerdict?: GateVerdict;
+}
+
 async function git(args: string[], cwd: string) {
   const quoted = args.map((value) => JSON.stringify(value)).join(' ');
   const result = await runBoundedCommand({
@@ -53,7 +57,12 @@ function matchProtected(files: string[], protectedPaths: string[], cwd: string) 
   });
 }
 
-export async function inspectChange(manifest: FrameworkManifest, cwd = process.cwd(), plugins: AutomationPlugin[] = []): Promise<VerifyChangeResult> {
+export async function inspectChange(
+  manifest: FrameworkManifest,
+  cwd = process.cwd(),
+  plugins: AutomationPlugin[] = [],
+  options: InspectChangeOptions = {},
+): Promise<VerifyChangeResult> {
   let changedFiles: string[] = [];
   let gitAvailable = true;
   let gitError: string | undefined;
@@ -71,20 +80,20 @@ export async function inspectChange(manifest: FrameworkManifest, cwd = process.c
 
   const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? [], cwd);
   const risk = scoreRisk(changedFiles, protectedPaths);
-  const gate = await runGate(manifest, cwd, plugins);
-  const deployAllowed = gitAvailable && gate.verdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
+  const gateVerdict = options.gateVerdict ?? (await runGate(manifest, cwd, plugins)).verdict;
+  const deployAllowed = gitAvailable && gateVerdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
   const evidencePath = await writeEvidence(cwd, {
     kind: 'verify-change',
     project: manifest.name,
     changedFiles,
     protectedPaths,
     risk,
-    gate,
+    gate: options.gateVerdict ? undefined : await runGate(manifest, cwd, plugins),
     gitAvailable,
     gitError,
     deployAllowed,
   });
-  return { changedFiles, protectedPaths, risk, gate: gate.verdict, deployAllowed, evidencePath, gitAvailable, gitError };
+  return { changedFiles, protectedPaths, risk, gate: gateVerdict, deployAllowed, evidencePath, gitAvailable, gitError };
 }
 
 export function reviewInputFromChange(change: VerifyChangeResult): ChangeReviewInput {
