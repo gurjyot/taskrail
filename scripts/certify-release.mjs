@@ -8,7 +8,7 @@ const gates = [];
 
 function run(name, args) {
   try {
-    execFileSync(npm, args, { cwd: root, stdio: 'inherit', env: process.env });
+    execFileSync(npm, args, { cwd: root, stdio: 'inherit', env: process.env, timeout: 10 * 60 * 1000, maxBuffer: 256 * 1024 });
     gates.push({ name, ok: true });
   } catch (error) {
     gates.push({ name, ok: false, detail: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
@@ -17,6 +17,7 @@ function run(name, args) {
 
 run('core-ci', ['test']);
 run('public-api-security', ['run', 'check']);
+run('performance', ['run', 'performance:check']);
 run('release-readiness', ['run', 'release:readiness']);
 run('install-release-build', ['run', 'build:install-release']);
 run('fault-injection-contract', ['run', 'fault:contract']);
