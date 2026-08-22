@@ -1,0 +1,153 @@
+name: Finalize 3.0.6 MCP freshness once
+
+on:
+  push:
+    branches:
+      - maintenance/3.0.6-mcp-freshness
+    paths:
+      - .github/workflows/finalize-306-mcp-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance/3.0.6-mcp-freshness
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Update MCP abilities and freshness contracts
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          # Core version metadata.
+          pkg_path = Path('package.json')
+          pkg = json.loads(pkg_path.read_text())
+          pkg['version'] = '3.0.6'
+          scripts = pkg.setdefault('scripts', {})
+          scripts['mcp:check'] = 'node scripts/check-mcp-freshness.mjs'
+          check = scripts['check']
+          if 'npm run mcp:check' not in check:
+              check = check.replace('npm run skills:check && ', 'npm run skills:check && npm run mcp:check && ', 1)
+          scripts['check'] = check
+          pkg_path.write_text(json.dumps(pkg, indent=2) + '\n')
+
+          lock_path = Path('package-lock.json')
+          lock = json.loads(lock_path.read_text())
+          lock['version'] = '3.0.6'
+          lock['packages']['']['version'] = '3.0.6'
+          lock_path.write_text(json.dumps(lock, indent=2) + '\n')
+          Path('src/version.ts').write_text("export const TASKRAIL_VERSION = '3.0.6';\n")
+
+          platform_path = Path('platform-install/manifest.json')
+          platform = json.loads(platform_path.read_text())
+          platform['taskrailVersion'] = '3.0.6'
+          platform_path.write_text(json.dumps(platform, indent=2) + '\n')
+
+          # Skills must still be explicitly reviewed for every framework version.
+          for skill in sorted(Path('skills').glob('*/SKILL.md')):
+              text = skill.read_text()
+              if 'reviewed_for_taskrail: 3.0.5' not in text:
+                  raise SystemExit(f'Unexpected skill review marker in {skill}')
+              skill.write_text(text.replace('reviewed_for_taskrail: 3.0.5', 'reviewed_for_taskrail: 3.0.6', 1))
+
+          # MCP adapter review/version contract.
+          mcp_pkg_path = Path('adapters/mcp/package.json')
+          mcp_pkg = json.loads(mcp_pkg_path.read_text())
+          mcp_pkg['version'] = '0.1.1'
+          mcp_pkg['reviewedForTaskRail'] = '3.0.6'
+          mcp_pkg_path.write_text(json.dumps(mcp_pkg, indent=2) + '\n')
+
+          core_path = Path('adapters/mcp/core.mjs')
+          core = core_path.read_text()
+          core = core.replace("export const MCP_PROTOCOL_TARGET = '2026-07-28';", "export const MCP_PROTOCOL_TARGET = '2026-07-28';\nexport const MCP_ADAPTER_VERSION = '0.1.1';", 1)
+          anchor = """  {\n    name: 'taskrail_components',\n    description: 'List TaskRail-owned reusable components.',\n    cli: () => ['components'],\n  },\n"""
+          insert = anchor + """  {\n    name: 'taskrail_component',\n    description: 'Inspect one TaskRail-owned reusable component by name.',\n    cli: ({ name }) => ['component', requireText(name, 'name', 128)],\n  },\n"""
+          if anchor not in core:
+              raise SystemExit('MCP components anchor not found')
+          core = core.replace(anchor, insert, 1)
+          anchor2 = """  {\n    name: 'taskrail_capability_find',\n    description: 'Search existing governed capabilities before considering a new capability.',\n    cli: ({ query }) => ['capability-find', requireText(query, 'query', 500)],\n  },\n"""
+          insert2 = anchor2 + """  {\n    name: 'taskrail_capability',\n    description: 'Inspect one governed TaskRail capability by name.',\n    cli: ({ name }) => ['capability', requireText(name, 'name', 128)],\n  },\n"""
+          if anchor2 not in core:
+              raise SystemExit('MCP capability anchor not found')
+          core = core.replace(anchor2, insert2, 1)
+          core_path.write_text(core)
+
+          server_path = Path('adapters/mcp/server.mjs')
+          server = server_path.read_text()
+          server = server.replace("import { MCP_PROTOCOL_TARGET, runReadTool } from './core.mjs';", "import { MCP_ADAPTER_VERSION, MCP_PROTOCOL_TARGET, runReadTool } from './core.mjs';", 1)
+          server = server.replace("{ name: 'taskrail', version: '0.1.0' }", "{ name: 'taskrail', version: MCP_ADAPTER_VERSION }", 1)
+          component_anchor = """  server.registerTool(\n    'taskrail_components',\n    { description: 'List TaskRail-owned reusable components.' },\n    async () => {\n      try { return result(await runReadTool('taskrail_components')); }\n      catch (error) { return failure(error); }\n    },\n  );\n\n"""
+          component_insert = component_anchor + """  server.registerTool(\n    'taskrail_component',\n    {\n      description: 'Inspect one TaskRail-owned reusable component by name.',\n      inputSchema: z.object({ name: z.string().min(1).max(128) }),\n    },\n    async ({ name }) => {\n      try { return result(await runReadTool('taskrail_component', { name })); }\n      catch (error) { return failure(error); }\n    },\n  );\n\n"""
+          if component_anchor not in server:
+              raise SystemExit('MCP server component anchor not found')
+          server = server.replace(component_anchor, component_insert, 1)
+          capability_anchor = """  server.registerTool(\n    'taskrail_capability_find',\n    {\n      description: 'Search existing governed capabilities before considering creation of a new capability.',\n      inputSchema: z.object({ query: z.string().min(1).max(500) }),\n    },\n    async ({ query }) => {\n      try { return result(await runReadTool('taskrail_capability_find', { query })); }\n      catch (error) { return failure(error); }\n    },\n  );\n\n"""
+          capability_insert = capability_anchor + """  server.registerTool(\n    'taskrail_capability',\n    {\n      description: 'Inspect one governed TaskRail capability by name.',\n      inputSchema: z.object({ name: z.string().min(1).max(128) }),\n    },\n    async ({ name }) => {\n      try { return result(await runReadTool('taskrail_capability', { name })); }\n      catch (error) { return failure(error); }\n    },\n  );\n\n"""
+          if capability_anchor not in server:
+              raise SystemExit('MCP server capability anchor not found')
+          server = server.replace(capability_anchor, capability_insert, 1)
+          server_path.write_text(server)
+
+          # Strengthen MCP tests around current ability catalog and safe input handling.
+          test_path = Path('adapters/mcp/test/mcp.test.mjs')
+          test = test_path.read_text()
+          needle = """  assert.equal(names.length > 0, true);\n  for (const name of names) assert.doesNotMatch(name, /(deploy|ship|update|recover|pause|resume|scaffold|write|delete|secret)/i);\n"""
+          repl = """  assert.equal(names.length > 0, true);\n  assert.equal(names.includes('taskrail_component'), true);\n  assert.equal(names.includes('taskrail_capability'), true);\n  for (const name of names) assert.doesNotMatch(name, /(deploy|ship|update|recover|pause|resume|scaffold|write|delete|secret)/i);\n"""
+          if needle not in test:
+              raise SystemExit('MCP catalog test anchor not found')
+          test = test.replace(needle, repl, 1)
+          needle2 = """  await assert.rejects(runReadTool('automation.update'), /unknown or unauthorized/);\n  await assert.rejects(runReadTool('taskrail_capability_find', { query: 'safe\\nsecond-command' }), /control characters/);\n"""
+          repl2 = """  await assert.rejects(runReadTool('automation.update'), /unknown or unauthorized/);\n  await assert.rejects(runReadTool('taskrail_capability_find', { query: 'safe\\nsecond-command' }), /control characters/);\n  await assert.rejects(runReadTool('taskrail_component', { name: 'http\\nship' }), /control characters/);\n  await assert.rejects(runReadTool('taskrail_capability', { name: '' }), /name is required/);\n"""
+          if needle2 not in test:
+              raise SystemExit('MCP safety test anchor not found')
+          test = test.replace(needle2, repl2, 1)
+          test_path.write_text(test)
+
+          # Framework-level MCP freshness gate.
+          Path('scripts/check-mcp-freshness.mjs').write_text("""import { readFile } from 'node:fs/promises';\nimport path from 'node:path';\n\nconst root = process.cwd();\nconst framework = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));\nconst adapterPath = path.join(root, 'adapters', 'mcp', 'package.json');\nconst adapter = JSON.parse(await readFile(adapterPath, 'utf8'));\nconst core = await readFile(path.join(root, 'adapters', 'mcp', 'core.mjs'), 'utf8');\nconst server = await readFile(path.join(root, 'adapters', 'mcp', 'server.mjs'), 'utf8');\n\nconst requiredAbilities = ['taskrail_components', 'taskrail_component', 'taskrail_capability_find', 'taskrail_capability'];\nconst checks = [\n  { name: 'reviewed-for-framework', ok: adapter.reviewedForTaskRail === framework.version, expected: framework.version, actual: adapter.reviewedForTaskRail ?? null },\n  { name: 'adapter-version-export', ok: core.includes(`MCP_ADAPTER_VERSION = '${adapter.version}'`), expected: adapter.version },\n  { name: 'server-uses-adapter-version', ok: server.includes('version: MCP_ADAPTER_VERSION') },\n  { name: 'peer-supports-v3', ok: String(adapter.peerDependencies?.taskrail || '').includes('<4'), actual: adapter.peerDependencies?.taskrail ?? null },\n  ...requiredAbilities.map((ability) => ({ name: `ability:${ability}`, ok: core.includes(`name: '${ability}'`) && server.includes(`'${ability}'`) })),\n];\n\nconst ok = checks.every((check) => check.ok);\nconsole.log(JSON.stringify({ schema: 1, taskrailVersion: framework.version, adapterVersion: adapter.version, reviewedForTaskRail: adapter.reviewedForTaskRail ?? null, ok, checks }, null, 2));\nif (!ok) {\n  console.error(`TaskRail MCP is stale. Review adapters/mcp for TaskRail ${framework.version}, update abilities if needed, and set reviewedForTaskRail to the exact framework version.`);\n  process.exitCode = 1;\n}\n""")
+
+          # CI + release-readiness must surface the invariant explicitly.
+          ci_path = Path('.github/workflows/ci.yml')
+          ci = ci_path.read_text()
+          skill_step = """      - name: Verify packaged skills match framework version\n        run: npm run skills:check\n"""
+          mcp_step = skill_step + """      - name: Verify MCP review and ability freshness\n        run: npm run mcp:check\n"""
+          if skill_step not in ci:
+              raise SystemExit('CI skills step not found')
+          ci_path.write_text(ci.replace(skill_step, mcp_step, 1))
+
+          rr_path = Path('scripts/release-readiness.mjs')
+          rr = rr_path.read_text()
+          rr = rr.replace("add('script:skills-check', Boolean(pkg.scripts?.['skills:check']), 'skills:check');\nadd('check:skills-freshness', String(pkg.scripts?.check || '').includes('npm run skills:check'), 'npm run check');", "add('script:skills-check', Boolean(pkg.scripts?.['skills:check']), 'skills:check');\nadd('check:skills-freshness', String(pkg.scripts?.check || '').includes('npm run skills:check'), 'npm run check');\nadd('script:mcp-check', Boolean(pkg.scripts?.['mcp:check']), 'mcp:check');\nadd('check:mcp-freshness', String(pkg.scripts?.check || '').includes('npm run mcp:check'), 'npm run check');")
+          rr = rr.replace("  'scripts/check-skills-freshness.mjs',", "  'scripts/check-skills-freshness.mjs',\n  'scripts/check-mcp-freshness.mjs',")
+          rr_path.write_text(rr)
+
+          # Add a direct regression for stale review metadata without needing a new service.
+          stale_test_path = Path('test/mcp-freshness.test.ts')
+          stale_test_path.write_text("""import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { mkdtemp, mkdir, writeFile } from 'node:fs/promises';\nimport os from 'node:os';\nimport path from 'node:path';\nimport { spawnSync } from 'node:child_process';\n\nconst script = path.resolve('scripts/check-mcp-freshness.mjs');\n\nasync function fixture(reviewedFor: string) {\n  const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-mcp-fresh-'));\n  await mkdir(path.join(root, 'adapters', 'mcp'), { recursive: true });\n  await writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '9.9.9' }));\n  await writeFile(path.join(root, 'adapters', 'mcp', 'package.json'), JSON.stringify({ version: '0.1.1', reviewedForTaskRail: reviewedFor, peerDependencies: { taskrail: '>=3 <4' } }));\n  await writeFile(path.join(root, 'adapters', 'mcp', 'core.mjs'), \"export const MCP_ADAPTER_VERSION = '0.1.1';\\nname: 'taskrail_components'\\nname: 'taskrail_component'\\nname: 'taskrail_capability_find'\\nname: 'taskrail_capability'\\n\");\n  await writeFile(path.join(root, 'adapters', 'mcp', 'server.mjs'), \"version: MCP_ADAPTER_VERSION\\n'taskrail_components'\\n'taskrail_component'\\n'taskrail_capability_find'\\n'taskrail_capability'\\n\");\n  return root;\n}\n\ntest('MCP freshness gate passes exact review version and fails stale review version', async () => {\n  const good = await fixture('9.9.9');\n  const bad = await fixture('9.9.8');\n  const pass = spawnSync(process.execPath, [script], { cwd: good, encoding: 'utf8' });\n  const fail = spawnSync(process.execPath, [script], { cwd: bad, encoding: 'utf8' });\n  assert.equal(pass.status, 0, pass.stderr);\n  assert.notEqual(fail.status, 0);\n  assert.match(fail.stderr, /MCP is stale/i);\n});\n""")
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text()
+          section = """## 3.0.6\n\n- Reviewed the optional MCP adapter against TaskRail 3.0.6 and bumped the adapter to 0.1.1.\n- Added safe read-only MCP abilities for component detail and capability detail so MCP matches TaskRail's progressive-disclosure workflow.\n- Added an MCP freshness gate that fails framework checks/releases when the adapter review version is stale or core progressive-disclosure abilities disappear.\n- Added CI/release-readiness visibility and regression coverage for stale MCP review metadata.\n- Reviewed all packaged skills for 3.0.6 under the existing skill-freshness invariant.\n\n"""
+          if '## 3.0.6\n' not in text:
+              changelog.write_text(text.replace('# Changelog\n\n', '# Changelog\n\n' + section, 1))
+          PY
+      - run: npm ci
+      - run: npm run skills:check
+      - run: npm run mcp:check
+      - run: npm run size:sync
+      - name: Remove one-time workflow and commit
+        run: |
+          rm .github/workflows/finalize-306-mcp-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/version.ts platform-install/manifest.json skills adapters/mcp scripts/check-mcp-freshness.mjs scripts/release-readiness.mjs .github/workflows/ci.yml test/mcp-freshness.test.ts CHANGELOG.md README.md .github/workflows/finalize-306-mcp-once.yml
+          git commit -m "Review and gate MCP for TaskRail 3.0.6 [skip ci]"
+          git push origin HEAD:maintenance/3.0.6-mcp-freshness
