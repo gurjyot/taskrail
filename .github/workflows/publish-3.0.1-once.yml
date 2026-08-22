@@ -1,0 +1,64 @@
+name: Publish TaskRail 3.0.1 Once
+
+on:
+  push:
+    branches: [release-tag-3.0.1]
+    paths: [.github/workflows/publish-3.0.1-once.yml]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.0.1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify tag matches package version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          test "$VERSION" = "3.0.1"
+          test "$(git rev-parse HEAD)" = "6d10ebe82f724e2c6812386d18c7fc7349fac1f6"
+      - name: Install development dependencies
+        run: npm ci
+      - name: Run full release certification
+        run: npm run certify
+      - name: Build exact install payload
+        run: npm run build:install-release
+      - name: Add native setup files and checksums
+        run: |
+          cp installers/taskrail-install-linux.sh release-install/TaskRail-Install-Linux.sh
+          cp installers/TaskRail-Install.command release-install/TaskRail-Install-macOS.command
+          cp installers/TaskRail-Install.ps1 release-install/TaskRail-Install-Windows.ps1
+          cd release-install
+          sha256sum * > SHA256SUMS
+      - name: Attest release checksum manifest
+        uses: actions/attest@v4
+        with:
+          subject-path: release-install/SHA256SUMS
+      - name: Attest TaskRail install manifest
+        uses: actions/attest@v4
+        with:
+          subject-path: release-install/taskrail-install-manifest.json
+      - name: Create GitHub release from verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v3.0.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists"
+            exit 0
+          fi
+          gh release create v3.0.1 release-install/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "TaskRail v3.0.1"
