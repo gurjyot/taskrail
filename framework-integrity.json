@@ -6,49 +6,49 @@
     {
       "name": "packaged-skills",
       "reviewedForTaskRail": "3.0.6",
-      "check": "npm run skills:check",
+      "checkId": "skills",
       "reason": "Agent instructions must match current CLI, deployment, capability, and safety contracts."
     },
     {
       "name": "mcp-adapter-and-abilities",
       "reviewedForTaskRail": "3.0.6",
-      "check": "npm run mcp:check",
+      "checkId": "mcp",
       "reason": "MCP read abilities and adapter contracts must match the current progressive-disclosure CLI surface."
     },
     {
       "name": "framework-version-metadata",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-version-metadata.mjs",
+      "checkId": "version-metadata",
       "reason": "Package, source and platform installer metadata must identify the same framework release."
     },
     {
       "name": "public-api-and-cli-contract",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-public-contract.mjs",
+      "checkId": "public-contract",
       "reason": "Stable public exports and canonical CLI entry points must remain present and deliberate."
     },
     {
       "name": "profiles-and-framework-capabilities",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-profile-surface.mjs",
+      "checkId": "profiles",
       "reason": "Built-in profiles and framework capabilities are part of the automation author contract."
     },
     {
       "name": "installer-and-release-control",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-release-surface.mjs",
+      "checkId": "release-control",
       "reason": "Installers, immutable release assets, certification and release controls must still line up."
     },
     {
       "name": "performance-regression-contract",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-performance-contract.mjs",
+      "checkId": "performance",
       "reason": "Performance budgets and baselines must remain present and intentionally calibrated."
     },
     {
       "name": "human-and-agent-documentation",
       "reviewedForTaskRail": "3.0.6",
-      "check": "node scripts/check-documentation-surface.mjs",
+      "checkId": "documentation",
       "reason": "README, framework guidance and agent instructions must not silently lag release behavior."
     }
   ]
