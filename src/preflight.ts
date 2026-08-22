@@ -58,7 +58,7 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
   if (manifest.dependencyManager) {
     const lockfile = manifest.dependencyManager.lockfile || (manifest.dependencyManager.tool === 'npm' ? 'package-lock.json' : undefined);
     if (lockfile) {
-      const lockfilePath = path.isAbsolute(lockfile) ? lockfile : path.resolve(cwd, lockfile);
+      const lockfilePath = path.isAbsolute(lockfile) ? lockfile : path.resolve(paths.sourceDir, lockfile);
       push(`lockfile:${lockfile}`, await stat(lockfilePath).then(() => true, () => false));
     }
   }
