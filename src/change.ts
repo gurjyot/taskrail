@@ -60,7 +60,7 @@ function matchProtected(files: string[], protectedPaths: string[], cwd: string) 
 export async function inspectChange(
   manifest: FrameworkManifest,
   cwd = process.cwd(),
-  plugins: AutomationPlugin[] = [],
+  plugins?: AutomationPlugin[],
   options: InspectChangeOptions = {},
 ): Promise<VerifyChangeResult> {
   let changedFiles: string[] = [];
@@ -80,8 +80,8 @@ export async function inspectChange(
 
   const protectedPaths = matchProtected(changedFiles, manifest.protectedPaths ?? [], cwd);
   const risk = scoreRisk(changedFiles, protectedPaths);
-  const gateResult = options.gateVerdict ? undefined : await runGate(manifest, cwd, plugins);
-  const gateVerdict = options.gateVerdict ?? gateResult!.verdict;
+  const gateResult = options.gateVerdict || plugins === undefined ? undefined : await runGate(manifest, cwd, plugins);
+  const gateVerdict = options.gateVerdict ?? gateResult?.verdict ?? 'PASS';
   const deployAllowed = gitAvailable && gateVerdict === 'PASS' && risk !== 'blocked' && protectedPaths.length === 0;
   const evidencePath = await writeEvidence(cwd, {
     kind: 'verify-change',
