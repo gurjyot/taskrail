@@ -524,7 +524,7 @@ test('ship accepts an automation target from workspace root', async () => {
   });
   execFileSync('git', ['add', '.'], { cwd: base, stdio: 'ignore' });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: base, stdio: 'ignore' });
-  const output = execFileSync(process.execPath, [cli, 'ship', 'demo'], { cwd: base, encoding: 'utf8' });
+  const output = execFileSync(process.execPath, [path.resolve('dist/src/taskrail-cli.js'), 'ship', 'demo'], { cwd: base, encoding: 'utf8' });
   assert.match(output, /STATUS: PASS/);
   assert.equal(await readFile(path.join(base, 'live', 'demo', 'index.txt'), 'utf8'), 'v1');
   const receipt = JSON.parse(await readFile(path.join(base, 'live', '.taskrail', 'receipts', 'latest.json'), 'utf8'));
