@@ -86,5 +86,5 @@ test('node runtime profile requires Node 22 or newer', () => {
     validationCommand: 'node -e "process.exit(0)"',
     testCommand: 'node -e "process.exit(0)"',
   });
-  assert.equal(manifest.runtimeVersion, '>=22');
+  assert.equal(manifest.runtimeVersion, '>=22.0.0');
 });
