@@ -10,13 +10,17 @@ export interface LockInfo {
   cwd?: string;
 }
 
+function currentHost() {
+  return process.env.HOSTNAME || 'unknown';
+}
+
 export async function acquireLock(lockDir: string, infoOverride: Partial<LockInfo> = {}): Promise<{ ok: true; info: LockInfo } | { ok: false; holder?: string; info?: LockInfo; stale?: boolean }> {
   try {
     await mkdir(path.dirname(lockDir), { recursive: true });
     await mkdir(lockDir);
     const info: LockInfo = {
       pid: process.pid,
-      host: process.env.HOSTNAME || 'unknown',
+      host: currentHost(),
       startedAt: new Date().toISOString(),
       cwd: process.cwd(),
       ...infoOverride,
@@ -48,9 +52,14 @@ export async function readLock(lockDir: string): Promise<LockInfo | null> {
 export async function isStale(info: LockInfo, lockDir: string, maxAgeMs = 15 * 60 * 1000) {
   try {
     const st = await stat(path.join(lockDir, 'lock.json'));
+    const startedAtMs = Date.parse(info.startedAt);
+    const leaseAgeMs = Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : Date.now() - st.mtimeMs;
+
+    if (info.host !== currentHost()) return leaseAgeMs > maxAgeMs;
+
     try {
       process.kill(info.pid, 0);
-      return Date.now() - st.mtimeMs > maxAgeMs;
+      return false;
     } catch {
       return true;
     }

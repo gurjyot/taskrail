@@ -39,6 +39,9 @@ export interface InstallPlatformOptions {
 }
 
 const supported = new Set<SupportedPlatform>(['linux', 'darwin', 'win32']);
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const MAX_MANIFEST_BYTES = 256 * 1024;
+const MAX_ADAPTER_BYTES = 4 * 1024 * 1024;
 
 export function detectSupportedPlatform(platform: NodeJS.Platform = process.platform): SupportedPlatform {
   if (!supported.has(platform as SupportedPlatform)) throw new Error(`unsupported TaskRail platform: ${platform}`);
@@ -58,18 +61,57 @@ export function releaseManifestUrl(version: string) {
   return `https://github.com/gurjyot/taskrail/releases/download/v${version}/taskrail-platform-manifest.json`;
 }
 
-async function readTextSource(source: string) {
-  if (source.startsWith('file://')) return readFile(new URL(source), 'utf8');
-  const response = await fetch(source, { redirect: 'follow', headers: { 'user-agent': 'taskrail-platform-bootstrap' } });
-  if (!response.ok) throw new Error(`platform setup download failed: ${response.status} ${response.statusText}`);
-  return response.text();
+async function readLocalBytes(source: string, maxBytes: number, label: string) {
+  const file = new URL(source);
+  const info = await stat(file);
+  if (info.size > maxBytes) throw new Error(`${label} exceeds ${maxBytes} byte limit`);
+  return readFile(file);
 }
 
-async function readBytesSource(source: string) {
-  if (source.startsWith('file://')) return readFile(new URL(source));
-  const response = await fetch(source, { redirect: 'follow', headers: { 'user-agent': 'taskrail-platform-bootstrap' } });
-  if (!response.ok) throw new Error(`platform adapter download failed: ${response.status} ${response.statusText}`);
-  return Buffer.from(await response.arrayBuffer());
+async function readResponseBytes(response: Response, maxBytes: number, label: string) {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error(`${label} exceeds ${maxBytes} byte limit`);
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`${label} exceeds ${maxBytes} byte limit`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function fetchBounded(source: string, label: string, maxBytes: number) {
+  const response = await fetch(source, {
+    redirect: 'follow',
+    headers: { 'user-agent': 'taskrail-platform-bootstrap' },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`${label} download failed: ${response.status} ${response.statusText}`);
+  return readResponseBytes(response, maxBytes, label);
+}
+
+async function readTextSource(source: string) {
+  const bytes = source.startsWith('file://')
+    ? await readLocalBytes(source, MAX_MANIFEST_BYTES, 'platform manifest')
+    : await fetchBounded(source, 'platform manifest', MAX_MANIFEST_BYTES);
+  return bytes.toString('utf8');
+}
+
+async function readBytesSource(source: string, maxBytes = MAX_ADAPTER_BYTES) {
+  if (source.startsWith('file://')) return readLocalBytes(source, maxBytes, 'platform adapter');
+  return fetchBounded(source, 'platform adapter', maxBytes);
 }
 
 function validateManifest(value: unknown, version: string): PlatformAdapterManifest {
@@ -111,8 +153,11 @@ export async function installPlatformAdapter(options: InstallPlatformOptions): P
   const manifest = validateManifest(JSON.parse(await readTextSource(manifestSource)), options.version);
   const entry = manifest.platforms?.[platform];
   if (!entry?.file || !entry.sha256 || !entry.id) throw new Error(`platform manifest has no valid ${platform} adapter`);
+  if (entry.bytes !== undefined && (!Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || entry.bytes > MAX_ADAPTER_BYTES)) {
+    throw new Error(`platform adapter size declaration is invalid for ${platform}`);
+  }
   const adapterSource = resolveAdapterSource(manifestSource, entry.file);
-  const bytes = await readBytesSource(adapterSource);
+  const bytes = await readBytesSource(adapterSource, entry.bytes ?? MAX_ADAPTER_BYTES);
   const digest = sha256(bytes);
   if (digest !== entry.sha256.toLowerCase()) throw new Error(`platform adapter checksum mismatch for ${platform}`);
   if (entry.bytes !== undefined && bytes.length !== entry.bytes) throw new Error(`platform adapter size mismatch for ${platform}`);

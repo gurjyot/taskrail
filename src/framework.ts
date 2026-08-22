@@ -39,7 +39,7 @@ function interpolate(value: unknown, automation: string): unknown {
 const runtimePaths = ['node_modules', 'logs', 'state', 'tmp', 'cache'];
 
 export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition> = {
-  'node-runtime@1': { id: 'node-runtime@1', apply: () => ({ runtime: 'node', runtimeVersion: '>=18.0.0 <23.0.0', runtimePaths }) },
+  'node-runtime@1': { id: 'node-runtime@1', apply: () => ({ runtime: 'node', runtimeVersion: '>=22.0.0', runtimePaths }) },
   'shell-runtime@1': { id: 'shell-runtime@1', apply: () => ({ runtime: 'shell', runtimePaths: ['logs', 'state', 'tmp', 'cache'] }) },
   'php-runtime@1': { id: 'php-runtime@1', apply: () => ({ runtime: 'php', runtimePaths: ['logs', 'state', 'tmp', 'cache'] }) },
   'systemd@1': {
@@ -154,19 +154,27 @@ function detectProjectUnitHints(manifest: FrameworkManifest, cwd: string) {
 }
 
 function detectSystemdUnitHints(manifest: FrameworkManifest) {
-  const service = spawnSync('systemctl', ['cat', `${manifest.name}.service`], { encoding: 'utf8' });
-  const timer = spawnSync('systemctl', ['cat', `${manifest.name}.timer`], { encoding: 'utf8' });
+  const service = spawnSync('systemctl', ['cat', `${manifest.name}.service`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
+  const timer = spawnSync('systemctl', ['cat', `${manifest.name}.timer`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
   return { service: service.status === 0, timer: timer.status === 0 };
 }
 
+function assertFrameworkReferences(manifest: FrameworkManifest) {
+  if (manifest.profile && !frameworkProfiles[manifest.profile]) throw new Error(`unknown TaskRail profile: ${manifest.profile}`);
+  for (const id of manifest.frameworkCapabilities ?? []) {
+    if (!frameworkCapabilities[id]) throw new Error(`unknown TaskRail framework capability: ${id}`);
+  }
+}
+
 export function resolveFrameworkManifest(manifest: FrameworkManifest): FrameworkManifest {
+  assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
   let resolved = profile ? clone(interpolate(profile.defaults, automation) as FrameworkManifest) : {} as FrameworkManifest;
   const frameworkCaps = [...new Set([...(profile?.frameworkCapabilities ?? []), ...(manifest.frameworkCapabilities ?? [])])];
   for (const id of frameworkCaps) {
     const capability = frameworkCapabilities[id];
-    if (!capability) continue;
+    if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
   resolved = deepMerge(resolved, clone(manifest));
@@ -175,13 +183,14 @@ export function resolveFrameworkManifest(manifest: FrameworkManifest): Framework
 }
 
 function resolveFrameworkDefaults(manifest: FrameworkManifest) {
+  assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
   let resolved = profile ? clone(interpolate(profile.defaults, automation) as FrameworkManifest) : {} as FrameworkManifest;
   const frameworkCaps = [...new Set([...(profile?.frameworkCapabilities ?? []), ...(manifest.frameworkCapabilities ?? [])])];
   for (const id of frameworkCaps) {
     const capability = frameworkCapabilities[id];
-    if (!capability) continue;
+    if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
   if (profile) resolved.frameworkCapabilities = frameworkCaps;
