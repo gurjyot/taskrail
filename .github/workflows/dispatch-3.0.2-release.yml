@@ -1,0 +1,21 @@
+name: Dispatch TaskRail 3.0.2 Release
+
+on:
+  push:
+    branches:
+      - release-3.0.2-dispatch
+    paths:
+      - .github/workflows/dispatch-3.0.2-release.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch canonical release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag=v3.0.2
