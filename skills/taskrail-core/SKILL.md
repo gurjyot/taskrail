@@ -1,6 +1,7 @@
 ---
 name: taskrail-core
 description: Maintain TaskRail core and its fixed component platform with strict compatibility and component acceptance gates.
+reviewed_for_taskrail: 3.0.4
 ---
 # TaskRail Core / Component Maintenance
 
@@ -49,10 +50,34 @@ Every component must:
 
 Prefer adapting existing hardened TaskRail primitives rather than creating parallel implementations.
 
-## Compatibility
+## CLI and command contracts
 
-Do not close existing import paths accidentally. Additive public APIs may ship within the major line. Breaking contract changes require a major TaskRail version and an explicit migration path.
+`taskrail test` and `taskrail ship` each have one canonical implementation routed by `taskrail-cli.ts`. Do not reintroduce duplicate command implementations in legacy CLI files.
+
+The bounded command runner is deliberately not a shell. Do not add implicit shell execution to support pipes, redirects, `&&`, or inline environment assignments. Complex operations belong in explicit scripts.
+
+TaskRail supports zero or one operational plugin per automation manifest. Do not broaden this to multi-plugin deployment aggregation without a demonstrated contract and concrete need.
+
+## Compatibility and package surface
+
+Do not close existing stable import paths accidentally. New code should use the deliberate public APIs. The v3 `./dist/*` deep-import bridge exists only for compatibility and must not be expanded; removal requires a major release and consumer migration evidence.
+
+Additive public APIs may ship within the major line. Breaking contract changes require a major TaskRail version and an explicit migration path.
+
+## Release skill freshness gate
+
+Skills are part of the framework contract. Every TaskRail version must explicitly review every packaged `skills/*/SKILL.md` file. The `reviewed_for_taskrail` value must exactly match `package.json` and `npm run skills:check` must pass.
+
+A skill review may conclude that no prose change is necessary, but the review marker must still advance with the framework version. Never bypass or weaken this gate to complete a release.
+
+## Performance discipline
+
+Preserve measurement-based performance checks. Startup regression should be evaluated against the checked-in baseline as well as absolute ceilings, and memory measurement should represent the spawned TaskRail CLI process rather than the benchmark runner.
+
+Do not introduce caches, persistent inventories, indexes, daemons, worker pools, or other optimization machinery unless measurements demonstrate a material bottleneck. Prefer the smallest change that restores a measured budget.
 
 ## Core restraint
 
 TaskRail remains an SDK/control plane, not a central execution engine. Do not introduce mandatory storage, worker pools, schedulers, vector stores, AI calls, or runtime services to solve development-time convenience problems.
+
+Once correctness, compatibility, security, release gates, performance budgets, and skill freshness are green, freeze core and return effort to automations rather than continuing speculative framework expansion.
