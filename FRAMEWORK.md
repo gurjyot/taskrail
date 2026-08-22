@@ -35,6 +35,30 @@ Forbidden dependencies:
 10. Deployment must validate, test, build candidate, back up, replace atomically, check health, and roll back if needed.
 11. Projects may use other frameworks internally.
 
+## Command execution contract
+
+TaskRail manifest commands are executed by the bounded argument runner, **not by a shell**. Quoted and unquoted arguments are supported, but shell syntax is intentionally not interpreted. Do not place shell-only constructs such as environment-variable prefixes, pipes, redirects, command chaining, command substitution, or glob-dependent logic directly in manifest commands.
+
+For complex command sequences, put the logic in a checked-in script and make the manifest invoke that script. This keeps timeout/output bounds deterministic and avoids expanding TaskRail's shell-attack surface.
+
+## Plugin contract
+
+A managed automation may declare **zero or one operational plugin**. Plugins are optional extension hooks for validation, health, backup/rollback, or change review; they are not a composition system. Reusable integration behavior belongs in capabilities instead. Manifests declaring multiple plugins fail validation rather than implying unsupported aggregation semantics.
+
+## Public package surface
+
+Use the deliberate public entry points:
+
+- `taskrail/components`
+- `taskrail/capabilities`
+- `taskrail/manifest`
+- `taskrail/testing`
+- `taskrail/control`
+- `taskrail/agent`
+- `taskrail/platform`
+
+Deep `taskrail/dist/*` imports remain available in the v3 line only as a legacy compatibility surface. They are internal, unstable, and may be removed in the next major release after consumer checks. New code must not depend on them. Source-tree imports are not part of the published package contract.
+
 ## Automation design workflow
 
 Before substantial implementation:
@@ -119,3 +143,5 @@ TaskRail includes:
 ## Freeze policy
 
 Add to core or the component catalog only when a real repeated generic problem cannot be solved cleanly with the existing component surface, a governed capability, or automation-local logic. Components evolve more slowly than capabilities.
+
+Do not add caches, indexes, daemons, or new fleet-wide coordination merely for theoretical scale. Introduce an in-memory workspace inventory or capability-governance optimization only when measured repository-scale profiling shows discovery/governance work is materially affecting a real invocation.
