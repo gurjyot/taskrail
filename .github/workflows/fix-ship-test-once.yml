@@ -1,0 +1,39 @@
+name: Fix canonical ship test once
+
+on:
+  push:
+    branches:
+      - hotfix/3.0.3-deploy-preflight
+    paths:
+      - .github/workflows/fix-ship-test-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/3.0.3-deploy-preflight
+      - name: Point workspace ship test at public dispatcher
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('test/release-fixes.test.ts')
+          text = path.read_text()
+          old = "const output = execFileSync(process.execPath, [cli, 'ship', 'demo'], { cwd: base, encoding: 'utf8' });"
+          new = "const output = execFileSync(process.execPath, [path.resolve('dist/src/taskrail-cli.js'), 'ship', 'demo'], { cwd: base, encoding: 'utf8' });"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale ship invocation, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/fix-ship-test-once.yml
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/release-fixes.test.ts .github/workflows/fix-ship-test-once.yml
+          git commit -m "Test ship through canonical CLI dispatcher [skip ci]"
+          git push origin HEAD:hotfix/3.0.3-deploy-preflight
