@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.3
+
+- Fixed deployment preflight so relative dependency lockfiles resolve from the automation's resolved source directory during `taskrail ship`, matching standalone checks and nested workspace layouts.
+- Removed bypassed duplicate `test` and `ship` implementations from the legacy CLI path and added regression coverage for the canonical command routes.
+- Made the plugin contract explicit and fail-closed: managed automations support zero or one operational plugin rather than implying undefined multi-plugin aggregation.
+- Removed the nonfunctional published `./src/*` export while retaining `./dist/*` as a documented legacy v3 compatibility surface for later major-version removal.
+- Strengthened performance certification with a lightweight relative startup baseline and actual spawned-CLI maximum RSS measurement instead of benchmark-process RSS.
+- Documented the bounded non-shell command contract and reinforced the freeze policy against speculative caches, indexes, daemons, or scale machinery without measured need.
+
 ## 3.0.2
 
 - Fixed relative dependency lockfile resolution so `taskrail test` and preflight resolve lockfiles from the automation workspace instead of the caller's working directory.
