@@ -31,7 +31,7 @@ function capabilityDoc(input: CapabilityScaffoldInput) {
 }
 
 function testSkeleton(name: string) {
-  return `import test from 'node:test';\nimport assert from 'node:assert/strict';\n\ntest('${name} contract', async () => {\n  assert.ok(true, 'replace with capability contract assertions');\n});\n`;
+  return `import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport * as capability from '../index.js';\n\ntest('${name} loads and exposes its run contract', () => {\n  assert.equal(typeof capability.run, 'function');\n});\n`;
 }
 
 export async function scaffoldCapability(input: CapabilityScaffoldInput, existing: CapabilityContract[]): Promise<CapabilityScaffoldResult> {
