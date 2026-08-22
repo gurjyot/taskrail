@@ -23,8 +23,17 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
   push('compatibility', isTaskRailCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility));
   push('sourceDir', await stat(paths.sourceDir).then(() => true, () => false));
   if (envInfo.name === 'production') {
-    push('deployDir', await stat(paths.deployDir).then(() => true, () => false));
-    push('deployWritable', await access(paths.deployDir, constants.W_OK).then(() => true, () => false));
+    const deployExists = await stat(paths.deployDir).then((value) => value.isDirectory(), () => false);
+    if (deployExists) {
+      push('deployDir', true, 'existing directory');
+      push('deployWritable', await access(paths.deployDir, constants.W_OK).then(() => true, () => false), 'existing target');
+    } else {
+      const parent = path.dirname(paths.deployDir);
+      const parentReady = await stat(parent).then((value) => value.isDirectory(), () => false);
+      const parentWritable = parentReady && await access(parent, constants.W_OK).then(() => true, () => false);
+      push('deployDir', parentReady, parentReady ? 'new target allowed; parent exists' : 'deploy parent missing');
+      push('deployWritable', parentWritable, parentWritable ? 'deploy parent writable' : 'deploy parent not writable');
+    }
   } else {
     const parent = manifest.deployDir === '.' ? cwd : paths.deployDir;
     await mkdir(parent, { recursive: true }).catch(() => undefined);
