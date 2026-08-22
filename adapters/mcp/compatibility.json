@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "reviewedForTaskRail": "3.0.5",
+  "exposedCommands": [
+    "components",
+    "capability-find",
+    "usage",
+    "conformance",
+    "security",
+    "agent"
+  ],
+  "excludedCommands": {
+    "component": "Not currently exposed; broad component listing is sufficient for the read-only MCP surface.",
+    "capability-check": "Not currently exposed; capability validation remains a CLI workflow until its MCP input contract is reviewed.",
+    "update-plan": "Can participate in shared-update control flags; keep outside the read-only MCP boundary.",
+    "isolation-audit": "Not currently exposed; conformance is the stable aggregate MCP check.",
+    "init": "Mutates/scaffolds files and is intentionally forbidden over MCP.",
+    "platform": "Includes installation and therefore remains outside the read-only MCP surface.",
+    "update": "Deployment/control mutation; forbidden over MCP.",
+    "recover": "Recovery/control mutation; forbidden over MCP.",
+    "diagnostics": "May create diagnostic artifacts; keep outside the strict read-only MCP surface.",
+    "test": "Execution surface intentionally kept on the canonical CLI.",
+    "ship": "Deployment mutation; forbidden over MCP."
+  }
+}
