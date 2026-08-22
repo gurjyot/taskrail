@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
 import { findAutomation } from './capabilities.js';
 import { loadManifest } from './config.js';
 import { resolveFrameworkManifest } from './framework.js';
@@ -25,13 +24,7 @@ export async function runDeclaredTestCli(args = process.argv.slice(3)) {
     return;
   }
 
-  let raw;
-  try {
-    raw = await loadManifest(manifestPath);
-  } catch {
-    JSON.parse(await readFile(manifestPath, 'utf8'));
-    throw new Error(`unable to load automation manifest: ${manifestPath}`);
-  }
+  const raw = await loadManifest(manifestPath);
   const manifest = resolveFrameworkManifest(raw);
   const cwd = path.dirname(manifestPath);
   const preflightResult = await preflight(manifest, cwd);
