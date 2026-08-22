@@ -23,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify packaged skills match framework version
+        run: npm run skills:check
       - run: npm test
       - run: npm run check
       - run: npm run performance:check

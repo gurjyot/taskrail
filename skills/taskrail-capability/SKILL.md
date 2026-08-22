@@ -1,6 +1,7 @@
 ---
 name: taskrail-capability
 description: Create, extend, validate, deprecate, and govern reusable TaskRail capabilities without duplication.
+reviewed_for_taskrail: 3.0.4
 ---
 # TaskRail Capability Authoring
 
@@ -45,12 +46,14 @@ The scaffold performs deterministic overlap checks before writing files. Hard co
 
 ## Implementation boundaries
 
-- use `taskrail/components` for generic infrastructure
-- do not import TaskRail internals
+- use deliberate public surfaces such as `taskrail/components` rather than TaskRail deep internals
 - do not create TaskRail components here
 - keep authentication/config values outside git
 - keep service-specific behavior here, not in TaskRail core
 - avoid generic orchestration/business strategy in capability code
+- do not depend on the legacy `taskrail/dist/*` compatibility bridge for new capability code
+
+TaskRail's bounded command execution is not a shell. If a capability needs a complex local command, put that behavior in an explicit checked-in script instead of embedding shell operators in a manifest command.
 
 ## Verification
 
@@ -72,3 +75,5 @@ Capabilities may be `active`, `deprecated`, or `superseded`. Superseded capabili
 ## Promotion rule
 
 If reusable integration/technical logic appears in a second automation, evaluate capability extraction before copying it.
+
+Do not optimize the capability catalogue for hypothetical scale. Keep deterministic duplicate detection until measurements demonstrate that catalogue size makes it a material bottleneck.

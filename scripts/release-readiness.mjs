@@ -26,6 +26,8 @@ add('script:fault-contract', Boolean(pkg.scripts?.['fault:contract']), 'fault:co
 add('script:certify', Boolean(pkg.scripts?.certify), 'certify');
 add('script:size-sync', Boolean(pkg.scripts?.['size:sync']), 'size:sync');
 add('script:size-check', Boolean(pkg.scripts?.['size:check']), 'size:check');
+add('script:skills-check', Boolean(pkg.scripts?.['skills:check']), 'skills:check');
+add('check:skills-freshness', String(pkg.scripts?.check || '').includes('npm run skills:check'), 'npm run check');
 add('release:sigstore-attestation', releaseWorkflow.includes('actions/attest@v4') && releaseWorkflow.includes('id-token: write') && releaseWorkflow.includes('attestations: write'), 'actions/attest@v4');
 add('release:certification', releaseWorkflow.includes('npm run certify'), 'npm run certify');
 
@@ -70,6 +72,7 @@ for (const file of [
   'scripts/certify-release.mjs',
   'scripts/test-mcp-packed.mjs',
   'scripts/sync-readme-size.mjs',
+  'scripts/check-skills-freshness.mjs',
   'docs/diagnostics-and-security.md',
   '.github/workflows/ci.yml',
   '.github/workflows/golden-path.yml',
