@@ -1,1 +1,1 @@
-export const TASKRAIL_VERSION = '3.0.2';
+export const TASKRAIL_VERSION = '3.0.3';
