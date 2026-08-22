@@ -7,22 +7,22 @@
   <a href="https://github.com/gurjyot/taskrail/actions/workflows/ci.yml"><img alt="TaskRail CI" src="https://github.com/gurjyot/taskrail/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Node 22+" src="https://img.shields.io/badge/Node-%3E%3D22-339933?logo=node.js&logoColor=white">
   <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-brightgreen">
-  <img alt="CLI startup" src="https://img.shields.io/badge/CI%20CLI%20startup-~54%20ms-blue">
+  <img alt="CLI startup" src="https://img.shields.io/badge/CI%20CLI%20startup-~50%20ms-blue">
   <img alt="Core package install" src="https://img.shields.io/badge/CI%20core%20install-~0.83%20s-blue">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/gurjyot/taskrail"></a>
 </p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~218 KiB compressed / ~1140 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~212 KiB compressed / ~1122 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 ## TaskRail in 15 seconds
 
 | | Current measured / enforced state |
 | --- | --- |
-| **Core package** | ~218 KiB compressed / ~1140 KiB unpacked |
+| **Core package** | ~212 KiB compressed / ~1122 KiB unpacked |
 | **Runtime npm dependencies** | **0** |
-| **CLI startup** | ~54 ms in the current Ubuntu CI performance run |
+| **CLI startup** | ~50 ms median / ~52 ms p95 in the current Ubuntu CI performance run |
 | **Core package install** | ~0.83 s in the current Ubuntu Golden Path |
 | **AI-agent context** | Progressive disclosure: load only the manifest, relevant instructions, components and capabilities |
 | **Production changes** | Validate → stage → activate → health-check → commit or rollback |
@@ -234,13 +234,13 @@ MCP is deliberately outside the core package. The adapter is stdio-first, has no
 
 TaskRail measures real execution rather than relying on claims. CI currently checks:
 
-- cold CLI startup
+- cold CLI startup across multiple fresh processes, including median, p95 and max
 - representative manifest/config validation time
 - resident memory
 - compressed and unpacked package size
 - clean packed-package installation on Linux, macOS and Windows
 
-Performance budgets fail the release gate when the framework exceeds its allowed envelope. The intention is to detect gradual degradation before it becomes operational pain—not to add caches, daemons or lazy-loading machinery unless profiling proves they provide meaningful value.
+Each CI run preserves a machine-readable performance report so performance changes can be compared over time. Performance budgets fail the release gate when the framework exceeds its allowed envelope. The intention is to detect gradual degradation before it becomes operational pain—not to add caches, daemons or lazy-loading machinery unless profiling proves they provide meaningful value.
 
 Current core budgets are intentionally generous safety ceilings rather than targets:
 
@@ -248,7 +248,7 @@ Current core budgets are intentionally generous safety ceilings rather than targ
 | --- | ---: |
 | Compressed package | 512 KiB |
 | Unpacked package | 2 MiB |
-| CLI startup | 1000 ms |
+| CLI startup p95 | 1000 ms |
 | Representative validation | 5000 ms |
 | RSS | 128 MiB |
 
@@ -273,7 +273,7 @@ Internal implementation files can evolve without turning every source path into 
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~218 KiB compressed / ~1140 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~212 KiB compressed / ~1122 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. CI fails when these README figures drift, and the release gate enforces the package-size budget.
 <!-- taskrail-footprint:end -->
