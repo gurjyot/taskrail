@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "repositories": [
+    {
+      "name": "taskrail-capabilities",
+      "kind": "capabilities",
+      "path": "../taskrail-capabilities",
+      "required": true,
+      "enforceCurrentMajor": true,
+      "checks": [
+        { "command": "npm", "args": ["test"] },
+        { "command": "npm", "args": ["run", "check"] }
+      ]
+    },
+    {
+      "name": "taskrail-automations",
+      "kind": "automations",
+      "path": "../taskrail-automations",
+      "required": true,
+      "enforceCurrentMajor": true,
+      "checks": [
+        { "command": "npm", "args": ["test"] },
+        { "command": "npm", "args": ["run", "check"] }
+      ]
+    },
+    {
+      "name": "smg-automations",
+      "kind": "automations",
+      "path": "../smg-automations",
+      "required": false,
+      "enforceCurrentMajor": true
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+name: ecosystem-verify
+
+on:
+  pull_request:
+    paths: ['src/**', 'profiles/**', 'package.json', 'taskrail.ecosystem.json', '.github/workflows/ecosystem-verify.yml']
+  push:
+    branches: [main]
+    paths: ['src/**', 'profiles/**', 'package.json', 'taskrail.ecosystem.json']
+
+permissions: { contents: read }
+
+jobs:
+  verify-public-ecosystem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: taskrail }
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-capabilities
+          path: taskrail-capabilities
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-automations
+          path: taskrail-automations
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Build TaskRail
+        working-directory: taskrail
+        run: npm ci && npm run build
+      - name: Verify public ecosystem
+        working-directory: taskrail
+        run: node dist/src/taskrail-cli.js ecosystem verify --config taskrail.ecosystem.json
+
+  verify-smg-ecosystem:
+    runs-on: ubuntu-latest
+    env:
+      SMG_AUTOMATIONS_READ_TOKEN: ${{ secrets.SMG_AUTOMATIONS_READ_TOKEN }}
+    steps:
+      - name: Detect private verification availability
+        run: |
+          if [ -z "$SMG_AUTOMATIONS_READ_TOKEN" ]; then
+            echo "enabled=false" >> "$GITHUB_ENV"
+            echo "SMG_AUTOMATIONS_READ_TOKEN is not configured; private verification is skipped."
+          else
+            echo "enabled=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v4
+        if: env.enabled == 'true'
+        with: { path: taskrail }
+      - uses: actions/checkout@v4
+        if: env.enabled == 'true'
+        with:
+          repository: gurjyot/taskrail-capabilities
+          path: taskrail-capabilities
+      - uses: actions/checkout@v4
+        if: env.enabled == 'true'
+        with:
+          repository: gurjyot/taskrail-automations
+          path: taskrail-automations
+      - uses: actions/checkout@v4
+        if: env.enabled == 'true'
+        with:
+          repository: gurjyot/smg-automations
+          token: ${{ secrets.SMG_AUTOMATIONS_READ_TOKEN }}
+          path: smg-automations
+      - uses: actions/setup-node@v4
+        if: env.enabled == 'true'
+        with: { node-version: 22 }
+      - name: Build TaskRail
+        if: env.enabled == 'true'
+        working-directory: taskrail
+        run: npm ci && npm run build
+      - name: Verify complete first-party ecosystem
+        if: env.enabled == 'true'
+        working-directory: taskrail
+        run: node dist/src/taskrail-cli.js ecosystem verify --config taskrail.ecosystem.json --strict
