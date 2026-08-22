@@ -52,10 +52,40 @@ const skillsRoot = path.join(root, 'skills');
 const skillEntries = (await readdir(skillsRoot, { withFileTypes: true })).filter((entry) => entry.isDirectory());
 for (const entry of skillEntries) { const content = await readFile(path.join(skillsRoot, entry.name, 'SKILL.md'), 'utf8'); const match = content.match(/^reviewed_for_taskrail:\s*[\"']?([^\s\"']+)[\"']?\s*$/m); add(`skill:${entry.name}:reviewed-for-core`, match?.[1] === pkg.version, `${match?.[1] || 'missing'} / ${pkg.version}`); }
 
-const requiredSurfaces = ['adapters/mcp/core.mjs','adapters/mcp/server.mjs','adapters/mcp/test/mcp.test.mjs','scripts/test-mcp-packed.mjs','.github/workflows/mcp-adapter.yml','installers/taskrail-install-linux.sh','installers/TaskRail-Install.command','installers/TaskRail-Install.ps1','platform-install/linux/adapter.mjs','platform-install/darwin/adapter.mjs','platform-install/win32/adapter.mjs','AGENTS.md','FRAMEWORK.md','README.md'];
+const requiredSurfaces = [
+  'scripts/check-update-surfaces.mjs',
+  'scripts/check-skills-freshness.mjs',
+  'scripts/certify-release.mjs',
+  'scripts/release-readiness.mjs',
+  'scripts/test-mcp-packed.mjs',
+  'scripts/verify-public-ecosystem.mjs',
+  '.github/workflows/ci.yml',
+  '.github/workflows/fault-injection.yml',
+  '.github/workflows/golden-path.yml',
+  '.github/workflows/installer-golden-path.yml',
+  '.github/workflows/mcp-adapter.yml',
+  '.github/workflows/public-ecosystem.yml',
+  '.github/workflows/release-request.yml',
+  '.github/workflows/release.yml',
+  '.github/workflows/sentinel.yml',
+  '.github/workflows/size-sync.yml',
+  'adapters/mcp/core.mjs',
+  'adapters/mcp/server.mjs',
+  'adapters/mcp/test/mcp.test.mjs',
+  'installers/taskrail-install-linux.sh',
+  'installers/TaskRail-Install.command',
+  'installers/TaskRail-Install.ps1',
+  'platform-install/linux/adapter.mjs',
+  'platform-install/darwin/adapter.mjs',
+  'platform-install/win32/adapter.mjs',
+  'AGENTS.md',
+  'FRAMEWORK.md',
+  'README.md',
+  'CHANGELOG.md',
+];
 for (const file of requiredSurfaces) { const ok = await readFile(path.join(root, file), 'utf8').then(() => true, () => false); add(`surface:${file}`, ok, file); }
 
 const ok = checks.every((check) => check.ok);
 const report = { schema: 1, taskrailVersion: pkg.version, ok, passed: checks.filter((check) => check.ok).length, failed: checks.filter((check) => !check.ok).length, cliCommands, safeReadActions, checks };
 console.log(JSON.stringify(report, null, 2));
-if (!ok) { console.error('TaskRail update surfaces are stale. Review MCP safe-read coverage, skills, platform/install assets, docs, and compatibility classifications before release.'); process.exitCode = 1; }
+if (!ok) { console.error('TaskRail update surfaces are stale. Review MCP safe-read coverage, skills, release/update gates, ecosystem verification, platform/install assets, docs, and compatibility classifications before release.'); process.exitCode = 1; }
