@@ -1,14 +1,16 @@
 {
   "schema": 1,
   "reviewedForTaskRail": "3.0.6",
-  "exposedCommands": [
-    "components",
-    "capability-find",
-    "usage",
-    "conformance",
-    "security",
-    "agent"
-  ],
+  "requiredReadActions": {
+    "status": "taskrail_status",
+    "components.list": "taskrail_components",
+    "capabilities.find": "taskrail_capability_find",
+    "usage.inspect": "taskrail_usage",
+    "conformance": "taskrail_conformance",
+    "diagnostics.preview": "taskrail_diagnostics_preview",
+    "security.audit": "taskrail_security_audit"
+  },
+  "exposedCommands": ["components", "capability-find", "usage", "conformance", "security", "agent"],
   "excludedCommands": {
     "component": "Not currently exposed; broad component listing is sufficient for the read-only MCP surface.",
     "capability-check": "Not currently exposed; capability validation remains a CLI workflow until its MCP input contract is reviewed.",
@@ -18,7 +20,7 @@
     "platform": "Includes installation and therefore remains outside the read-only MCP surface.",
     "update": "Deployment/control mutation; forbidden over MCP.",
     "recover": "Recovery/control mutation; forbidden over MCP.",
-    "diagnostics": "May create diagnostic artifacts; keep outside the strict read-only MCP surface.",
+    "diagnostics": "Only the privacy-safe preview action is exposed; other diagnostic behaviors stay outside MCP.",
     "test": "Execution surface intentionally kept on the canonical CLI.",
     "ship": "Deployment mutation; forbidden over MCP."
   }
