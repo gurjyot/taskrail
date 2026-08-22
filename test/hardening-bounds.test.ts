@@ -52,6 +52,7 @@ test('bounded command runner caps captured output', async () => {
 test('framework resolution rejects unknown profiles', () => {
   assert.throws(() => resolveFrameworkManifest({
     name: 'example',
+    managed: true,
     profile: 'missing-profile@1',
     runtime: 'node',
     sourceDir: '.',
@@ -64,6 +65,7 @@ test('framework resolution rejects unknown profiles', () => {
 test('framework resolution rejects unknown framework capabilities', () => {
   assert.throws(() => resolveFrameworkManifest({
     name: 'example',
+    managed: true,
     runtime: 'node',
     sourceDir: '.',
     deployDir: './live',
@@ -76,6 +78,7 @@ test('framework resolution rejects unknown framework capabilities', () => {
 test('node runtime profile requires Node 22 or newer', () => {
   const manifest = resolveFrameworkManifest({
     name: 'example',
+    managed: true,
     profile: 'portable-node@1',
     runtime: 'node',
     sourceDir: '.',
