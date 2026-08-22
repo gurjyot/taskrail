@@ -265,11 +265,11 @@ export async function loadPlugins(manifest: FrameworkManifest): Promise<Automati
   return plugins;
 }
 
-async function withHealthTimeout<T>(operation: Promise<T>, timeoutMs = 30_000): Promise<T> {
+async function withHealthTimeout<T>(operation: Promise<T> | T, timeoutMs = 30_000): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
-      operation,
+      Promise.resolve(operation),
       new Promise<T>((_, reject) => {
         timer = setTimeout(() => reject(new Error(`health check timed out after ${timeoutMs}ms`)), timeoutMs);
         timer.unref?.();
@@ -322,12 +322,12 @@ export async function runHealthCheck(health: HealthCheckDefinition | undefined, 
 }
 
 async function migrationPreflight(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.checkCommand) return { ok: true, code: 0 };
+  if (!manifest.migrations?.checkCommand) return { ok: true, code: 0, error: undefined };
   return runCommand(manifest.migrations.checkCommand, cwd);
 }
 
 async function migrationApply(manifest: FrameworkManifest, cwd: string) {
-  if (!manifest.migrations?.applyCommand) return { ok: true, code: 0 };
+  if (!manifest.migrations?.applyCommand) return { ok: true, code: 0, error: undefined };
   return runCommand(manifest.migrations.applyCommand, cwd);
 }
 
