@@ -1,7 +1,7 @@
 ---
 name: taskrail-capability
 description: Create, extend, validate, deprecate, and govern reusable TaskRail capabilities without duplication.
-reviewed_for_taskrail: 3.0.4
+reviewed_for_taskrail: 3.0.5
 ---
 # TaskRail Capability Authoring
 
