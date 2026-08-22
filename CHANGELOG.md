@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.4
+
+- Refreshed all packaged TaskRail agent skills for the current canonical CLI, plugin, command-execution, package-surface, deployment, performance, and framework-restraint contracts.
+- Added `reviewed_for_taskrail` version markers plus `npm run skills:check`, dynamically covering every packaged `skills/*/SKILL.md`.
+- Made skill freshness part of `npm run check`, release certification, CI, and regression coverage so a future framework version cannot be certified while its skills remain stale.
+
 ## 3.0.3
 
 - Fixed deployment preflight so relative dependency lockfiles resolve from the automation's resolved source directory during `taskrail ship`, matching standalone checks and nested workspace layouts.
