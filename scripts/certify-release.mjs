@@ -15,8 +15,10 @@ function run(name, args) {
   }
 }
 
+run('update-surfaces', ['run', 'surfaces:check']);
 run('core-ci', ['test']);
 run('public-api-security', ['run', 'check']);
+run('mcp-packed-compatibility', ['run', 'mcp:check']);
 run('performance', ['run', 'performance:check']);
 run('release-readiness', ['run', 'release:readiness']);
 run('install-release-build', ['run', 'build:install-release']);
