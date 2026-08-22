@@ -1,0 +1,45 @@
+name: TaskRail Release Request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    if: github.actor == github.repository_owner && startsWith(github.event.issue.title, 'Release v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate release request
+        id: release
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+          TAG="${ISSUE_TITLE#Release }"
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$ISSUE_TITLE" = "Release v${VERSION}"
+          test "$TAG" = "v${VERSION}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch certified release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh workflow run release.yml --ref main -f "tag=${TAG}"
+
+      - name: Close accepted release request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "Accepted ${ISSUE_TITLE}; dispatched the certified TaskRail release workflow."
