@@ -42,6 +42,8 @@ export async function runShipCli(args = process.argv.slice(3)) {
       `ENV: ${detectEnvironment(manifest, cwd).name}`,
       `SHA: ${result.sha || 'unknown'}`,
       `RELEASE: ${result.releaseId || 'unknown'}`,
+      ...(result.failure ? [`FAILURE: ${result.failure}`] : []),
+      ...(result.report ? [`REPORT: ${result.report}`] : []),
       `NEXT: ${result.deployed ? 'done' : 'taskrail explain deploy'}`,
     ]);
   }
