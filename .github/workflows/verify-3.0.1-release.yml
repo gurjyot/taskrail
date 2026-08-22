@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: release-tag-3.0.1
-      - name: Wait for canonical GitHub release
+      - name: Verify published GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
