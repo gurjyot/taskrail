@@ -1,7 +1,7 @@
 ---
 name: taskrail-core
 description: Maintain TaskRail core and its fixed component platform with strict compatibility and component acceptance gates.
-reviewed_for_taskrail: 3.0.6
+reviewed_for_taskrail: 3.0.7
 ---
 # TaskRail Core / Component Maintenance
 
