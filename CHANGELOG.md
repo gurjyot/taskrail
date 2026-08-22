@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.5
+
+- Fixed `safeDeploy` so deployment preflight always runs against the automation project root instead of a rewritten absolute-path manifest from the caller working directory.
+- Added Ads-shaped regression coverage for sibling capabilities, dependency lockfiles, validation/test/health, and nested project-root deployment.
+- Preflight deployment failures now include the exact failing check names/details in the failure report instead of only a generic `preflight failed` message.
+- Reviewed all packaged TaskRail skills for 3.0.5 under the enforced skill-freshness release invariant.
+
 ## 3.0.4
 
 - Refreshed all packaged TaskRail agent skills for the current canonical CLI, plugin, command-execution, package-surface, deployment, performance, and framework-restraint contracts.

@@ -1,6 +1,6 @@
 {
   "name": "taskrail",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "private": false,
   "type": "module",
   "description": "Lightweight AI-first automation framework with reusable components, governed capabilities, safe deployment, supervision, rollback, and agent skills.",
@@ -43,14 +43,38 @@
     "AGENTS.md"
   ],
   "exports": {
-    ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" },
-    "./components": { "types": "./dist/src/components/index.d.ts", "import": "./dist/src/components/index.js" },
-    "./capabilities": { "types": "./dist/src/public/capabilities.d.ts", "import": "./dist/src/public/capabilities.js" },
-    "./manifest": { "types": "./dist/src/public/manifest.d.ts", "import": "./dist/src/public/manifest.js" },
-    "./testing": { "types": "./dist/src/public/testing.d.ts", "import": "./dist/src/public/testing.js" },
-    "./control": { "types": "./dist/src/public/control.d.ts", "import": "./dist/src/public/control.js" },
-    "./agent": { "types": "./dist/src/public/agent.d.ts", "import": "./dist/src/public/agent.js" },
-    "./platform": { "types": "./dist/src/public/platform.d.ts", "import": "./dist/src/public/platform.js" },
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./components": {
+      "types": "./dist/src/components/index.d.ts",
+      "import": "./dist/src/components/index.js"
+    },
+    "./capabilities": {
+      "types": "./dist/src/public/capabilities.d.ts",
+      "import": "./dist/src/public/capabilities.js"
+    },
+    "./manifest": {
+      "types": "./dist/src/public/manifest.d.ts",
+      "import": "./dist/src/public/manifest.js"
+    },
+    "./testing": {
+      "types": "./dist/src/public/testing.d.ts",
+      "import": "./dist/src/public/testing.js"
+    },
+    "./control": {
+      "types": "./dist/src/public/control.d.ts",
+      "import": "./dist/src/public/control.js"
+    },
+    "./agent": {
+      "types": "./dist/src/public/agent.d.ts",
+      "import": "./dist/src/public/agent.js"
+    },
+    "./platform": {
+      "types": "./dist/src/public/platform.d.ts",
+      "import": "./dist/src/public/platform.js"
+    },
     "./dist/*": "./dist/*"
   },
   "bin": {
