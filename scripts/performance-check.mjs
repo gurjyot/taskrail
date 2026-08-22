@@ -1,21 +1,30 @@
 import { performance } from 'node:perf_hooks';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { assessPerformanceBudget } from '../dist/src/performance-budget.js';
 import { validateConfig } from '../dist/src/validation.js';
 
 const root = process.cwd();
 const cli = path.join(root, 'dist', 'src', 'taskrail-cli.js');
+const baseline = JSON.parse(readFileSync(path.join(root, 'scripts', 'performance-baseline.json'), 'utf8'));
 const startupSamples = Number.parseInt(process.env.TASKRAIL_PERF_STARTUP_SAMPLES || '20', 10);
 const validationSamples = Number.parseInt(process.env.TASKRAIL_PERF_VALIDATION_SAMPLES || '200', 10);
+const memorySamples = Number.parseInt(process.env.TASKRAIL_PERF_MEMORY_SAMPLES || '5', 10);
 
 if (!Number.isInteger(startupSamples) || startupSamples < 5 || startupSamples > 100) {
   throw new Error('TASKRAIL_PERF_STARTUP_SAMPLES must be an integer between 5 and 100');
 }
 if (!Number.isInteger(validationSamples) || validationSamples < 20 || validationSamples > 10_000) {
   throw new Error('TASKRAIL_PERF_VALIDATION_SAMPLES must be an integer between 20 and 10000');
+}
+if (!Number.isInteger(memorySamples) || memorySamples < 3 || memorySamples > 20) {
+  throw new Error('TASKRAIL_PERF_MEMORY_SAMPLES must be an integer between 3 and 20');
+}
+if (baseline.schema !== 1 || !Number.isFinite(baseline.startupP95Ms) || !Number.isFinite(baseline.maxStartupRegressionFactor)) {
+  throw new Error('invalid scripts/performance-baseline.json');
 }
 
 function percentile(values, percent) {
@@ -47,6 +56,33 @@ for (let index = 0; index < startupSamples; index += 1) {
   startupMs.push(elapsed);
 }
 
+const memoryProbeSource = `
+process.argv = [process.execPath, ${JSON.stringify(cli)}, '--help'];
+await import(${JSON.stringify(pathToFileURL(cli).href)});
+await new Promise((resolve) => setImmediate(resolve));
+process.stderr.write('__TASKRAIL_MAX_RSS_KB__=' + process.resourceUsage().maxRSS + '\\n');
+`;
+const memoryMbSamples = [];
+for (let index = 0; index < memorySamples; index += 1) {
+  const probe = spawnSync(process.execPath, ['--input-type=module', '--eval', memoryProbeSource], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 256 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (probe.status !== 0 || probe.error) {
+    console.error(probe.error?.message || probe.stderr || `TaskRail memory probe exited ${probe.status}`);
+    process.exit(1);
+  }
+  const match = String(probe.stderr).match(/__TASKRAIL_MAX_RSS_KB__=(\d+(?:\.\d+)?)/);
+  if (!match) {
+    console.error('TaskRail memory probe did not report max RSS');
+    process.exit(1);
+  }
+  memoryMbSamples.push(Number(match[1]) / 1024);
+}
+
 const config = {
   projectName: 'performance-probe',
   manifest: {
@@ -72,7 +108,6 @@ if (validationErrors.length) {
   process.exit(1);
 }
 
-const memoryMb = process.memoryUsage().rss / (1024 * 1024);
 const startup = {
   samples: startupSamples,
   minMs: round(Math.min(...startupMs)),
@@ -80,17 +115,34 @@ const startup = {
   p95Ms: round(percentile(startupMs, 95)),
   maxMs: round(Math.max(...startupMs)),
 };
+const memory = {
+  samples: memorySamples,
+  minMb: round(Math.min(...memoryMbSamples)),
+  medianMb: round(percentile(memoryMbSamples, 50)),
+  peakMb: round(Math.max(...memoryMbSamples)),
+  measurement: 'child-process maxRSS',
+};
 
 // Use p95 rather than a lucky single sample for the release budget.
 const measurement = {
   startupMs: startup.p95Ms,
   validationMs: round(validationMs, 6),
-  memoryMb: round(memoryMb),
+  memoryMb: memory.peakMb,
 };
 const assessment = assessPerformanceBudget(measurement);
+const regressionLimitMs = baseline.startupP95Ms * baseline.maxStartupRegressionFactor;
+const startupRegression = {
+  baselineP95Ms: baseline.startupP95Ms,
+  currentP95Ms: startup.p95Ms,
+  ratio: round(startup.p95Ms / baseline.startupP95Ms, 3),
+  maxRegressionFactor: baseline.maxStartupRegressionFactor,
+  limitMs: round(regressionLimitMs),
+  ok: startup.p95Ms <= regressionLimitMs,
+};
+const ok = assessment.ok && startupRegression.ok;
 
 const report = {
-  schema: 1,
+  schema: 2,
   generatedAt: new Date().toISOString(),
   environment: {
     platform: process.platform,
@@ -102,15 +154,15 @@ const report = {
     githubRunId: process.env.GITHUB_RUN_ID || null,
   },
   startup,
+  startupRegression,
   validation: {
     samples: validationSamples,
     averageMs: measurement.validationMs,
   },
-  memory: {
-    rssMb: measurement.memoryMb,
-  },
+  memory,
   budgetMeasurement: measurement,
   budget: assessment,
+  ok,
 };
 
 writeFileSync(path.join(root, 'performance-report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -124,14 +176,15 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     '| --- | ---: |',
     `| CLI startup median | ${startup.medianMs} ms |`,
     `| CLI startup p95 | ${startup.p95Ms} ms |`,
-    `| CLI startup max | ${startup.maxMs} ms |`,
+    `| Startup regression vs ${baseline.startupP95Ms} ms baseline | ${startupRegression.ratio}x (${startupRegression.ok ? 'PASS' : 'FAIL'}) |`,
+    `| CLI peak RSS | ${memory.peakMb} MiB |`,
     `| Manifest validation average | ${measurement.validationMs} ms |`,
-    `| RSS | ${measurement.memoryMb} MiB |`,
-    `| Release budget | ${assessment.ok ? 'PASS' : 'FAIL'} |`,
+    `| Absolute release budget | ${assessment.ok ? 'PASS' : 'FAIL'} |`,
+    `| Overall | ${ok ? 'PASS' : 'FAIL'} |`,
     '',
-    `Samples: ${startupSamples} startup processes, ${validationSamples} validations.`,
+    `Samples: ${startupSamples} startup processes, ${memorySamples} child memory probes, ${validationSamples} validations.`,
     '',
   ].join('\n'));
 }
 
-if (!assessment.ok) process.exitCode = 1;
+if (!ok) process.exitCode = 1;

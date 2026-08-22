@@ -1,6 +1,6 @@
 {
   "name": "taskrail",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "private": false,
   "type": "module",
   "description": "Lightweight AI-first automation framework with reusable components, governed capabilities, safe deployment, supervision, rollback, and agent skills.",
@@ -51,8 +51,7 @@
     "./control": { "types": "./dist/src/public/control.d.ts", "import": "./dist/src/public/control.js" },
     "./agent": { "types": "./dist/src/public/agent.d.ts", "import": "./dist/src/public/agent.js" },
     "./platform": { "types": "./dist/src/public/platform.d.ts", "import": "./dist/src/public/platform.js" },
-    "./dist/*": "./dist/*",
-    "./src/*": "./src/*"
+    "./dist/*": "./dist/*"
   },
   "bin": {
     "taskrail": "./dist/src/taskrail-cli.js",
