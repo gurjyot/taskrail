@@ -41,8 +41,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
-        run: gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "Accepted ${ISSUE_TITLE:-release request}; dispatched the certified TaskRail release workflow."
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ISSUE: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "Accepted ${ISSUE_TITLE}; dispatched the certified TaskRail release workflow."
