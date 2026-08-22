@@ -49,6 +49,25 @@ jobs:
       - name: Install development dependencies
         run: npm ci
 
+      - name: Build candidate TaskRail for ecosystem verification
+        run: npm run build
+
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-capabilities
+          path: .ecosystem/taskrail-capabilities
+
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-automations
+          path: .ecosystem/taskrail-automations
+
+      - name: Require public first-party consumer compatibility
+        env:
+          TASKRAIL_CAPABILITIES_REPO: ${{ github.workspace }}/.ecosystem/taskrail-capabilities
+          TASKRAIL_AUTOMATIONS_REPO: ${{ github.workspace }}/.ecosystem/taskrail-automations
+        run: node scripts/verify-public-ecosystem.mjs
+
       - name: Run full release certification
         run: npm run certify
 
