@@ -36,7 +36,7 @@ async function main() {
 
   const seenAutomations = new Set<string>();
   const seenUnits = new Set<string>();
-  const results: Array<{ automation: string; unit: string; kind: 'service' | 'timer'; applied: boolean; enabled: boolean | null; enabledByTaskRail: boolean; path?: string; dropIn?: string }> = [];
+  const results: Array<{ automation: string; unit: string; kind: 'service' | 'timer'; applied: boolean; enabled: boolean | null; active: boolean | null; enabledByTaskRail: boolean; path?: string; dropIn?: string }> = [];
   const runtimeChecks: Array<ReturnType<typeof verifySystemdRuntimeContext>[number] & { automation: string }> = [];
   for (const file of files) {
     const manifest = await readManifest(file);
@@ -57,7 +57,8 @@ async function main() {
         enabled = true;
         enabledByTaskRail = true;
       }
-      results.push({ automation: manifest.name, unit: unit.name, kind: unit.kind, applied: apply, enabled, enabledByTaskRail, path: installed, dropIn });
+      const active = unit.kind === 'timer' ? systemctl(['is-active', unit.name]).status === 0 : null;
+      results.push({ automation: manifest.name, unit: unit.name, kind: unit.kind, applied: apply, enabled, active, enabledByTaskRail, path: installed, dropIn });
     }
     if (verifyRuntime) runtimeChecks.push(...verifySystemdRuntimeContext(manifest).map((check) => ({ automation: manifest.name, ...check })));
   }
@@ -67,17 +68,22 @@ async function main() {
   }
   const disabled = results.filter((result) => result.enabled === false).map((result) => result.unit);
   const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
-  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, verifyRuntime, units: results.length, rebootReady: disabled.length === 0, runtimeReady: runtimeFailures.length === 0, disabled, runtimeFailures, runtimeChecks, results }, null, 2));
+  const schedulerFailures = verifyRuntime
+    ? results.filter((result) => result.kind === 'timer' && (!result.enabled || result.active !== true))
+    : [];
+  const runtimeReady = runtimeFailures.length === 0 && schedulerFailures.length === 0;
+  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, verifyRuntime, units: results.length, rebootReady: disabled.length === 0, runtimeReady, disabled, runtimeFailures, schedulerFailures, runtimeChecks, results }, null, 2));
   else {
-    console.log(`STATUS: ${disabled.length || runtimeFailures.length ? 'WARN' : 'PASS'}`);
+    console.log(`STATUS: ${disabled.length || runtimeFailures.length || schedulerFailures.length ? 'WARN' : 'PASS'}`);
     console.log(`MODE: ${apply ? 'applied' : 'dry-run'}`);
     console.log(`UNITS: ${results.length}`);
     console.log(`REBOOT_READY: ${disabled.length ? 'NO' : 'YES'}`);
-    if (verifyRuntime) console.log(`RUNTIME_READY: ${runtimeFailures.length ? 'NO' : 'YES'}`);
-    for (const result of results) console.log(`${result.automation}: ${result.unit} (${result.kind}) enabled=${String(result.enabled)}${result.enabledByTaskRail ? ' [enabled]' : ''}${result.path ? ` -> ${result.path}` : ''}`);
+    if (verifyRuntime) console.log(`RUNTIME_READY: ${runtimeReady ? 'YES' : 'NO'}`);
+    for (const result of results) console.log(`${result.automation}: ${result.unit} (${result.kind}) enabled=${String(result.enabled)}${result.kind === 'timer' ? ` active=${String(result.active)}` : ''}${result.enabledByTaskRail ? ' [enabled]' : ''}${result.path ? ` -> ${result.path}` : ''}`);
     for (const check of runtimeChecks) console.log(`${check.automation}: ${check.unit} runtime=${check.passed ? 'PASS' : 'FAIL'} user=${check.user} workdir=${check.workingDirectory}${check.unreadableSharedFiles.length ? ` unreadable=${check.unreadableSharedFiles.join(',')}` : ''}`);
+    for (const failure of schedulerFailures) console.log(`${failure.automation}: ${failure.unit} scheduler=FAIL enabled=${String(failure.enabled)} active=${String(failure.active)}`);
   }
-  if (runtimeFailures.length) process.exitCode = 1;
+  if (!runtimeReady) process.exitCode = 1;
 }
 
 main().catch((error) => {
