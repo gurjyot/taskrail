@@ -11,6 +11,21 @@ function tail(value, limit = 4000) {
   return text.length <= limit ? text : text.slice(-limit);
 }
 
+function failureBlocks(value) {
+  const lines = String(value || '').split('\n');
+  const blocks = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/^not ok\b/.test(lines[i])) continue;
+    const start = Math.max(0, i - 1);
+    let end = Math.min(lines.length, i + 18);
+    for (let j = i + 1; j < Math.min(lines.length, i + 40); j += 1) {
+      if (/^(ok|not ok)\b/.test(lines[j])) { end = j; break; }
+    }
+    blocks.push(lines.slice(start, end).join('\n').trim());
+  }
+  return blocks.join('\n\n');
+}
+
 function run(name, args) {
   try {
     const stdout = execFileSync(npm, args, {
@@ -24,15 +39,18 @@ function run(name, args) {
     if (stdout) process.stdout.write(stdout);
     gates.push({ name, ok: true });
   } catch (error) {
-    const stdout = error && typeof error === 'object' && 'stdout' in error ? tail(error.stdout) : '';
-    const stderr = error && typeof error === 'object' && 'stderr' in error ? tail(error.stderr) : '';
-    if (stdout) process.stdout.write(`${stdout}\n`);
-    if (stderr) process.stderr.write(`${stderr}\n`);
+    const rawStdout = error && typeof error === 'object' && 'stdout' in error ? String(error.stdout || '') : '';
+    const rawStderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr || '') : '';
+    const highlights = failureBlocks(rawStdout);
+    const stdout = highlights || tail(rawStdout);
+    const stderr = tail(rawStderr);
+    if (rawStdout) process.stdout.write(rawStdout);
+    if (rawStderr) process.stderr.write(rawStderr);
     const message = error instanceof Error ? error.message : String(error);
     gates.push({
       name,
       ok: false,
-      detail: tail([message, stdout && `stdout:\n${stdout}`, stderr && `stderr:\n${stderr}`].filter(Boolean).join('\n'), 6000),
+      detail: tail([message, stdout && `stdout:\n${stdout}`, stderr && `stderr:\n${stderr}`].filter(Boolean).join('\n'), 8000),
     });
   }
 }
