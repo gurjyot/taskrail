@@ -37,6 +37,9 @@ export interface DeployOutcome extends DeployResult {
   releasePath?: string;
   report?: string;
   sha?: string;
+  rollbackAttempted?: boolean;
+  rollbackSucceeded?: boolean;
+  recoveryRequired?: boolean;
 }
 
 export interface DeployOptions {
@@ -212,7 +215,7 @@ export async function verifyOperationalReadiness(
   manifest: FrameworkManifest,
   cwd: string,
   plugin?: AutomationPlugin,
-  environment: EnvironmentInfo = detectEnvironment(manifest, process.cwd()),
+  environment: EnvironmentInfo = detectEnvironment(manifest, cwd),
 ): Promise<OperationalReadinessResult> {
   const health = await runHealthCheck(declaredHealth(manifest), cwd, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
   if (!health.ok) return { ok: false, health, operational: { runtimeChecks: [], timerChecks: [], passed: false } };
@@ -347,7 +350,7 @@ export async function runHealthCheck(health: HealthCheckDefinition | HealthCheck
           const response = await fetch(definition.url, { signal: AbortSignal.timeout(30_000) });
           return { ok: response.status === (definition.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
         }
-        return { ok: true, tier: 'process' as const };
+        return { ok: false, tier: 'process' as const, details: `unsupported health check type: ${String((definition as any)?.type ?? 'missing')}` };
       } catch (error) {
         return { ok: false, tier: 'integration' as const, details: error instanceof Error ? error.message : String(error) };
       }
@@ -557,7 +560,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     let mutationStarted = false;
     let transactionStage = 'activation';
     try {
-      if (await pathExists(target)) previousReleasePath = await currentLivePath(target);
+      if (await pathExists(target)) previousReleasePath = state?.releasePath || await currentLivePath(target);
       mutationStarted = true;
       if (strategy === 'release-symlink') {
         await activateRelease(target, release.path, backup);
@@ -607,8 +610,11 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
       return { deployed: true, rolledBack: false, backupPath: backup, releaseId: release.releaseId, releasePath: release.path, sha: git.sha };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const hadPreviousDeployment = Boolean(previousReleasePath || priorState?.releasePath || await pathExists(backup));
+      const rollbackAttempted = mutationStarted && hadPreviousDeployment;
       let rollbackError: string | undefined;
       let restored = false;
+      let initialCleanupSucceeded = false;
       if (mutationStarted) {
         try {
           if (strategy === 'release-symlink') await restoreActivation(target, backup, previousReleasePath);
@@ -616,19 +622,25 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
             await rm(target, { recursive: true, force: true });
             if (await pathExists(backup)) await rename(backup, target);
           }
-          const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
-          const restoredReadiness = await verifyOperationalReadiness(manifest, restoredPath, operationalPlugin, envInfo);
-          if (!restoredReadiness.ok) throw new Error(restoredReadiness.error || restoredReadiness.health.details || 'restored release is not operationally ready');
-          await restoreState(stateFile, priorState);
-          restored = true;
+          if (hadPreviousDeployment) {
+            const restoredReadiness = await verifyOperationalReadiness(manifest, target, operationalPlugin, envInfo);
+            if (!restoredReadiness.ok) throw new Error(restoredReadiness.error || restoredReadiness.health.details || 'restored live target is not operationally ready');
+            await restoreState(stateFile, priorState);
+            restored = true;
+          } else {
+            if (await pathExists(target)) throw new Error('partial first deployment remains live after cleanup');
+            await restoreState(stateFile, priorState);
+            initialCleanupSucceeded = true;
+          }
         } catch (restoreFailure) {
           rollbackError = restoreFailure instanceof Error ? restoreFailure.message : String(restoreFailure);
         }
       }
+      const recoveryRequired = rollbackAttempted && !restored;
 
       await appendAudit(historyFile, {
         ts: new Date().toISOString(),
-        type: restored ? 'deploy_rolled_back' : 'deploy_recovery_required',
+        type: restored ? 'deploy_rolled_back' : recoveryRequired ? 'deploy_recovery_required' : 'deploy_failed',
         project: manifest.name,
         taskrailVersion: TASKRAIL_VERSION,
         releaseId: release.releaseId,
@@ -645,7 +657,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
         releaseId: release.releaseId,
         migration: 'PASS',
         transactionStage,
-        rollback: restored ? 'PASS' : 'FAIL',
+        rollback: restored ? 'PASS' : rollbackAttempted ? 'FAIL' : 'NOT_NEEDED',
         error: message,
         rollbackError,
         deployedAt: new Date().toISOString(),
@@ -662,22 +674,29 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
 
       return {
         deployed: false,
-        rolledBack: mutationStarted,
+        rolledBack: restored,
+        rollbackAttempted,
+        rollbackSucceeded: restored,
+        recoveryRequired,
         backupPath: backup,
         failure: restored
           ? `${transactionStage} failed; rollback succeeded: ${message}`
-          : `${transactionStage} failed; rollback requires recovery: ${message}${rollbackError ? `; ${rollbackError}` : ''}`,
+          : recoveryRequired
+            ? `${transactionStage} failed; rollback requires recovery: ${message}${rollbackError ? `; ${rollbackError}` : ''}`
+            : initialCleanupSucceeded
+              ? `${transactionStage} failed; partial first deployment cleaned up: ${message}`
+              : `${transactionStage} failed before rollback was required: ${message}${rollbackError ? `; cleanup: ${rollbackError}` : ''}`,
         releaseId: release.releaseId,
         report: failure({
           project: manifest.name,
           taskrailVersion: TASKRAIL_VERSION,
           stage: transactionStage,
-          category: restored ? 'transaction_failed' : 'recovery_required',
+          category: restored ? 'transaction_failed' : recoveryRequired ? 'recovery_required' : 'deployment_failed',
           message: restored ? message : `${message}${rollbackError ? `; rollback: ${rollbackError}` : ''}`,
           releaseId: release.releaseId,
-          rollbackAttempted: mutationStarted,
-          rollbackResult: restored ? 'success' : mutationStarted ? 'failed' : 'not-needed',
-          nextStep: restored ? 'fix the candidate and redeploy' : 'inspect the live target and last-known-good release; recovery is required',
+          rollbackAttempted,
+          rollbackResult: restored ? 'success' : rollbackAttempted ? 'failed' : 'not-needed',
+          nextStep: restored ? 'fix the candidate and redeploy' : recoveryRequired ? 'inspect the live target and last-known-good release; recovery is required' : 'fix the candidate and retry the deployment',
           environment: envInfo.name,
         }),
       };
@@ -696,17 +715,45 @@ export async function rollbackFromState(
 ) {
   const state = await readState(stateFile);
   if (!state) return { ok: false, failure: 'missing rollback state' };
+  if (!state.previousReleasePath && !state.backupPath) return { ok: false, failure: 'no previous deployment is available for rollback' };
+  const previousReleasePath = state.previousReleasePath;
+  const priorCurrentReleasePath = state.releasePath;
   try {
-    await restoreActivation(state.targetPath, state.backupPath || '', state.previousReleasePath);
-    const restoredPath = state.previousReleasePath || state.targetPath;
-    if (manifest) {
-      const readiness = await verifyOperationalReadiness(manifest, restoredPath, plugin, environment ?? detectEnvironment(manifest, process.cwd()));
-      if (!readiness.ok) return { ok: false, failure: `restored version failed operational readiness${readiness.error ? `: ${readiness.error}` : readiness.health.details ? `: ${readiness.health.details}` : ''}` };
+    if (manifest?.deployStrategy?.type === 'replace-in-place' && previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath)) {
+      await rm(state.targetPath, { recursive: true, force: true });
+      await copyDir(previousReleasePath, state.targetPath);
     } else {
-      const restored = await runHealthCheck(health, restoredPath, plugin);
-      if (!restored.ok) return { ok: false, failure: 'restored version failed health check' };
+      await restoreActivation(state.targetPath, state.backupPath || '', previousReleasePath);
     }
-    return { ok: true, failure: undefined };
+    if (manifest) {
+      const readiness = await verifyOperationalReadiness(manifest, state.targetPath, plugin, environment ?? detectEnvironment(manifest, path.dirname(stateFile)));
+      if (!readiness.ok) return { ok: false, failure: `restored live target failed operational readiness${readiness.error ? `: ${readiness.error}` : readiness.health.details ? `: ${readiness.health.details}` : ''}` };
+    } else {
+      const restored = await runHealthCheck(health, state.targetPath, plugin);
+      if (!restored.ok) return { ok: false, failure: 'restored live target failed health check' };
+    }
+
+    let releaseMeta: { releaseId?: string; sourceRevision?: string } | null = null;
+    if (previousReleasePath) {
+      try {
+        releaseMeta = JSON.parse(await readFile(path.join(previousReleasePath, 'release.json'), 'utf8')) as { releaseId?: string; sourceRevision?: string };
+      } catch {
+        releaseMeta = null;
+      }
+    }
+    const canonicalRestoredPath = previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath) ? previousReleasePath : state.targetPath;
+    const nextState: DeployState = {
+      targetPath: state.targetPath,
+      releasePath: canonicalRestoredPath,
+      previousReleasePath: priorCurrentReleasePath && path.resolve(priorCurrentReleasePath) !== path.resolve(canonicalRestoredPath) ? priorCurrentReleasePath : undefined,
+      currentReleaseId: releaseMeta?.releaseId,
+      currentSha: releaseMeta?.sourceRevision,
+      lastKnownGoodReleasePath: canonicalRestoredPath,
+      lastKnownGoodReleaseId: releaseMeta?.releaseId,
+      lastKnownGoodSha: releaseMeta?.sourceRevision,
+    };
+    await writeState(stateFile, nextState);
+    return { ok: true, failure: undefined, state: nextState };
   } catch (error) {
     return { ok: false, failure: `rollback failed${error instanceof Error ? `: ${error.message}` : ''}` };
   }
