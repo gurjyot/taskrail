@@ -208,7 +208,7 @@ test('transaction cannot commit when live rollback target differs from healthy l
     assert.equal(result.ok, false);
     assert.equal(result.outcome?.rolledBack, true);
     assert.equal(result.checkpoint?.phase, 'recovery-required');
-    assert.match(result.checkpoint?.history.at(-1)?.note || '', /live rollback verification failed/i);
+    assert.match(result.checkpoint?.history.at(-1)?.details || '', /live rollback verification failed/i);
     assert.equal(await readFile(path.join(live, 'marker.txt'), 'utf8'), 'v1');
     assert.ok(first.releasePath && await exists(first.releasePath));
   } finally {
