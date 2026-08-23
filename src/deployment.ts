@@ -28,6 +28,7 @@ import { inspectChange } from './change.js';
 import { capabilityRootsFor } from './capabilities.js';
 import { readPrivateState, writePrivateState } from './private-state.js';
 import { runBoundedCommand } from './bounded-command.js';
+import { verifySystemdOperationalContext } from './systemd.js';
 
 export interface DeployOutcome extends DeployResult {
   backupPath?: string;
@@ -44,6 +45,7 @@ export interface DeployOptions {
   lockDir?: string;
   sourceRevision?: string;
   projectRoot?: string;
+  transactionalUpdate?: boolean;
 }
 
 export interface ManifestRunOptions {
@@ -182,6 +184,17 @@ function hasFrameworkCapability(manifest: FrameworkManifest, prefix: string) {
   return (manifest.frameworkCapabilities ?? []).some((item) => item === prefix || item.startsWith(`${prefix}@`));
 }
 
+function declaredHealth(manifest: FrameworkManifest) {
+  return manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
+}
+
+function productionOperationalContext(manifest: FrameworkManifest, environment: EnvironmentInfo) {
+  if (environment.name !== 'production' || process.platform !== 'linux' || manifest.serviceManager?.type !== 'systemd') {
+    return { runtimeChecks: [], timerChecks: [], passed: true };
+  }
+  return verifySystemdOperationalContext(manifest, { environment: environment.name });
+}
+
 function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {
   const payload = {
     sha: git.sha || '',
@@ -253,15 +266,15 @@ async function restoreActivation(target: string, backupPath: string, previousRel
   if (await pathExists(backupPath)) await rename(backupPath, target);
 }
 
-export async function loadPlugin(modulePath: string): Promise<AutomationPlugin> {
-  const mod = await import(pathToFileURL(path.resolve(modulePath)).href);
+export async function loadPlugin(modulePath: string, cwd = process.cwd()): Promise<AutomationPlugin> {
+  const mod = await import(pathToFileURL(path.resolve(cwd, modulePath)).href);
   return mod.default ?? mod.plugin ?? mod;
 }
 
-export async function loadPlugins(manifest: FrameworkManifest): Promise<AutomationPlugin[]> {
+export async function loadPlugins(manifest: FrameworkManifest, cwd = process.cwd()): Promise<AutomationPlugin[]> {
   const refs = manifest.plugins ?? [];
   const plugins: AutomationPlugin[] = [];
-  for (const ref of refs) plugins.push(await loadPlugin(ref.module));
+  for (const ref of refs) plugins.push(await loadPlugin(ref.module, cwd));
   return plugins;
 }
 
@@ -280,19 +293,19 @@ async function withHealthTimeout<T>(operation: Promise<T> | T, timeoutMs = 30_00
   }
 }
 
-export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
+export async function runHealthCheck(health: HealthCheckDefinition | HealthCheckDefinition[] | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {
   const checks: Array<Promise<{ ok: boolean; tier: 'process' | 'integration' | 'end-to-end'; details?: string }>> = [];
-  if (health) {
+  for (const definition of (Array.isArray(health) ? health : health ? [health] : [])) {
     checks.push((async () => {
       try {
-        if (health.type === 'command') {
-          const result = await runCommand(health.command, cwd, 30_000);
+        if (definition.type === 'command') {
+          const result = await runCommand(definition.command, cwd, 30_000);
           return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
         }
-        if (health.type === 'file') return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
-        if (health.type === 'http') {
-          const response = await fetch(health.url, { signal: AbortSignal.timeout(30_000) });
-          return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+        if (definition.type === 'file') return { ok: await pathExists(path.resolve(cwd, definition.path)), tier: 'process' as const, details: definition.path };
+        if (definition.type === 'http') {
+          const response = await fetch(definition.url, { signal: AbortSignal.timeout(30_000) });
+          return { ok: response.status === (definition.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
         }
         return { ok: true, tier: 'process' as const };
       } catch (error) {
@@ -352,7 +365,7 @@ export async function doctor(manifest: FrameworkManifest, options: ManifestRunOp
   const state = await readState(stateFile);
   const latestHealthyRelease = state?.releasePath;
   const livePath = await currentLivePath(deployTarget).catch(() => deployTarget);
-  const pluginNames = await loadPlugins(manifest).then((plugins) => plugins.map((p) => p.name)).catch(() => []);
+  const pluginNames = await loadPlugins(manifest, cwd).then((plugins) => plugins.map((p) => p.name)).catch(() => []);
   const drift = state?.releasePath && (await pathExists(livePath)) ? await detectDrift(livePath, state.releasePath, manifest) : undefined;
   const git = inspectGitState(cwd);
   const compatible = isTaskRailCompatible(TASKRAIL_VERSION, manifest.taskrailCompatibility);
@@ -397,6 +410,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   const strategy = manifest.deployStrategy?.type || 'replace-in-place';
   const git = inspectGitState(projectRoot);
   const fingerprint = fingerprintInputs(manifest, git);
+  const operationalPlugin = plugin ?? ((manifest.plugins?.length ?? 0) ? (await loadPlugins(manifest, projectRoot))[0] : undefined);
 
   if (envInfo.name === 'production') {
     if (!git.available || !git.sha) return { deployed: false, rolledBack: false, failure: 'production deploy requires git sha' };
@@ -420,12 +434,16 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
   }
 
   const priorState = await readState(stateFile);
+  if (priorState && manifest.migrations?.applyCommand && !options.transactionalUpdate) {
+    return { deployed: false, rolledBack: false, failure: 'existing deployment with migrations requires taskrail update' };
+  }
   if (hasFrameworkCapability(manifest, 'change-detection') && priorState?.currentSha === git.sha && priorState?.currentFingerprint === fingerprint && priorState?.releasePath && await pathExists(target)) {
     const existingReleasePath = priorState.releasePath;
     const drift = await detectDrift(await currentLivePath(target).catch(() => target), existingReleasePath, manifest);
     if (!drift.drifted) {
-      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-      if (health.ok) {
+      const health = await runHealthCheck(declaredHealth(manifest), strategy === 'release-symlink' ? existingReleasePath : target, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+      const operational = health.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };
+      if (health.ok && operational.passed) {
         await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, priorState, existingReleasePath);
         return { deployed: true, rolledBack: false, releaseId: priorState.currentReleaseId, releasePath: existingReleasePath, sha: git.sha };
       }
@@ -466,7 +484,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     if (!migrateCheck.ok) return { deployed: false, rolledBack: false, failure: migrateCheck.error || 'migration preflight failed' };
 
     if (manifest.requiredChecks?.length) {
-      const liveGate = await runGate(manifest, projectRoot, plugin ? [plugin] : []);
+      const liveGate = await runGate(manifest, projectRoot, operationalPlugin ? [operationalPlugin] : []);
       if (liveGate.verdict !== 'PASS') return { deployed: false, rolledBack: false, failure: `verification blocked: ${liveGate.verdict}` };
     }
     if ((manifest.protectedPaths?.length ?? 0) > 0 || hasFrameworkCapability(manifest, 'change-detection')) {
@@ -496,26 +514,24 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     }
 
     const liveCheckPath = strategy === 'release-symlink' ? release.path : target;
-    const nextState: DeployState = {
-      backupPath: backup,
-      targetPath: target,
-      releasePath: release.path,
-      previousReleasePath,
-      currentReleaseId: release.releaseId,
-      currentSha: git.sha,
-      currentFingerprint: fingerprint,
-    };
-    await writeState(stateFile, nextState);
-    if (hasFrameworkCapability(manifest, 'release-retention')) await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, state, release.path);
-    else await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
-
-    const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-    if (health.ok) {
-      nextState.lastKnownGoodReleasePath = release.path;
-      nextState.lastKnownGoodReleaseId = release.releaseId;
-      nextState.lastKnownGoodSha = git.sha;
-      nextState.currentFingerprint = fingerprint;
+    const health = await runHealthCheck(declaredHealth(manifest), liveCheckPath, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+    const operational = health.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };
+    if (health.ok && operational.passed) {
+      const nextState: DeployState = {
+        backupPath: backup,
+        targetPath: target,
+        releasePath: release.path,
+        previousReleasePath,
+        currentReleaseId: release.releaseId,
+        currentSha: git.sha,
+        currentFingerprint: fingerprint,
+        lastKnownGoodReleasePath: release.path,
+        lastKnownGoodReleaseId: release.releaseId,
+        lastKnownGoodSha: git.sha,
+      };
       await writeState(stateFile, nextState);
+      if (hasFrameworkCapability(manifest, 'release-retention')) await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, state, release.path);
+      else await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
       const receiptPath = await writeReceipt(workspace, {
         automation: manifest.name,
         environment: envInfo.name,
@@ -524,6 +540,7 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
         releaseId: release.releaseId,
         migration: 'PASS',
         health: 'PASS',
+        runtime: operational.passed ? 'PASS' : 'SKIPPED',
         deployedAt: new Date().toISOString(),
       });
       await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_succeeded', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId, sha: git.sha });
@@ -539,8 +556,10 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
     }
 
     const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
-    const restored = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], restoredPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
-    if (!restored.ok) {
+    const restored = await runHealthCheck(declaredHealth(manifest), restoredPath, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+    const restoredOperational = restored.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };
+    const runtimeFailed = health.ok && !operational.passed;
+    if (!restored.ok || !restoredOperational.passed) {
       await writeReceipt(workspace, {
         automation: manifest.name,
         environment: envInfo.name,
@@ -548,12 +567,14 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
         taskrailVersion: TASKRAIL_VERSION,
         releaseId: release.releaseId,
         migration: 'PASS',
-        health: 'FAIL',
+        health: health.ok ? 'PASS' : 'FAIL',
+        runtime: runtimeFailed ? 'FAIL' : 'PASS',
         rollback: 'FAIL',
         deployedAt: new Date().toISOString(),
       });
-      return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed and rollback failed', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually', environment: envInfo.name }) };
+      return { deployed: false, rolledBack: true, backupPath: backup, failure: runtimeFailed ? 'runtime context failed and rollback verification failed' : 'health check failed and rollback failed', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: runtimeFailed ? 'runtime' : 'health', category: runtimeFailed ? 'runtime_failed' : 'health_failed', message: 'rollback verification failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually', environment: envInfo.name }) };
     }
+    await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_rolled_back', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId, sha: git.sha });
     await writeReceipt(workspace, {
       automation: manifest.name,
       environment: envInfo.name,
@@ -561,17 +582,18 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
       taskrailVersion: TASKRAIL_VERSION,
       releaseId: release.releaseId,
       migration: 'PASS',
-      health: 'FAIL',
+      health: health.ok ? 'PASS' : 'FAIL',
+      runtime: runtimeFailed ? 'FAIL' : 'PASS',
       rollback: 'PASS',
       deployedAt: new Date().toISOString(),
     });
-    return { deployed: false, rolledBack: true, backupPath: backup, failure: 'health check failed; rollback succeeded', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: 'health', category: 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy', environment: envInfo.name }) };
+    return { deployed: false, rolledBack: true, backupPath: backup, failure: runtimeFailed ? 'runtime context failed; rollback succeeded' : 'health check failed; rollback succeeded', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: runtimeFailed ? 'runtime' : 'health', category: runtimeFailed ? 'runtime_failed' : 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy', environment: envInfo.name }) };
   } finally {
     await releaseLock(lockDir);
   }
 }
 
-export async function rollbackFromState(stateFile: string, health: HealthCheckDefinition | undefined, plugin?: AutomationPlugin) {
+export async function rollbackFromState(stateFile: string, health: HealthCheckDefinition | HealthCheckDefinition[] | undefined, plugin?: AutomationPlugin) {
   const state = await readState(stateFile);
   if (!state) return { ok: false, failure: 'missing rollback state' };
   try {
@@ -587,5 +609,5 @@ export async function rollbackFromState(stateFile: string, health: HealthCheckDe
 
 export async function rollbackFromManifest(manifest: FrameworkManifest, plugin?: AutomationPlugin) {
   const stateFile = path.join(path.dirname(path.resolve(manifest.deployDir)), `${manifest.name}.deploy-state.json`);
-  return rollbackFromState(stateFile, manifest.healthCheck ?? manifest.healthChecks?.[0], plugin);
+  return rollbackFromState(stateFile, declaredHealth(manifest), plugin);
 }
