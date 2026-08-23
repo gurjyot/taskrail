@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { FrameworkManifest } from './types.js';
+import type { FrameworkManifest, TaskrailEnv } from './types.js';
+import { appliesToEnvironment } from './env.js';
 import { effectiveExecutionPolicy } from './execution.js';
 import { systemdResourceDirectives } from './resources.js';
 
@@ -82,16 +83,24 @@ function asUser(user: string, args: string[], spawn: SpawnLike) {
   return spawn('sudo', ['-n', '-u', user, '--', ...args], { encoding: 'utf8' });
 }
 
-export function verifySystemdRuntimeContext(manifest: FrameworkManifest, options: { spawn?: SpawnLike } = {}): SystemdRuntimeCheck[] {
+function sharedFilesForEnvironment(manifest: FrameworkManifest, environment: TaskrailEnv) {
+  return (manifest.requiredSharedFiles ?? []).flatMap((entry) => {
+    if (typeof entry === 'string') return environment === 'production' ? [entry] : [];
+    return appliesToEnvironment(entry, environment) ? [entry.path] : [];
+  });
+}
+
+export function verifySystemdRuntimeContext(manifest: FrameworkManifest, options: { spawn?: SpawnLike; environment?: TaskrailEnv } = {}): SystemdRuntimeCheck[] {
   if (manifest.serviceManager?.type !== 'systemd') return [];
   const spawn = options.spawn ?? spawnSync;
+  const environment = options.environment ?? 'production';
   return managedServiceUnits(manifest).map((unit) => {
     const loadState = systemctlShow(unit, 'LoadState', spawn);
     const user = systemctlShow(unit, 'User', spawn) || 'root';
     const group = systemctlShow(unit, 'Group', spawn) || user;
     const workingDirectory = systemctlShow(unit, 'WorkingDirectory', spawn) || '/';
     const traverse = asUser(user, ['/bin/sh', '-c', 'cd -- "$1"', 'taskrail-runtime-check', workingDirectory], spawn);
-    const requiredSharedFiles = manifest.requiredSharedFiles ?? [];
+    const requiredSharedFiles = sharedFilesForEnvironment(manifest, environment);
     const readableSharedFiles: string[] = [];
     const unreadableSharedFiles: string[] = [];
     for (const file of requiredSharedFiles) {
