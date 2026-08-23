@@ -4,6 +4,7 @@ import { loadManifest } from './config.js';
 import { resolveFrameworkManifest } from './framework.js';
 import { inspectGitState } from './git.js';
 import { transactionalDeploy } from './transactional-deploy.js';
+import { loadPlugins } from './deployment.js';
 
 export async function runTransactionalDeployCli(args = process.argv.slice(2)) {
   const target = args[1];
@@ -25,13 +26,14 @@ export async function runTransactionalDeployCli(args = process.argv.slice(2)) {
   const cwd = path.dirname(manifestPath);
   const manifest = resolveFrameworkManifest(await loadManifest(manifestPath));
   const git = inspectGitState(cwd);
-  const result = await transactionalDeploy(manifest, undefined, {
+  const plugin = (await loadPlugins(manifest, cwd))[0];
+  const result = await transactionalDeploy(manifest, plugin, {
     projectRoot: cwd,
     sourceRevision: git.sha,
     migrationCompatible: migrationCompatible || undefined,
   });
 
-  if (json) console.log(JSON.stringify(result, null, 2));
+  if (json) console.log(JSON.stringify(result, null,2));
   else {
     console.log([
       `STATUS: ${result.ok ? 'PASS' : result.blocked ? 'BLOCKED' : 'FAIL'}`,
