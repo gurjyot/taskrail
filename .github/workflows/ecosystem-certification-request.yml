@@ -37,7 +37,10 @@ jobs:
         env:
           TASKRAIL_CAPABILITIES_REPO: ${{ github.workspace }}/.ecosystem/taskrail-capabilities
           TASKRAIL_AUTOMATIONS_REPO: ${{ github.workspace }}/.ecosystem/taskrail-automations
-        run: node scripts/verify-public-ecosystem.mjs
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/verify-public-ecosystem.mjs | tee ecosystem-report.json
       - name: Report result
         if: always()
         env:
@@ -47,7 +50,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "Public ecosystem verification outcome: ${OUTCOME}"
+          if [ -s ecosystem-report.json ] && jq -e . ecosystem-report.json >/dev/null 2>&1; then
+            summary="$(jq -r '[.checks[] | select(.ok==false) | (.name + (if .stderr then " :: stderr=" + (.stderr|gsub("\\n";" ")|.[-600:]) else "" end) + (if .stdout then " :: stdout=" + (.stdout|gsub("\\n";" ")|.[-600:]) else "" end))] | if length==0 then "none" else join("\n") end' ecosystem-report.json)"
+            counts="$(jq -r '"Passed: \(.passed) | Failed: \(.failed)"' ecosystem-report.json)"
+          else
+            summary="ecosystem report missing or invalid"
+            counts=""
+          fi
+          body="Public ecosystem verification outcome: ${OUTCOME}\n${counts}\nFailed checks:\n${summary}"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "${body:0:60000}"
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
       - name: Fail when ecosystem verification failed
         if: steps.verify.outcome != 'success'
