@@ -87,10 +87,8 @@ const phpCommon = ['php-runtime@1', ...operational];
 const portableNodeCommon = ['node-runtime@1', ...portableOperational];
 
 function authoringDefaults(runtime: 'node' | 'shell' | 'php'): Partial<FrameworkManifest> {
-  const common = { requiredChecks: ['validation', 'test', 'health'] as Array<'validation' | 'test' | 'health'> };
   if (runtime === 'shell') {
     return {
-      ...common,
       validationCommand: 'bash -n src/main.sh',
       testCommand: 'bash tests/self-test.sh',
       healthCheck: { type: 'command', command: 'bash -n src/main.sh' },
@@ -98,14 +96,12 @@ function authoringDefaults(runtime: 'node' | 'shell' | 'php'): Partial<Framework
   }
   if (runtime === 'php') {
     return {
-      ...common,
       validationCommand: 'php -l src/main.php',
       testCommand: 'php tests/self-test.php',
       healthCheck: { type: 'command', command: 'php -l src/main.php' },
     };
   }
   return {
-    ...common,
     validationCommand: 'node --check src/main.js',
     testCommand: 'node --test tests/*.test.js',
     healthCheck: { type: 'command', command: 'node --check src/main.js' },
