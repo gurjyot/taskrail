@@ -1,4 +1,4 @@
-import { isCompatible } from './config.js';
+import { isTaskRailCompatible } from './config.js';
 import { getComponent } from './component-registry.js';
 import { TASKRAIL_VERSION } from './version.js';
 import type { FrameworkManifest } from './types.js';
@@ -43,7 +43,7 @@ export function validateHubCapabilityPublication(value: unknown, taskrailVersion
   for (const field of ['name', 'version', 'taskrailCompatibility', 'description', 'purpose', 'domain'] as const) {
     if (!nonEmpty(raw[field])) errors.push(`${field} is required`);
   }
-  if (nonEmpty(raw.taskrailCompatibility) && !isCompatible(taskrailVersion, raw.taskrailCompatibility)) {
+  if (nonEmpty(raw.taskrailCompatibility) && !isTaskRailCompatible(taskrailVersion, raw.taskrailCompatibility)) {
     errors.push(`TaskRail ${taskrailVersion} does not satisfy ${raw.taskrailCompatibility}`);
   }
   if (!stringArray(raw.operations) || !raw.operations.length) errors.push('operations must contain at least one operation');
@@ -63,7 +63,7 @@ export function validateAutomationPublication(manifest: FrameworkManifest, taskr
   if (!manifest.name?.trim()) errors.push('automation name is required');
   if (!manifest.managed) errors.push('published reference automation must be TaskRail-managed');
   if (!manifest.taskrailCompatibility) errors.push('taskrailCompatibility is required for published automations');
-  else if (!isCompatible(taskrailVersion, manifest.taskrailCompatibility)) errors.push(`TaskRail ${taskrailVersion} does not satisfy ${manifest.taskrailCompatibility}`);
+  else if (!isTaskRailCompatible(taskrailVersion, manifest.taskrailCompatibility)) errors.push(`TaskRail ${taskrailVersion} does not satisfy ${manifest.taskrailCompatibility}`);
   if (!manifest.sourceDir?.trim()) errors.push('sourceDir is required');
   if (!manifest.deployDir?.trim()) errors.push('deployDir is required');
   if (!manifest.validationCommand?.trim()) errors.push('validationCommand is required');
