@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { discoverAutomationManifests, findAutomation } from './capabilities.js';
 import { resolveFrameworkManifest } from './framework.js';
-import { installTaskRailDropIn, managedServiceUnits, managedSystemdUnits, renderTaskRailDropIn, verifySystemdRuntimeContext } from './systemd.js';
+import { installTaskRailDropIn, managedServiceUnits, managedSystemdUnits, renderTaskRailDropIn, verifySystemdOperationalContext } from './systemd.js';
 import type { FrameworkManifest } from './types.js';
 
 async function readManifest(file: string) {
@@ -11,7 +11,7 @@ async function readManifest(file: string) {
 }
 
 function systemctl(args: string[]) {
-  return spawnSync('systemctl', args, { encoding: 'utf8' });
+  return spawnSync('systemctl', args, { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
 }
 
 async function main() {
@@ -37,7 +37,8 @@ async function main() {
   const seenAutomations = new Set<string>();
   const seenUnits = new Set<string>();
   const results: Array<{ automation: string; unit: string; kind: 'service' | 'timer'; applied: boolean; enabled: boolean | null; active: boolean | null; enabledByTaskRail: boolean; path?: string; dropIn?: string }> = [];
-  const runtimeChecks: Array<ReturnType<typeof verifySystemdRuntimeContext>[number] & { automation: string }> = [];
+  const runtimeChecks: Array<ReturnType<typeof verifySystemdOperationalContext>['runtimeChecks'][number] & { automation: string }> = [];
+  const timerChecks: Array<ReturnType<typeof verifySystemdOperationalContext>['timerChecks'][number] & { automation: string }> = [];
   for (const file of files) {
     const manifest = await readManifest(file);
     if (!manifest.managed || manifest.serviceManager?.type !== 'systemd' || seenAutomations.has(manifest.name)) continue;
@@ -60,7 +61,11 @@ async function main() {
       const active = unit.kind === 'timer' ? systemctl(['is-active', unit.name]).status === 0 : null;
       results.push({ automation: manifest.name, unit: unit.name, kind: unit.kind, applied: apply, enabled, active, enabledByTaskRail, path: installed, dropIn });
     }
-    if (verifyRuntime) runtimeChecks.push(...verifySystemdRuntimeContext(manifest).map((check) => ({ automation: manifest.name, ...check })));
+    if (verifyRuntime) {
+      const operational = verifySystemdOperationalContext(manifest);
+      runtimeChecks.push(...operational.runtimeChecks.map((check) => ({ automation: manifest.name, ...check })));
+      timerChecks.push(...operational.timerChecks.map((check) => ({ automation: manifest.name, ...check })));
+    }
   }
   if (apply) {
     const reload = systemctl(['daemon-reload']);
@@ -68,11 +73,9 @@ async function main() {
   }
   const disabled = results.filter((result) => result.enabled === false).map((result) => result.unit);
   const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
-  const schedulerFailures = verifyRuntime
-    ? results.filter((result) => result.kind === 'timer' && (!result.enabled || result.active !== true))
-    : [];
+  const schedulerFailures = verifyRuntime ? timerChecks.filter((check) => !check.passed) : [];
   const runtimeReady = runtimeFailures.length === 0 && schedulerFailures.length === 0;
-  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, verifyRuntime, units: results.length, rebootReady: disabled.length === 0, runtimeReady, disabled, runtimeFailures, schedulerFailures, runtimeChecks, results }, null, 2));
+  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, verifyRuntime, units: results.length, rebootReady: disabled.length === 0, runtimeReady, disabled, runtimeFailures, schedulerFailures, runtimeChecks, timerChecks, results }, null, 2));
   else {
     console.log(`STATUS: ${disabled.length || runtimeFailures.length || schedulerFailures.length ? 'WARN' : 'PASS'}`);
     console.log(`MODE: ${apply ? 'applied' : 'dry-run'}`);
