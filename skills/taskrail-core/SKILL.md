@@ -1,7 +1,7 @@
 ---
 name: taskrail-core
 description: Maintain TaskRail core and its fixed component platform with strict compatibility and component acceptance gates.
-reviewed_for_taskrail: 3.0.7
+reviewed_for_taskrail: 3.0.8
 ---
 # TaskRail Core / Component Maintenance
 
@@ -53,6 +53,8 @@ Prefer adapting existing hardened TaskRail primitives rather than creating paral
 ## CLI and command contracts
 
 `taskrail test` and `taskrail ship` each have one canonical implementation routed by `taskrail-cli.ts`. Do not reintroduce duplicate command implementations in legacy CLI files.
+
+For Linux/systemd deployments, keep production runtime-context verification fail-closed after deployment: verify the real service identity can traverse its working directory and read environment-scoped required shared files. A direct application health command must never be treated as proof that systemd can execute the service.
 
 The bounded command runner is deliberately not a shell. Do not add implicit shell execution to support pipes, redirects, `&&`, or inline environment assignments. Complex operations belong in explicit scripts.
 
