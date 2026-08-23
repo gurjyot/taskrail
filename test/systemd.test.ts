@@ -75,3 +75,29 @@ test('systemd runtime verification detects service-user CHDIR and shared-file fa
   assert.deepEqual(check.unreadableSharedFiles, ['/opt/shared/.env']);
   assert.equal(check.passed, false);
 });
+
+test('systemd runtime verification handles environment-scoped shared-file rules', () => {
+  const checkedFiles: string[] = [];
+  const manifest = resolveFrameworkManifest({
+    name: 'scoped', profile: 'smg-node-timer@1', runtime: 'node', managed: true,
+    sourceDir: '.', deployDir: '/opt/apps/scoped', validationCommand: 'true', testCommand: 'true',
+    requiredSharedFiles: [
+      { path: '/opt/shared/prod.env', environments: ['production'] },
+      { path: '/opt/shared/local.env', environments: ['local'] },
+    ],
+  });
+  const spawn = ((command: string, args: readonly string[]) => {
+    if (command === 'systemctl') {
+      const property = args.find((arg) => arg.startsWith('--property='))?.slice('--property='.length);
+      const values: Record<string, string> = { LoadState: 'loaded', User: 'root', Group: 'root', WorkingDirectory: '/opt/apps/scoped' };
+      return { status: 0, stdout: `${values[property ?? ''] ?? ''}\n`, stderr: '' };
+    }
+    if (command === '/usr/bin/test') checkedFiles.push(String(args.at(-1)));
+    return { status: 0, stdout: '', stderr: '' };
+  }) as any;
+  const [check] = verifySystemdRuntimeContext(manifest, { spawn, environment: 'production' });
+  assert.equal(check.passed, true);
+  assert.deepEqual(checkedFiles, ['/opt/shared/prod.env']);
+  assert.deepEqual(check.readableSharedFiles, ['/opt/shared/prod.env']);
+  assert.deepEqual(check.unreadableSharedFiles, []);
+});
