@@ -1,0 +1,33 @@
+name: TaskRail Default Rollback Strategy Patch Once
+on:
+  push:
+    branches: [hardening/final-transaction-correctness]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening/final-transaction-correctness
+      - name: Correct default rollback strategy
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/deployment.ts')
+          text = p.read_text()
+          old = "if (manifest?.deployStrategy?.type === 'replace-in-place' && previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath))"
+          new = "if ((manifest?.deployStrategy?.type ?? 'replace-in-place') === 'replace-in-place' && previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath))"
+          if text.count(old) != 1:
+              raise SystemExit('expected rollback strategy match not found exactly once')
+          p.write_text(text.replace(old, new))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/deployment.ts
+          git commit -m "fix: preserve default replace-in-place rollback strategy"
+          git push origin HEAD:hardening/final-transaction-correctness
