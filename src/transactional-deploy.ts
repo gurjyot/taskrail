@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { AutomationPlugin, DeployState, FrameworkManifest } from './types.js';
-import { check, safeDeploy, type DeployOptions, type DeployOutcome } from './deployment.js';
+import { check, safeDeploy, verifyOperationalReadiness, type DeployOptions, type DeployOutcome } from './deployment.js';
 import { resolvePaths } from './config.js';
 import {
   createUpdateCheckpoint,
@@ -11,6 +11,7 @@ import {
 } from './update-transaction.js';
 import { recordRecoveryReadiness, validateLastKnownGoodRecovery } from './recovery-readiness.js';
 import { readPrivateState, writePrivateState } from './private-state.js';
+import { readRelease } from './release.js';
 
 export interface TransactionalDeployOptions extends DeployOptions {
   changeClass?: UpdateChangeClass;
@@ -42,6 +43,25 @@ async function restorePriorState(manifest: FrameworkManifest, projectRoot: strin
 
 async function latestCheckpoint(root: string, name: string) {
   return readUpdateCheckpoint(root, 'automation', name);
+}
+
+async function verifyLiveRollback(manifest: FrameworkManifest, projectRoot: string, plugin: AutomationPlugin | undefined, priorState: DeployState) {
+  const liveTarget = resolvePaths(manifest, projectRoot).deployDir;
+  const liveRelease = await readRelease(path.join(liveTarget, 'release.json'));
+  if (!liveRelease?.releaseId || liveRelease.releaseId !== priorState.lastKnownGoodReleaseId) {
+    return {
+      ok: false,
+      reason: `live target does not match last-known-good release: expected ${priorState.lastKnownGoodReleaseId || 'unknown'}, found ${liveRelease?.releaseId || 'unknown'}`,
+    };
+  }
+  const readiness = await verifyOperationalReadiness(manifest, liveTarget, plugin);
+  if (!readiness.ok) {
+    return {
+      ok: false,
+      reason: readiness.error || readiness.health.details || 'restored live target failed operational readiness',
+    };
+  }
+  return { ok: true, reason: undefined };
 }
 
 export async function transactionalDeploy(
@@ -136,8 +156,18 @@ export async function transactionalDeploy(
       return { ok: true, outcome, checkpoint };
     }
 
+    if (outcome.recoveryRequired || (outcome.rollbackAttempted && outcome.rollbackSucceeded === false)) {
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'recovery-required', outcome.failure || 'live rollback failed and requires recovery');
+      return { ok: false, reason: outcome.failure || 'live rollback failed and requires recovery', outcome, checkpoint };
+    }
+
     if (outcome.rolledBack) {
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'rollback-required', outcome.failure || 'activation failed and rollback was attempted');
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'rollback-required', outcome.failure || 'activation failed and rollback was completed');
+      const liveRollback = await verifyLiveRollback(manifest, projectRoot, plugin, priorState);
+      if (!liveRollback.ok) {
+        checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'recovery-required', `live rollback verification failed: ${liveRollback.reason}`);
+        return { ok: false, reason: outcome.failure || liveRollback.reason || 'rollback requires recovery', outcome, checkpoint };
+      }
       const rollbackReadiness = await validateLastKnownGoodRecovery({
         state: priorState,
         health: declaredHealth,
@@ -153,7 +183,7 @@ export async function transactionalDeploy(
       }
       checkpoint = await recordRecoveryReadiness(projectRoot, checkpoint, rollbackReadiness);
       await restorePriorState(manifest, projectRoot, priorState);
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored, state restored, and operationally reverified');
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'live target matches last-known-good, state restored, and operational readiness passed');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'failed update closed after successful restore', {
         currentRelease: priorState.lastKnownGoodReleaseId,
         currentReleasePath: priorState.lastKnownGoodReleasePath,
