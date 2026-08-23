@@ -1,10 +1,10 @@
-import { access, constants, mkdir, readFile, stat } from 'node:fs/promises';
+import { access, constants, mkdir, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { FrameworkManifest } from './types.js';
 import { isCompatible, isTaskRailCompatible, resolvePaths } from './config.js';
 import { TASKRAIL_VERSION } from './version.js';
-import { capabilityRootsFor, discoverAutomationManifests, loadCapabilities } from './capabilities.js';
+import { capabilityRootsFor, loadCapabilities } from './capabilities.js';
 import { detectEnvironment, appliesToEnvironment } from './env.js';
 import { readUpdatePause } from './update-pause.js';
 
@@ -94,26 +94,5 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
     }
   }
   if (manifest.database?.required) push('database:schema', Boolean(manifest.database.schema), manifest.database.schema || 'missing schema');
-  const manifests = await discoverAutomationManifests(cwd).catch(() => []);
-  const seenNames = new Map<string, string[]>();
-  const seenTargets = new Map<string, string[]>();
-  const seenUnits = new Map<string, string[]>();
-  for (const manifestPath of manifests) {
-    try {
-      const current = JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
-      const itemName = current.name;
-      const itemTarget = current.deployDir;
-      seenNames.set(itemName, [...(seenNames.get(itemName) ?? []), manifestPath]);
-      seenTargets.set(itemTarget, [...(seenTargets.get(itemTarget) ?? []), manifestPath]);
-      for (const unit of current.serviceManager?.units ?? []) seenUnits.set(unit.name, [...(seenUnits.get(unit.name) ?? []), manifestPath]);
-    } catch {
-      continue;
-    }
-  }
-  push('duplicate:name', (seenNames.get(manifest.name) ?? []).length <= 1, (seenNames.get(manifest.name) ?? []).join(', '));
-  push('duplicate:deployDir', (seenTargets.get(manifest.deployDir) ?? []).length <= 1, (seenTargets.get(manifest.deployDir) ?? []).join(', '));
-  for (const unit of manifest.serviceManager?.units ?? []) {
-    push(`duplicate:unit:${unit.name}`, (seenUnits.get(unit.name) ?? []).length <= 1, (seenUnits.get(unit.name) ?? []).join(', '));
-  }
   return { ok: checks.every((check) => check.ok), checks };
 }
