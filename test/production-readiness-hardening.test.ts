@@ -59,7 +59,7 @@ test('doctor exposes a declared plugin import failure and is not deployable', as
   const { root, source, deploy } = await fixture();
   try {
     const result = await doctor(manifest(root, source, deploy, {
-      plugins: [{ module: './missing-plugin.mjs' }],
+      plugins: [{ name: 'missing', module: './missing-plugin.mjs' }],
     }), { cwd: root });
     assert.equal(result.deployable, false);
     assert.ok(result.pluginError);
