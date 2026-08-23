@@ -28,14 +28,19 @@ export async function runShipCli(args = process.argv.slice(3)) {
   const raw = await loadManifest(manifestPath);
   const manifest = resolveFrameworkManifest(raw);
   const cwd = path.dirname(manifestPath);
+  const environment = detectEnvironment(manifest, cwd);
   const plugins = await loadPlugins(manifest).catch(() => []);
   const plugin = plugins[0];
   const result = await safeDeploy(manifest, plugin, {
     sourceRevision: inspectGitState(cwd).sha,
     projectRoot: cwd,
   });
-  const runtimeChecks = result.deployed && process.platform === 'linux' && manifest.serviceManager?.type === 'systemd'
-    ? verifySystemdRuntimeContext(manifest)
+  const shouldVerifyRuntime = result.deployed
+    && environment.name === 'production'
+    && process.platform === 'linux'
+    && manifest.serviceManager?.type === 'systemd';
+  const runtimeChecks = shouldVerifyRuntime
+    ? verifySystemdRuntimeContext(manifest, { environment: environment.name })
     : [];
   const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
   const shipped = result.deployed && runtimeFailures.length === 0;
@@ -45,10 +50,10 @@ export async function runShipCli(args = process.argv.slice(3)) {
   } else {
     compact([
       `STATUS: ${shipped ? 'PASS' : 'FAIL'}`,
-      `ENV: ${detectEnvironment(manifest, cwd).name}`,
+      `ENV: ${environment.name}`,
       `SHA: ${result.sha || 'unknown'}`,
       `RELEASE: ${result.releaseId || 'unknown'}`,
-      ...(result.deployed && manifest.serviceManager?.type === 'systemd' ? [`RUNTIME: ${runtimeFailures.length ? 'FAIL' : 'PASS'}`] : []),
+      ...(shouldVerifyRuntime ? [`RUNTIME: ${runtimeFailures.length ? 'FAIL' : 'PASS'}`] : []),
       ...runtimeFailures.map((check) => `RUNTIME_FAILURE: ${check.unit} user=${check.user} workdir=${check.workingDirectory}${check.unreadableSharedFiles.length ? ` unreadable=${check.unreadableSharedFiles.join(',')}` : ''}`),
       ...(result.failure ? [`FAILURE: ${result.failure}`] : []),
       ...(result.report ? [`REPORT: ${result.report}`] : []),
