@@ -19,6 +19,18 @@ test('Hub capability publication requires compatible TaskRail contract and known
   }, '2.0.8');
   assert.equal(valid.ok, true, valid.errors.join('; '));
 
+  const additiveMinor = validateHubCapabilityPublication({
+    name: 'example-api',
+    version: '1.0.0',
+    taskrailCompatibility: '3.0.x',
+    description: 'Example API integration',
+    purpose: 'Call Example API',
+    domain: 'example',
+    operations: ['read'],
+    components: ['http'],
+  }, '3.1.0');
+  assert.equal(additiveMinor.ok, true, additiveMinor.errors.join('; '));
+
   const incompatible = validateHubCapabilityPublication({
     name: 'example-api',
     version: '1.0.0',
@@ -35,7 +47,7 @@ test('Hub capability publication requires compatible TaskRail contract and known
 });
 
 test('reference automation publication requires compatibility and health contract', () => {
-  const result = validateAutomationPublication({
+  const manifest = {
     name: 'reference',
     taskrailCompatibility: '2.0.x',
     profile: 'smg-node-service@1',
@@ -46,8 +58,13 @@ test('reference automation publication requires compatibility and health contrac
     validationCommand: 'node check.js',
     testCommand: 'node check.js',
     healthCheck: { type: 'file', path: 'index.js' },
-  }, '2.0.8');
+  } as any;
+  const result = validateAutomationPublication(manifest, '2.0.8');
   assert.equal(result.ok, true, result.errors.join('; '));
+
+  manifest.taskrailCompatibility = '3.0.x';
+  const additiveMinor = validateAutomationPublication(manifest, '3.1.0');
+  assert.equal(additiveMinor.ok, true, additiveMinor.errors.join('; '));
 });
 
 test('repository roles keep core, Hub, and automation ownership separate', () => {
