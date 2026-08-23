@@ -1,4 +1,4 @@
-name: Runtime Transaction Patch
+name: TaskRail 3.1 Correctness Cleanup
 
 on:
   issues:
@@ -10,105 +10,718 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor == github.repository_owner && github.event.issue.title == 'Apply transactional runtime patch v3.0.8'
+    if: github.actor == github.repository_owner && github.event.issue.title == 'Apply TaskRail 3.1 correctness cleanup'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-      - name: Patch, build and focused test
+      - name: Apply targeted correctness cleanup
         id: patch
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
-          {
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          p = Path('src/deployment.ts')
-          s = p.read_text()
-          if "from './systemd.js'" not in s:
-              needle = "import { runBoundedCommand } from './bounded-command.js';\n"
-              assert needle in s
-              s = s.replace(needle, needle + "import { verifySystemdRuntimeContext } from './systemd.js';\n", 1)
+          def read(path):
+              return Path(path).read_text()
 
-          if 'function productionRuntimeChecks' not in s:
-              marker = "function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {\n"
-              assert marker in s
-              helper = """function productionRuntimeChecks(manifest: FrameworkManifest, environment: EnvironmentInfo) {
-            if (environment.name !== 'production' || process.platform !== 'linux' || manifest.serviceManager?.type !== 'systemd') return [];
-            return verifySystemdRuntimeContext(manifest, { environment: environment.name });
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def replace_once(path, old, new):
+              text = read(path)
+              if old not in text:
+                  raise AssertionError(f'missing expected text in {path}: {old[:120]!r}')
+              write(path, text.replace(old, new, 1))
+
+          # 1) Thin manifests: always resolve profile defaults before fleet metadata consumers inspect them.
+          p = 'src/capabilities.ts'
+          s = read(p)
+          if "loadResolvedManifest" not in s:
+              s = s.replace("import { findHardRegistryConflicts } from './capability-governance.js';\n", "import { findHardRegistryConflicts } from './capability-governance.js';\nimport { loadResolvedManifest } from './config.js';\n", 1)
+          old = """export async function listManagedAutomations(cwd = process.cwd()): Promise<ManagedAutomation[]> {
+            const manifests = await discoverAutomationManifests(cwd);
+            const items: ManagedAutomation[] = [];
+            for (const manifestPath of manifests) {
+              const manifest = await readJson<FrameworkManifest>(manifestPath);
+              if (!manifest?.managed) continue;
+              items.push({
+                name: manifest.name,
+                manifestPath,
+                runtime: manifest.runtime,
+                capabilities: unique(manifest.capabilities ?? []),
+                status: manifest.capabilities?.length ? 'capability-aware' : 'managed',
+              });
+            }
+            return items.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          """
+          new = """export async function listManagedAutomations(cwd = process.cwd()): Promise<ManagedAutomation[]> {
+            const manifests = await discoverAutomationManifests(cwd);
+            const items: ManagedAutomation[] = [];
+            const seen = new Set<string>();
+            for (const manifestPath of manifests) {
+              try {
+                const manifest = await loadResolvedManifest(manifestPath);
+                if (!manifest.managed || seen.has(manifest.name)) continue;
+                seen.add(manifest.name);
+                items.push({
+                  name: manifest.name,
+                  manifestPath,
+                  runtime: manifest.runtime,
+                  capabilities: unique(manifest.capabilities ?? []),
+                  status: manifest.capabilities?.length ? 'capability-aware' : 'managed',
+                });
+              } catch {
+                continue;
+              }
+            }
+            return items.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          """
+          if old not in s: raise AssertionError('listManagedAutomations block changed')
+          s = s.replace(old, new, 1)
+          old = """export async function capabilityImpact(name: string, cwd = process.cwd()) {
+            const manifests = await discoverAutomationManifests(cwd);
+            const consumers: Array<{ name: string; manifestPath: string }> = [];
+            for (const manifestPath of manifests) {
+              const manifest = await readJson<FrameworkManifest>(manifestPath);
+              if ((manifest?.capabilities ?? []).includes(name)) consumers.push({ name: manifest!.name, manifestPath });
+            }
+            return consumers.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          """
+          new = """export async function capabilityImpact(name: string, cwd = process.cwd()) {
+            const manifests = await discoverAutomationManifests(cwd);
+            const consumers: Array<{ name: string; manifestPath: string }> = [];
+            for (const manifestPath of manifests) {
+              try {
+                const manifest = await loadResolvedManifest(manifestPath);
+                if ((manifest.capabilities ?? []).includes(name)) consumers.push({ name: manifest.name, manifestPath });
+              } catch {
+                continue;
+              }
+            }
+            return consumers.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          """
+          if old not in s: raise AssertionError('capabilityImpact block changed')
+          s = s.replace(old, new, 1)
+          write(p, s)
+
+          p = 'src/usage-graph.ts'
+          s = read(p)
+          s = s.replace("import { readFile } from 'node:fs/promises';\n", '')
+          s = s.replace("import { listComponents } from './component-registry.js';\n", "import { listComponents } from './component-registry.js';\nimport { loadResolvedManifest } from './config.js';\n", 1)
+          s = re.sub(r"\nasync function readManifest\(file: string\): Promise<FrameworkManifest \| null> \{.*?\n\}\n", "\n", s, count=1, flags=re.S)
+          s = s.replace("""    const manifest = await readManifest(manifestPath);
+              if (!manifest?.managed || seenNames.has(manifest.name)) continue;
+              seenNames.add(manifest.name);
+              manifests.set(manifestPath, manifest);
+""", """    let manifest: FrameworkManifest;
+              try {
+                manifest = await loadResolvedManifest(manifestPath);
+              } catch (error) {
+                errors.push(`${manifestPath}: ${error instanceof Error ? error.message : String(error)}`);
+                continue;
+              }
+              if (!manifest.managed) continue;
+              if (seenNames.has(manifest.name)) {
+                errors.push(`duplicate automation name: ${manifest.name}`);
+                continue;
+              }
+              seenNames.add(manifest.name);
+              manifests.set(manifestPath, manifest);
+""", 1)
+          write(p, s)
+
+          p = 'src/isolation-audit.ts'
+          s = read(p)
+          s = s.replace("import { readFile } from 'node:fs/promises';\n", '')
+          s = s.replace("import { resolveFrameworkManifest } from './framework.js';\nimport { resolvePaths } from './config.js';\n", "import { loadResolvedManifest, resolvePaths } from './config.js';\n", 1)
+          s = re.sub(r"\nasync function readManifest\(file: string\): Promise<FrameworkManifest \| null> \{.*?\n\}\n", "\n", s, count=1, flags=re.S)
+          old = """  for (const manifestPath of manifestPaths) {
+            const raw = await readManifest(manifestPath);
+            if (!raw?.managed || seenAutomations.has(raw.name)) continue;
+            seenAutomations.add(raw.name);
+            try {
+              const resolved = resolveFrameworkManifest(raw);
+              const projectRoot = path.dirname(manifestPath);
+              const paths = resolvePaths(resolved, projectRoot);
+              roots.push({ automation: resolved.name, manifestPath, kind: 'deploy', path: path.resolve(paths.deployDir) });
+              if (resolved.statePath) {
+                const state = path.isAbsolute(resolved.statePath) ? resolved.statePath : path.resolve(projectRoot, resolved.statePath);
+                roots.push({ automation: resolved.name, manifestPath, kind: 'state', path: path.resolve(state) });
+              }
+            } catch (error) {
+              errors.push(`${raw.name}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+          """
+          new = """  for (const manifestPath of manifestPaths) {
+            try {
+              const resolved = await loadResolvedManifest(manifestPath);
+              if (!resolved.managed || seenAutomations.has(resolved.name)) continue;
+              seenAutomations.add(resolved.name);
+              const projectRoot = path.dirname(manifestPath);
+              const paths = resolvePaths(resolved, projectRoot);
+              roots.push({ automation: resolved.name, manifestPath, kind: 'deploy', path: path.resolve(paths.deployDir) });
+              if (resolved.statePath) {
+                const state = path.isAbsolute(resolved.statePath) ? resolved.statePath : path.resolve(projectRoot, resolved.statePath);
+                roots.push({ automation: resolved.name, manifestPath, kind: 'state', path: path.resolve(state) });
+              }
+            } catch (error) {
+              errors.push(`${manifestPath}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+          """
+          if old not in s: raise AssertionError('isolation manifest loop changed')
+          write(p, s.replace(old, new, 1))
+
+          p = 'src/conformance.ts'
+          s = read(p)
+          s = s.replace("import { readFile } from 'node:fs/promises';\n", '')
+          s = s.replace("import { resolveFrameworkManifest } from './framework.js';\n", '')
+          s = s.replace("import { effectiveExecutionPolicy } from './execution.js';\n", "import { effectiveExecutionPolicy } from './execution.js';\nimport { loadResolvedManifest } from './config.js';\n", 1)
+          s = re.sub(r"\nasync function readManifest\(file: string\): Promise<FrameworkManifest \| null> \{.*?\n\}\n", "\n", s, count=1, flags=re.S)
+          s = s.replace("  let automationCount = 0;\n", "  let automationCount = 0;\n  const seenUnits = new Map<string, string>();\n", 1)
+          old = """  for (const manifestPath of manifestPaths) {
+            const raw = await readManifest(manifestPath);
+            if (!raw?.managed || seen.has(raw.name)) continue;
+            seen.add(raw.name);
+            automationCount += 1;
+            const resolved = resolveFrameworkManifest(raw);
+            const projectRoot = path.dirname(manifestPath);
+            const config: FrameworkConfig = { projectName: raw.name, environment: process.env, manifest: resolved };
+            for (const error of validateConfig(config)) findings.push(finding('manifest-validity', 'error', error, raw.name));
+"""
+          new = """  for (const manifestPath of manifestPaths) {
+            let resolved: FrameworkManifest;
+            try {
+              resolved = await loadResolvedManifest(manifestPath);
+            } catch (error) {
+              findings.push(finding('manifest-resolution', 'error', error instanceof Error ? error.message : String(error), manifestPath));
+              continue;
+            }
+            if (!resolved.managed) continue;
+            if (seen.has(resolved.name)) {
+              findings.push(finding('duplicate-automation-name', 'error', `duplicate automation name: ${resolved.name}`, resolved.name));
+              continue;
+            }
+            seen.add(resolved.name);
+            automationCount += 1;
+            const projectRoot = path.dirname(manifestPath);
+            const config: FrameworkConfig = { projectName: resolved.name, environment: process.env, manifest: resolved };
+            for (const error of validateConfig(config)) findings.push(finding('manifest-validity', 'error', error, resolved.name));
+            for (const unit of resolved.serviceManager?.units ?? []) {
+              const owner = seenUnits.get(unit.name);
+              if (owner && owner !== resolved.name) findings.push(finding('duplicate-systemd-unit', 'error', `${unit.name} is declared by ${owner} and ${resolved.name}`, resolved.name));
+              else seenUnits.set(unit.name, resolved.name);
+            }
+"""
+          if old not in s: raise AssertionError('conformance manifest loop changed')
+          s = s.replace(old, new, 1).replace(', raw.name));', ', resolved.name));').replace(', raw.name,', ', resolved.name,')
+          write(p, s)
+
+          # 2/3/11) One bounded operational systemd verifier: service identity + timer enabled/active.
+          p = 'src/systemd.ts'
+          s = read(p)
+          old = """function systemctlShow(unit: string, property: string, spawn: SpawnLike) {
+            const result = spawn('systemctl', ['show', unit, `--property=${property}`, '--value'], { encoding: 'utf8' });
+            if (result.status !== 0) throw new Error(result.stderr?.trim() || `systemctl show ${unit} ${property} failed`);
+            return String(result.stdout ?? '').trim();
+          }
+
+          function asUser(user: string, args: string[], spawn: SpawnLike) {
+            if (!user || user === 'root') return spawn(args[0], args.slice(1), { encoding: 'utf8' });
+            if (typeof process.getuid === 'function' && process.getuid() === 0) return spawn('runuser', ['-u', user, '--', ...args], { encoding: 'utf8' });
+            return spawn('sudo', ['-n', '-u', user, '--', ...args], { encoding: 'utf8' });
+          }
+"""
+          new = """const boundedSpawnOptions = { encoding: 'utf8' as const, timeout: 30_000, maxBuffer: 256 * 1024 };
+
+          function systemctlShow(unit: string, property: string, spawn: SpawnLike) {
+            const result = spawn('systemctl', ['show', unit, `--property=${property}`, '--value'], boundedSpawnOptions);
+            if (result.status !== 0) throw new Error(result.stderr?.trim() || `systemctl show ${unit} ${property} failed`);
+            return String(result.stdout ?? '').trim();
+          }
+
+          function asUser(user: string, args: string[], spawn: SpawnLike) {
+            if (!user || user === 'root') return spawn(args[0], args.slice(1), boundedSpawnOptions);
+            if (typeof process.getuid === 'function' && process.getuid() === 0) return spawn('runuser', ['-u', user, '--', ...args], boundedSpawnOptions);
+            return spawn('sudo', ['-n', '-u', user, '--', ...args], boundedSpawnOptions);
+          }
+"""
+          if old not in s: raise AssertionError('systemd spawn block changed')
+          s = s.replace(old, new, 1)
+          s += """
+
+          export interface SystemdTimerCheck {
+            unit: string;
+            enabled: boolean;
+            active: boolean;
+            passed: boolean;
+          }
+
+          export interface SystemdOperationalContext {
+            runtimeChecks: SystemdRuntimeCheck[];
+            timerChecks: SystemdTimerCheck[];
+            passed: boolean;
+          }
+
+          export function verifySystemdOperationalContext(manifest: FrameworkManifest, options: { spawn?: SpawnLike; environment?: TaskrailEnv } = {}): SystemdOperationalContext {
+            if (manifest.serviceManager?.type !== 'systemd') return { runtimeChecks: [], timerChecks: [], passed: true };
+            const spawn = options.spawn ?? spawnSync;
+            const runtimeChecks = verifySystemdRuntimeContext(manifest, options);
+            const timerChecks = (manifest.serviceManager.units ?? [])
+              .filter((unit) => unit.kind === 'timer')
+              .map((unit) => {
+                const enabled = spawn('systemctl', ['is-enabled', unit.name], boundedSpawnOptions).status === 0;
+                const active = spawn('systemctl', ['is-active', unit.name], boundedSpawnOptions).status === 0;
+                return { unit: unit.name, enabled, active, passed: enabled && active };
+              });
+            return { runtimeChecks, timerChecks, passed: runtimeChecks.every((check) => check.passed) && timerChecks.every((check) => check.passed) };
+          }
+          """
+          write(p, s)
+
+          p = 'src/systemd-cli.ts'
+          s = read(p)
+          s = s.replace("verifySystemdRuntimeContext } from './systemd.js';", "verifySystemdOperationalContext } from './systemd.js';", 1)
+          s = s.replace("return spawnSync('systemctl', args, { encoding: 'utf8' });", "return spawnSync('systemctl', args, { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });", 1)
+          s = s.replace("const runtimeChecks: Array<ReturnType<typeof verifySystemdRuntimeContext>[number] & { automation: string }> = [];", "const runtimeChecks: Array<ReturnType<typeof verifySystemdOperationalContext>['runtimeChecks'][number] & { automation: string }> = [];\n  const timerChecks: Array<ReturnType<typeof verifySystemdOperationalContext>['timerChecks'][number] & { automation: string }> = [];", 1)
+          s = s.replace("if (verifyRuntime) runtimeChecks.push(...verifySystemdRuntimeContext(manifest).map((check) => ({ automation: manifest.name, ...check })));", "if (verifyRuntime) {\n      const operational = verifySystemdOperationalContext(manifest);\n      runtimeChecks.push(...operational.runtimeChecks.map((check) => ({ automation: manifest.name, ...check })));\n      timerChecks.push(...operational.timerChecks.map((check) => ({ automation: manifest.name, ...check })));\n    }", 1)
+          s = s.replace("const schedulerFailures = verifyRuntime\n    ? results.filter((result) => result.kind === 'timer' && (!result.enabled || result.active !== true))\n    : [];", "const schedulerFailures = verifyRuntime ? timerChecks.filter((check) => !check.passed) : [];", 1)
+          write(p, s)
+
+          # 4/5/6) Deployment is the single fail-closed transaction boundary.
+          p = 'src/deployment.ts'
+          s = read(p)
+          if "verifySystemdOperationalContext" not in s:
+              s = s.replace("import { runBoundedCommand } from './bounded-command.js';\n", "import { runBoundedCommand } from './bounded-command.js';\nimport { verifySystemdOperationalContext } from './systemd.js';\n", 1)
+          s = s.replace("  projectRoot?: string;\n}", "  projectRoot?: string;\n  transactionalUpdate?: boolean;\n}", 1)
+          s = s.replace("export async function loadPlugin(modulePath: string): Promise<AutomationPlugin> {\n  const mod = await import(pathToFileURL(path.resolve(modulePath)).href);", "export async function loadPlugin(modulePath: string, cwd = process.cwd()): Promise<AutomationPlugin> {\n  const mod = await import(pathToFileURL(path.resolve(cwd, modulePath)).href);", 1)
+          s = s.replace("export async function loadPlugins(manifest: FrameworkManifest): Promise<AutomationPlugin[]> {\n  const refs = manifest.plugins ?? [];\n  const plugins: AutomationPlugin[] = [];\n  for (const ref of refs) plugins.push(await loadPlugin(ref.module));", "export async function loadPlugins(manifest: FrameworkManifest, cwd = process.cwd()): Promise<AutomationPlugin[]> {\n  const refs = manifest.plugins ?? [];\n  const plugins: AutomationPlugin[] = [];\n  for (const ref of refs) plugins.push(await loadPlugin(ref.module, cwd));", 1)
+          s = s.replace("export async function runHealthCheck(health: HealthCheckDefinition | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {", "export async function runHealthCheck(health: HealthCheckDefinition | HealthCheckDefinition[] | undefined, cwd: string, plugin?: AutomationPlugin, runtimeHealthCommand?: string) {", 1)
+          old = """  if (health) {
+            checks.push((async () => {
+              try {
+                if (health.type === 'command') {
+                  const result = await runCommand(health.command, cwd, 30_000);
+                  return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+                }
+                if (health.type === 'file') return { ok: await pathExists(path.resolve(cwd, health.path)), tier: 'process' as const, details: health.path };
+                if (health.type === 'http') {
+                  const response = await fetch(health.url, { signal: AbortSignal.timeout(30_000) });
+                  return { ok: response.status === (health.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+                }
+                return { ok: true, tier: 'process' as const };
+              } catch (error) {
+                return { ok: false, tier: 'integration' as const, details: error instanceof Error ? error.message : String(error) };
+              }
+            })());
+          }
+"""
+          new = """  for (const definition of (Array.isArray(health) ? health : health ? [health] : [])) {
+            checks.push((async () => {
+              try {
+                if (definition.type === 'command') {
+                  const result = await runCommand(definition.command, cwd, 30_000);
+                  return { ok: result.ok, tier: 'process' as const, details: result.error ?? `exit ${result.code}` };
+                }
+                if (definition.type === 'file') return { ok: await pathExists(path.resolve(cwd, definition.path)), tier: 'process' as const, details: definition.path };
+                if (definition.type === 'http') {
+                  const response = await fetch(definition.url, { signal: AbortSignal.timeout(30_000) });
+                  return { ok: response.status === (definition.expectStatus ?? 200), tier: 'integration' as const, details: `status ${response.status}` };
+                }
+                return { ok: true, tier: 'process' as const };
+              } catch (error) {
+                return { ok: false, tier: 'integration' as const, details: error instanceof Error ? error.message : String(error) };
+              }
+            })());
+          }
+"""
+          if old not in s: raise AssertionError('health implementation changed')
+          s = s.replace(old, new, 1)
+          marker = "function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {\n"
+          if 'function declaredHealth' not in s:
+              helper = """function declaredHealth(manifest: FrameworkManifest) {
+            return manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
+          }
+
+          function productionOperationalContext(manifest: FrameworkManifest, environment: EnvironmentInfo) {
+            if (environment.name !== 'production' || process.platform !== 'linux' || manifest.serviceManager?.type !== 'systemd') {
+              return { runtimeChecks: [], timerChecks: [], passed: true };
+            }
+            return verifySystemdOperationalContext(manifest, { environment: environment.name });
           }
 
           """
+              if marker not in s: raise AssertionError('fingerprint marker missing')
               s = s.replace(marker, helper + marker, 1)
+          s = s.replace("  const fingerprint = fingerprintInputs(manifest, git);\n", "  const fingerprint = fingerprintInputs(manifest, git);\n  const operationalPlugin = plugin ?? ((manifest.plugins?.length ?? 0) ? (await loadPlugins(manifest, projectRoot))[0] : undefined);\n", 1)
+          s = s.replace("const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);\n      if (health.ok) {", "const health = await runHealthCheck(declaredHealth(manifest), strategy === 'release-symlink' ? existingReleasePath : target, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);\n      const operational = health.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };\n      if (health.ok && operational.passed) {", 1)
+          s = s.replace("  const priorState = await readState(stateFile);\n", "  const priorState = await readState(stateFile);\n  if (priorState && manifest.migrations?.applyCommand && !options.transactionalUpdate) {\n    return { deployed: false, rolledBack: false, failure: 'existing deployment with migrations requires taskrail update' };\n  }\n", 1)
+          s = s.replace("const liveGate = await runGate(manifest, projectRoot, plugin ? [plugin] : []);", "const liveGate = await runGate(manifest, projectRoot, operationalPlugin ? [operationalPlugin] : []);", 1)
 
-          noop_health = "const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);"
-          pos = s.index(noop_health)
-          cond = "if (health.ok) {"
-          cpos = s.index(cond, pos)
-          before = s[pos:cpos]
-          if 'productionRuntimeChecks(manifest, envInfo)' not in before:
-              indent = s[s.rfind('\n', cpos)+1:cpos]
-              s = s[:cpos] + f"const runtimeChecks = health.ok ? productionRuntimeChecks(manifest, envInfo) : [];\n{indent}if (health.ok && runtimeChecks.every((check) => check.passed)) {{" + s[cpos+len(cond):]
+          start = s.index("    const liveCheckPath = strategy === 'release-symlink' ? release.path : target;\n")
+          end = s.index("  } finally {\n    await releaseLock(lockDir);", start)
+          replacement = """    const liveCheckPath = strategy === 'release-symlink' ? release.path : target;
+            const health = await runHealthCheck(declaredHealth(manifest), liveCheckPath, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+            const operational = health.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };
+            if (health.ok && operational.passed) {
+              const nextState: DeployState = {
+                backupPath: backup,
+                targetPath: target,
+                releasePath: release.path,
+                previousReleasePath,
+                currentReleaseId: release.releaseId,
+                currentSha: git.sha,
+                currentFingerprint: fingerprint,
+                lastKnownGoodReleasePath: release.path,
+                lastKnownGoodReleaseId: release.releaseId,
+                lastKnownGoodSha: git.sha,
+              };
+              await writeState(stateFile, nextState);
+              if (hasFrameworkCapability(manifest, 'release-retention')) await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, state, release.path);
+              else await pruneBackups(workspace, manifest.name, manifest.backup?.retain ?? 0);
+              const receiptPath = await writeReceipt(workspace, {
+                automation: manifest.name,
+                environment: envInfo.name,
+                sha: git.sha,
+                taskrailVersion: TASKRAIL_VERSION,
+                releaseId: release.releaseId,
+                migration: 'PASS',
+                health: 'PASS',
+                runtime: operational.passed ? 'PASS' : 'SKIPPED',
+                deployedAt: new Date().toISOString(),
+              });
+              await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_succeeded', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId, sha: git.sha });
+              await writeEvidence(workspace, { kind: 'deploy', project: manifest.name, verdict: 'PASS', deployAllowed: true, releaseId: release.releaseId, sha: git.sha, environment: envInfo.name });
+              await writeFile(path.join(release.path, 'release.json'), JSON.stringify({ ...release, environment: envInfo.name, receiptPath }, null, 2));
+              return { deployed: true, rolledBack: false, backupPath: backup, releaseId: release.releaseId, releasePath: release.path, sha: git.sha };
+            }
 
-          live_health = "const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);"
-          pos = s.index(live_health)
-          cpos = s.index(cond, pos)
-          before = s[pos:cpos]
-          if 'runtimeFailures' not in before:
-              indent = s[s.rfind('\n', cpos)+1:cpos]
-              replacement = f"const runtimeChecks = health.ok ? productionRuntimeChecks(manifest, envInfo) : [];\n{indent}const runtimeFailures = runtimeChecks.filter((check) => !check.passed);\n{indent}if (health.ok && runtimeFailures.length === 0) {{"
-              s = s[:cpos] + replacement + s[cpos+len(cond):]
+            if (strategy === 'release-symlink') await restoreActivation(target, backup, previousReleasePath);
+            else {
+              await rm(target, { recursive: true, force: true });
+              if (await pathExists(backup)) await rename(backup, target);
+            }
 
-          restored_line = "const restored = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], restoredPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);"
-          pos = s.index(restored_line)
-          fail_cond = "if (!restored.ok) {"
-          cpos = s.index(fail_cond, pos)
-          before = s[pos:cpos]
-          if 'restoredRuntimeReady' not in before:
-              indent = s[s.rfind('\n', cpos)+1:cpos]
-              replacement = f"const restoredRuntimeChecks = restored.ok ? productionRuntimeChecks(manifest, envInfo) : [];\n{indent}const restoredRuntimeReady = restoredRuntimeChecks.every((check) => check.passed);\n{indent}if (!restored.ok || !restoredRuntimeReady) {{"
-              s = s[:cpos] + replacement + s[cpos+len(fail_cond):]
+            const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
+            const restored = await runHealthCheck(declaredHealth(manifest), restoredPath, operationalPlugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+            const restoredOperational = restored.ok ? productionOperationalContext(manifest, envInfo) : { runtimeChecks: [], timerChecks: [], passed: false };
+            const runtimeFailed = health.ok && !operational.passed;
+            if (!restored.ok || !restoredOperational.passed) {
+              await writeReceipt(workspace, {
+                automation: manifest.name,
+                environment: envInfo.name,
+                sha: git.sha,
+                taskrailVersion: TASKRAIL_VERSION,
+                releaseId: release.releaseId,
+                migration: 'PASS',
+                health: health.ok ? 'PASS' : 'FAIL',
+                runtime: runtimeFailed ? 'FAIL' : 'PASS',
+                rollback: 'FAIL',
+                deployedAt: new Date().toISOString(),
+              });
+              return { deployed: false, rolledBack: true, backupPath: backup, failure: runtimeFailed ? 'runtime context failed and rollback verification failed' : 'health check failed and rollback failed', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: runtimeFailed ? 'runtime' : 'health', category: runtimeFailed ? 'runtime_failed' : 'health_failed', message: 'rollback verification failed', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'failed', nextStep: 'inspect release history and restore manually', environment: envInfo.name }) };
+            }
+            await appendAudit(historyFile, { ts: new Date().toISOString(), type: 'deploy_rolled_back', project: manifest.name, taskrailVersion: TASKRAIL_VERSION, releaseId: release.releaseId, sha: git.sha });
+            await writeReceipt(workspace, {
+              automation: manifest.name,
+              environment: envInfo.name,
+              sha: git.sha,
+              taskrailVersion: TASKRAIL_VERSION,
+              releaseId: release.releaseId,
+              migration: 'PASS',
+              health: health.ok ? 'PASS' : 'FAIL',
+              runtime: runtimeFailed ? 'FAIL' : 'PASS',
+              rollback: 'PASS',
+              deployedAt: new Date().toISOString(),
+            });
+            return { deployed: false, rolledBack: true, backupPath: backup, failure: runtimeFailed ? 'runtime context failed; rollback succeeded' : 'health check failed; rollback succeeded', releaseId: release.releaseId, report: failure({ project: manifest.name, taskrailVersion: TASKRAIL_VERSION, stage: runtimeFailed ? 'runtime' : 'health', category: runtimeFailed ? 'runtime_failed' : 'health_failed', message: 'rollback succeeded', releaseId: release.releaseId, rollbackAttempted: true, rollbackResult: 'success', nextStep: 'fix candidate and redeploy', environment: envInfo.name }) };
+          """
+          s = s[:start] + replacement + s[end:]
+          s = s.replace("return rollbackFromState(stateFile, manifest.healthCheck ?? manifest.healthChecks?.[0], plugin);", "return rollbackFromState(stateFile, declaredHealth(manifest), plugin);", 1)
+          write(p, s)
 
-          s = s.replace("failure: 'health check failed and rollback failed'", "failure: runtimeFailures.length ? 'runtime context failed and rollback verification failed' : 'health check failed and rollback failed'", 1)
-          s = s.replace("failure: 'health check failed; rollback succeeded'", "failure: runtimeFailures.length ? 'runtime context failed; rollback succeeded' : 'health check failed; rollback succeeded'", 1)
-          p.write_text(s)
+          p = 'src/gate.ts'
+          s = read(p)
+          s = s.replace("  const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];", "  const healthDef = manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;", 1)
+          old = """  for (const plugin of plugins) {
+            const result = await plugin.validate?.({ projectName: manifest.name, environment: process.env, manifest });
+            if (result?.length) steps.push({ name: `plugin:${plugin.name}`, ok: false, required: false, message: result.join(', ') });
+          }
+          """
+          new = """  for (const plugin of plugins) {
+            try {
+              const result = await plugin.validate?.({ projectName: manifest.name, environment: process.env, manifest });
+              if (result?.length) steps.push({ name: `plugin:${plugin.name}`, ok: false, required: true, message: result.join(', ') });
+            } catch (error) {
+              steps.push({ name: `plugin:${plugin.name}`, ok: false, required: true, message: error instanceof Error ? error.message : String(error) });
+            }
+          }
+          """
+          if old not in s: raise AssertionError('gate plugin block changed')
+          write(p, s.replace(old, new, 1))
 
-          p = Path('src/ship-command.ts')
-          s = p.read_text()
-          s = s.replace("import { loadManifest, resolvePaths } from './config.js';", "import { loadManifest } from './config.js';")
-          s = s.replace("import { loadPlugins, rollbackFromState, safeDeploy } from './deployment.js';", "import { loadPlugins, safeDeploy } from './deployment.js';")
-          marker = "  const runtimeFailures = runtimeChecks.filter((check) => !check.passed);\n"
-          start = s.index(marker) + len(marker)
-          shipped = "  const shipped = result.deployed && runtimeFailures.length === 0;\n"
-          end = s.index(shipped, start)
+          # Ship/update/recovery all use the same declared operational plugin; load errors fail closed.
+          p = 'src/ship-command.ts'
+          s = read(p)
+          s = s.replace("import { loadManifest, resolvePaths } from './config.js';", "import { loadManifest } from './config.js';", 1)
+          s = s.replace("import { loadPlugins, rollbackFromState, safeDeploy } from './deployment.js';", "import { loadPlugins, safeDeploy } from './deployment.js';", 1)
+          s = s.replace("import { verifySystemdRuntimeContext } from './systemd.js';\n", '')
+          s = s.replace("  const plugins = await loadPlugins(manifest).catch(() => []);", "  const plugins = await loadPlugins(manifest, cwd);", 1)
+          start = s.index("  const result = await safeDeploy(manifest, plugin, {")
+          after_call = s.index("  const shipped =", start) if "  const shipped =" in s[start:] else -1
+          if after_call == -1:
+              # Replace the post-safeDeploy runtime wrapper as one block.
+              marker = "  const shouldVerifyRuntime = result.deployed\n"
+              mstart = s.index(marker, start)
+              mend = s.index("\n\n  const shipped = result.deployed && runtimeFailures.length === 0;", mstart)
+              s = s[:mstart] + "  const shipped = result.deployed;" + s[mend + len("\n\n  const shipped = result.deployed && runtimeFailures.length === 0;"):]
+          else:
+              pass
+          s = s.replace("console.log(JSON.stringify({ ...result, runtimeReady: runtimeFailures.length === 0, runtimeChecks, runtimeRollback, shipped }, null, 2));", "console.log(JSON.stringify({ ...result, shipped }, null, 2));", 1)
+          s = re.sub(r"\n      \.\.\.\(shouldVerifyRuntime \? \[`RUNTIME:.*?\n      \.\.\.\(runtimeRollback\.attempted \? \[`RUNTIME_ROLLBACK:.*?\n", "\n", s, flags=re.S)
+          s = s.replace("`NEXT: ${shipped ? 'done' : runtimeFailures.length ? (runtimeRollback.ok ? 'fix runtime permissions/systemd context before retrying ship' : 'inspect rollback/runtime state before any retry') : 'taskrail explain deploy'}`", "`NEXT: ${shipped ? 'done' : 'taskrail explain deploy'}`", 1)
+          write(p, s)
+
+          p = 'src/transactional-deploy-cli.ts'
+          s = read(p)
+          s = s.replace("import { transactionalDeploy } from './transactional-deploy.js';", "import { transactionalDeploy } from './transactional-deploy.js';\nimport { loadPlugins } from './deployment.js';", 1)
+          s = s.replace("  const git = inspectGitState(cwd);\n  const result = await transactionalDeploy(manifest, undefined, {", "  const git = inspectGitState(cwd);\n  const plugin = (await loadPlugins(manifest, cwd))[0];\n  const result = await transactionalDeploy(manifest, plugin, {", 1)
+          write(p, s)
+
+          p = 'src/recovery-resume-cli.ts'
+          s = read(p)
+          s = s.replace("import { recoverInterruptedAutomation } from './recovery-resume.js';", "import { recoverInterruptedAutomation } from './recovery-resume.js';\nimport { loadPlugins } from './deployment.js';", 1)
+          s = s.replace("  const manifest = resolveFrameworkManifest(await loadManifest(manifestPath));\n  const result = await recoverInterruptedAutomation(manifest, cwd, undefined, migrationCompatible || !manifest.migrations);", "  const manifest = resolveFrameworkManifest(await loadManifest(manifestPath));\n  const plugin = (await loadPlugins(manifest, cwd))[0];\n  const result = await recoverInterruptedAutomation(manifest, cwd, plugin, migrationCompatible || !manifest.migrations);", 1)
+          write(p, s)
+
+          p = 'src/transactional-deploy.ts'
+          s = read(p)
+          s = s.replace("health: manifest.healthCheck ?? manifest.healthChecks?.[0]", "health: manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck")
+          s = s.replace("configurationHealth: manifest.healthCheck ?? manifest.healthChecks?.[0]", "configurationHealth: manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck")
+          s = s.replace("const outcome = await safeDeploy(manifest, plugin, options);", "const outcome = await safeDeploy(manifest, plugin, { ...options, transactionalUpdate: true });", 1)
+          write(p, s)
+
+          p = 'src/recovery-resume.ts'
+          s = read(p).replace("manifest.healthCheck ?? manifest.healthChecks?.[0]", "manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck")
+          write(p, s)
+
+          p = 'src/recovery-readiness.ts'
+          s = read(p)
+          s = s.replace("health?: HealthCheckDefinition;\n  configurationHealth?: HealthCheckDefinition;", "health?: HealthCheckDefinition | HealthCheckDefinition[];\n  configurationHealth?: HealthCheckDefinition | HealthCheckDefinition[];", 1)
+          write(p, s)
+
+          # CLI plugin paths must not silently erase declared plugin failures.
+          p = 'src/cli.ts'
+          s = read(p).replace("await loadPlugins(resolved).catch(() => [])", "await loadPlugins(resolved, cwd)")
+          s = s.replace("await loadPlugins(manifest).catch(() => [])", "await loadPlugins(manifest, cwd)")
+          s = s.replace("buildPlan(manifest, await loadPlugins(manifest).catch(() => []))", "buildPlan(manifest, await loadPlugins(manifest, cwd))")
+          write(p, s)
+
+          # 7) Thin scaffold keeps an explicit major-line compatibility boundary.
+          p = 'src/automation-scaffold.ts'
+          s = read(p)
+          if "TASKRAIL_VERSION" not in s:
+              s = s.replace("import { resolveFrameworkManifest } from './framework.js';\n", "import { resolveFrameworkManifest } from './framework.js';\nimport { TASKRAIL_VERSION } from './version.js';\n", 1)
+          s = s.replace("  const manifest = {\n    name: input.name,\n    profile: input.profile,\n    capabilities: [],\n  };", "  const [major, minor] = TASKRAIL_VERSION.split('.');\n  const manifest = {\n    name: input.name,\n    profile: input.profile,\n    taskrailCompatibility: `${major}.${minor}.x`,\n    capabilities: [],\n  };", 1)
+          write(p, s)
+
+          # 8) Normal preflight stays local; fleet collisions belong to fleet conformance/isolation.
+          p = 'src/preflight.ts'
+          s = read(p)
+          s = s.replace("import { access, constants, mkdir, readFile, stat } from 'node:fs/promises';", "import { access, constants, mkdir, stat } from 'node:fs/promises';", 1)
+          start = s.index("  const manifests = await discoverAutomationManifests(cwd).catch(() => []);\n")
+          end = s.index("  return { ok: checks.every((check) => check.ok), checks };", start)
           s = s[:start] + s[end:]
-          s = s.replace(", runtimeRollback, shipped", ", shipped")
-          s = s.replace("      ...(runtimeRollback.attempted ? [`RUNTIME_ROLLBACK: ${runtimeRollback.ok ? 'PASS' : 'FAIL'}`] : []),\n", "")
-          old_next = "runtimeFailures.length ? (runtimeRollback.ok ? 'fix runtime permissions/systemd context before retrying ship' : 'inspect rollback/runtime state before any retry') : 'taskrail explain deploy'"
-          s = s.replace(old_next, "runtimeFailures.length ? 'runtime context was rejected by the deployment transaction; fix permissions/systemd context before retrying ship' : 'taskrail explain deploy'")
+          s = s.replace("import { capabilityRootsFor, discoverAutomationManifests, loadCapabilities } from './capabilities.js';", "import { capabilityRootsFor, loadCapabilities } from './capabilities.js';", 1)
+          write(p, s)
+
+          # 12) Orphan lock directories recover after a short initialization grace; failed lock writes clean themselves.
+          p = 'src/locks.ts'
+          s = read(p)
+          old = """    await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify(info, null, 2));
+              return { ok: true, info };
+            } catch {
+              const holder = await readLock(lockDir);
+              if (holder && await isStale(holder, lockDir)) {
+                await rm(lockDir, { recursive: true, force: true });
+                return acquireLock(lockDir, infoOverride);
+              }
+              return { ok: false, holder: holder ? `${holder.host}:${holder.pid} ${holder.startedAt}` : undefined, info: holder ?? undefined, stale: false };
+            }
+          }
+          """
+          new = """    try {
+                await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify(info, null, 2));
+              } catch (error) {
+                await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
+                throw error;
+              }
+              return { ok: true, info };
+            } catch {
+              const holder = await readLock(lockDir);
+              if (holder && await isStale(holder, lockDir)) {
+                await rm(lockDir, { recursive: true, force: true });
+                return acquireLock(lockDir, infoOverride);
+              }
+              if (!holder) {
+                const orphanAge = await stat(lockDir).then((value) => Date.now() - value.mtimeMs, () => 0);
+                if (orphanAge > 5_000) {
+                  await rm(lockDir, { recursive: true, force: true });
+                  return acquireLock(lockDir, infoOverride);
+                }
+              }
+              return { ok: false, holder: holder ? `${holder.host}:${holder.pid} ${holder.startedAt}` : undefined, info: holder ?? undefined, stale: false };
+            }
+          }
+          """
+          if old not in s: raise AssertionError('lock block changed')
+          write(p, s.replace(old, new, 1))
+
+          # 13) Drift compares bytes, not UTF-8 text. Keep generated-path semantics prefix-only and literal.
+          p = 'src/drift.ts'
+          s = read(p)
+          s = s.replace("const [a, b] = await Promise.all([readFile(livePath, 'utf8').catch(() => ''), readFile(sourcePath, 'utf8').catch(() => '')]);\n    if (a !== b) {", "const [a, b] = await Promise.all([readFile(livePath).catch(() => Buffer.alloc(0)), readFile(sourcePath).catch(() => Buffer.alloc(0))]);\n    if (!a.equals(b)) {", 1)
+          write(p, s)
+
+          # Regression coverage for the v3.1 refactor boundary.
+          Path('test/v31-correctness.test.ts').write_text(r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+          import os from 'node:os';
+          import path from 'node:path';
+          import { scaffoldAutomation } from '../src/automation-scaffold.js';
+          import { listManagedAutomations, capabilityImpact } from '../src/capabilities.js';
+          import { buildUsageGraph, usageImpact } from '../src/usage-graph.js';
+          import { auditFleetIsolation } from '../src/isolation-audit.js';
+          import { evaluateConformance } from '../src/conformance.js';
+          import { runHealthCheck } from '../src/deployment.js';
+          import { acquireLock, releaseLock } from '../src/locks.js';
+          import { detectDrift } from '../src/drift.js';
+
+          test('three-field-style profile manifest is visible across fleet metadata after resolution', async () => {
+            const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-thin-fleet-'));
+            try {
+              const created = await scaffoldAutomation({ name: 'thin-report', profile: 'portable-node@1', root });
+              const raw = JSON.parse(await readFile(path.join(created.path, 'automation.json'), 'utf8'));
+              assert.equal(Object.keys(raw).length, 4);
+              assert.equal(raw.taskrailCompatibility, '3.1.x');
+              const listed = await listManagedAutomations(root);
+              assert.equal(listed.some((item) => item.name === 'thin-report'), true);
+              const graph = await buildUsageGraph(root);
+              assert.equal(graph.automations.some((item) => item.name === 'thin-report'), true);
+              assert.deepEqual(usageImpact(graph, 'profile', 'portable-node@1').transitiveAutomationConsumers, ['thin-report']);
+              const isolation = await auditFleetIsolation(root);
+              assert.equal(isolation.roots.some((item) => item.automation === 'thin-report'), true);
+              const conformance = await evaluateConformance(root);
+              assert.equal(conformance.automations, 1);
+              assert.deepEqual(await capabilityImpact('missing-capability', root), []);
+            } finally {
+              await rm(root, { recursive: true, force: true });
+            }
+          });
+
+          test('all declared health checks execute and any failure fails health', async () => {
+            const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-health-array-'));
+            try {
+              await writeFile(path.join(root, 'ok.txt'), 'ok');
+              const result = await runHealthCheck([
+                { type: 'file', path: 'ok.txt' },
+                { type: 'command', command: 'node -e "process.exit(1)"' },
+              ], root);
+              assert.equal(result.ok, false);
+            } finally {
+              await rm(root, { recursive: true, force: true });
+            }
+          });
+
+          test('binary drift compares bytes', async () => {
+            const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-binary-drift-'));
+            const live = path.join(root, 'live');
+            const release = path.join(root, 'release');
+            try {
+              await mkdir(live); await mkdir(release);
+              await writeFile(path.join(live, 'asset.bin'), Buffer.from([0xff, 0x00, 0x01]));
+              await writeFile(path.join(release, 'asset.bin'), Buffer.from([0xff, 0x00, 0x02]));
+              const result = await detectDrift(live, release);
+              assert.deepEqual(result.files, ['asset.bin']);
+            } finally {
+              await rm(root, { recursive: true, force: true });
+            }
+          });
+
+          test('orphan lock directory is reclaimed after initialization grace', async () => {
+            const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-orphan-lock-'));
+            const lock = path.join(root, 'lock');
+            try {
+              await mkdir(lock);
+              const old = new Date(Date.now() - 10_000);
+              await utimes(lock, old, old);
+              const acquired = await acquireLock(lock, { operation: 'test' });
+              assert.equal(acquired.ok, true);
+              await releaseLock(lock);
+              assert.equal(await stat(lock).then(() => true, () => false), false);
+            } finally {
+              await rm(root, { recursive: true, force: true });
+            }
+          });
+          ''')
+
+          # Systemd timer operational verification regression.
+          p = Path('test/systemd.test.ts')
+          s = p.read_text()
+          s = s.replace("verifySystemdRuntimeContext } from '../src/systemd.js';", "verifySystemdOperationalContext, verifySystemdRuntimeContext } from '../src/systemd.js';", 1)
+          if "operational verification fails when a declared timer is disabled" not in s:
+              s += r'''
+
+          test('systemd operational verification fails when a declared timer is disabled', () => {
+            const manifest = resolveFrameworkManifest({ name: 'timer-demo', profile: 'smg-node-timer@1' });
+            const spawn = ((command: string, args: readonly string[]) => {
+              if (command === 'systemctl' && args[0] === 'show') {
+                const property = args.find((arg) => arg.startsWith('--property='))?.slice('--property='.length);
+                const values: Record<string, string> = { LoadState: 'loaded', User: 'root', Group: 'root', WorkingDirectory: '/' };
+                return { status: 0, stdout: `${values[property ?? ''] ?? ''}\n`, stderr: '' };
+              }
+              if (command === 'systemctl' && args[0] === 'is-enabled') return { status: 1, stdout: 'disabled\n', stderr: '' };
+              if (command === 'systemctl' && args[0] === 'is-active') return { status: 0, stdout: 'active\n', stderr: '' };
+              return { status: 0, stdout: '', stderr: '' };
+            }) as any;
+            const result = verifySystemdOperationalContext(manifest, { spawn });
+            assert.equal(result.runtimeChecks.every((item) => item.passed), true);
+            assert.equal(result.timerChecks[0].enabled, false);
+            assert.equal(result.passed, false);
+          });
+          '''
           p.write_text(s)
+
+          # Finished tree must not retain the privileged emergency patch workflow.
+          Path('.github/workflows/runtime-transaction-patch.yml').unlink()
           PY
+
           npm ci
-          npm run build
-          node --test dist/test/systemd.test.js dist/test/transactional-deploy.test.js
-          } 2>&1 | tee patch.log
-      - name: Commit when green
+          npm run certify
+      - name: Commit when certified
         if: steps.patch.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/deployment.ts src/ship-command.ts
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix: make runtime validation transactional'
-            git pull --rebase origin main
-            git push origin HEAD:main
-          fi
+          git add -A
+          git commit -m 'fix: close TaskRail 3.1 correctness gaps'
+          git pull --rebase origin main
+          git push origin HEAD:main
       - name: Report result
         if: always()
         env:
@@ -118,10 +731,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tail_text="$(tail -n 40 patch.log 2>/dev/null || true)"
-          body="Transactional runtime patch outcome: ${OUTCOME}\n\nLast output:\n\`\`\`\n${tail_text}\n\`\`\`"
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "${body:0:60000}"
+          if [ -f .taskrail/certification.json ]; then
+            certified="$(jq -r '.certified' .taskrail/certification.json)"
+            failed="$(jq -r 'if (.failed|length)==0 then "none" else (.failed|join(", ")) end' .taskrail/certification.json)"
+            verdict="$(jq -r '.verdict' .taskrail/certification.json)"
+          else
+            certified=false
+            failed=patch-or-certification-failed
+            verdict='TASKRAIL CORRECTNESS CLEANUP - FAIL'
+          fi
+          body="Correctness cleanup outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
-      - name: Fail when patch failed
+      - name: Fail when cleanup failed
         if: steps.patch.outcome != 'success'
         run: exit 1
