@@ -42,7 +42,7 @@ test('thin manifest keeps explicit exceptions as overrides', () => {
   assert.deepEqual(manifest.healthCheck, { type: 'command', command: 'node custom/health.js' });
 });
 
-test('scaffold writes a three-field manifest and conventional node layout', async () => {
+test('scaffold writes a thin manifest with explicit compatibility and conventional node layout', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-fast-authoring-'));
   try {
     const result = await scaffoldAutomation({ name: 'quick-report', profile: 'smg-node-timer@1', root });
@@ -53,6 +53,7 @@ test('scaffold writes a three-field manifest and conventional node layout', asyn
     assert.deepEqual(manifest, {
       name: 'quick-report',
       profile: 'smg-node-timer@1',
+      taskrailCompatibility: '3.1.x',
       capabilities: [],
     });
     assert.match(entry, /export async function run/);
