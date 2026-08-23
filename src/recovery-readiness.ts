@@ -15,8 +15,8 @@ export interface RecoveryReadinessResult {
 
 export async function validateLastKnownGoodRecovery(input: {
   state: DeployState | null;
-  health?: HealthCheckDefinition;
-  configurationHealth?: HealthCheckDefinition;
+  health?: HealthCheckDefinition | HealthCheckDefinition[];
+  configurationHealth?: HealthCheckDefinition | HealthCheckDefinition[];
   plugin?: AutomationPlugin;
   migrationCompatible: boolean;
 }): Promise<RecoveryReadinessResult> {
