@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import type { FrameworkManifest } from './types.js';
 import { effectiveExecutionPolicy } from './execution.js';
 import { systemdResourceDirectives } from './resources.js';
@@ -53,4 +54,62 @@ export async function installTaskRailDropIn(unit: string, manifest: FrameworkMan
   await mkdir(dir, { recursive: true });
   await writeFile(file, renderTaskRailDropIn(manifest), { mode: 0o644 });
   return file;
+}
+
+type SpawnLike = typeof spawnSync;
+
+export interface SystemdRuntimeCheck {
+  unit: string;
+  user: string;
+  group: string;
+  workingDirectory: string;
+  loadState: string;
+  canTraverseWorkingDirectory: boolean;
+  readableSharedFiles: string[];
+  unreadableSharedFiles: string[];
+  passed: boolean;
+}
+
+function systemctlShow(unit: string, property: string, spawn: SpawnLike) {
+  const result = spawn('systemctl', ['show', unit, `--property=${property}`, '--value'], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr?.trim() || `systemctl show ${unit} ${property} failed`);
+  return String(result.stdout ?? '').trim();
+}
+
+function asUser(user: string, args: string[], spawn: SpawnLike) {
+  if (!user || user === 'root') return spawn(args[0], args.slice(1), { encoding: 'utf8' });
+  if (typeof process.getuid === 'function' && process.getuid() === 0) return spawn('runuser', ['-u', user, '--', ...args], { encoding: 'utf8' });
+  return spawn('sudo', ['-n', '-u', user, '--', ...args], { encoding: 'utf8' });
+}
+
+export function verifySystemdRuntimeContext(manifest: FrameworkManifest, options: { spawn?: SpawnLike } = {}): SystemdRuntimeCheck[] {
+  if (manifest.serviceManager?.type !== 'systemd') return [];
+  const spawn = options.spawn ?? spawnSync;
+  return managedServiceUnits(manifest).map((unit) => {
+    const loadState = systemctlShow(unit, 'LoadState', spawn);
+    const user = systemctlShow(unit, 'User', spawn) || 'root';
+    const group = systemctlShow(unit, 'Group', spawn) || user;
+    const workingDirectory = systemctlShow(unit, 'WorkingDirectory', spawn) || '/';
+    const traverse = asUser(user, ['/bin/sh', '-c', 'cd -- "$1"', 'taskrail-runtime-check', workingDirectory], spawn);
+    const requiredSharedFiles = manifest.requiredSharedFiles ?? [];
+    const readableSharedFiles: string[] = [];
+    const unreadableSharedFiles: string[] = [];
+    for (const file of requiredSharedFiles) {
+      const check = asUser(user, ['/usr/bin/test', '-r', file], spawn);
+      if (check.status === 0) readableSharedFiles.push(file);
+      else unreadableSharedFiles.push(file);
+    }
+    const canTraverseWorkingDirectory = traverse.status === 0;
+    return {
+      unit,
+      user,
+      group,
+      workingDirectory,
+      loadState,
+      canTraverseWorkingDirectory,
+      readableSharedFiles,
+      unreadableSharedFiles,
+      passed: loadState === 'loaded' && canTraverseWorkingDirectory && unreadableSharedFiles.length === 0,
+    };
+  });
 }
