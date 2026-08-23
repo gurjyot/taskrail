@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.0
+
+- Made fast automation authoring the primary TaskRail goal: conventional automations can use thin manifests while profiles supply standard runtime, layout, validation, test, health, deployment, and systemd defaults.
+- Simplified the ordinary development loop to business logic plus `taskrail test` and `taskrail check`, while keeping production `ship` fail-closed on deployment, runtime-context, timer, rollback, and health verification.
+- Updated automation scaffolding to generate conventional `src/main.*` layouts and derive runtime from the selected profile contract rather than profile-name heuristics.
+- Refactored profile resolution to remove duplicate merge paths and dead array-merge plumbing without changing the public resolved-manifest contract.
+- Improved certification failure diagnostics and removed per-release version wiring from the certification-request workflow while preserving owner and package-version validation.
+- Verified the simplified authoring model against full TaskRail certification and the first-party public ecosystem before release finalization.
+
 ## 3.0.8
 
 - Added production systemd runtime-context verification so TaskRail checks the real service `User=`, `WorkingDirectory=` traversal, unit load state, and environment-scoped required shared-file readability.
@@ -37,7 +46,7 @@
 
 - Refreshed all packaged TaskRail agent skills for the current canonical CLI, plugin, command-execution, package-surface, deployment, performance, and framework-restraint contracts.
 - Added `reviewed_for_taskrail` version markers plus `npm run skills:check`, dynamically covering every packaged `skills/*/SKILL.md`.
-- Made skill freshness part of `npm run check`, release certification, and CI.
+- Made skill freshness part of `npm run check`, release certification, CI, and regression coverage so a future framework version cannot be certified while its skills remain stale.
 
 ## 3.0.3
 
