@@ -64,7 +64,11 @@ export function isTaskRailCompatible(current: string, declared?: string): boolea
   if (!declared) return true;
   const currentVersion = parseVersion(current);
   if (!currentVersion || currentVersion[0] !== 3) return false;
+
   const normalized = declared.trim();
+  const nativeMinor = normalized.match(/^3\.(\d+)\.x$/);
+  if (nativeMinor) return Number(nativeMinor[1]) <= currentVersion[1];
+
   if (normalized === '2.0.x') return true;
   const legacyExact = parseVersion(normalized);
   return Boolean(legacyExact && legacyExact[0] === 2 && legacyExact[1] === 0 && /^2\.0\.\d+$/.test(normalized));
