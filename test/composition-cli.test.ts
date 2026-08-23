@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveFrameworkManifest } from '../src/framework.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(here, '../src/taskrail-cli.js');
@@ -24,9 +25,16 @@ test('init automation creates a runnable thin Node scaffold', async () => {
     assert.equal(result.runtime, 'node');
     const target = path.join(root, 'demo-agent');
     const manifest = JSON.parse(await readFile(path.join(target, 'automation.json'), 'utf8'));
-    assert.equal(manifest.profile, 'smg-node-timer@1');
-    assert.equal(manifest.taskrailCompatibility, '3.0.x');
-    assert.deepEqual(manifest.capabilities, []);
+    assert.deepEqual(manifest, {
+      name: 'demo-agent',
+      profile: 'smg-node-timer@1',
+      capabilities: [],
+    });
+    const resolved = resolveFrameworkManifest(manifest);
+    assert.equal(resolved.runtime, 'node');
+    assert.equal(resolved.managed, true);
+    assert.equal(resolved.validationCommand, 'node --check src/main.js');
+    assert.deepEqual(resolved.requiredChecks, ['validation', 'test', 'health']);
     execFileSync(process.execPath, ['--test', 'tests/*.test.js'], { cwd: target, shell: true, stdio: 'pipe' });
   } finally {
     await rm(root, { recursive: true, force: true });
