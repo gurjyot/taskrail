@@ -13,7 +13,7 @@
 </p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~218 KiB compressed / ~1147 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~224 KiB compressed / ~1179 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 ## Primary goal
@@ -38,7 +38,7 @@ TaskRail therefore favors **convention over configuration, thin business logic, 
 
 | | Current measured / enforced state |
 | --- | --- |
-| **Core package** | ~218 KiB compressed / ~1147 KiB unpacked |
+| **Core package** | ~224 KiB compressed / ~1179 KiB unpacked |
 | **Runtime npm dependencies** | **0** |
 | **CLI startup** | ~50 ms median / ~52 ms p95 in the current Ubuntu CI performance run |
 | **Core package install** | ~0.83 s in the current Ubuntu Golden Path |
@@ -291,7 +291,7 @@ Internal implementation files can evolve without turning every source path into 
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~218 KiB compressed / ~1147 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~224 KiB compressed / ~1179 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
