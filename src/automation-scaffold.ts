@@ -1,6 +1,7 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveFrameworkManifest } from './framework.js';
+import { TASKRAIL_VERSION } from './version.js';
 
 export interface AutomationScaffoldInput {
   name: string;
@@ -54,9 +55,11 @@ export async function scaffoldAutomation(input: AutomationScaffoldInput) {
     mkdir(path.join(target, 'tests'), { recursive: true }),
   ]);
 
+  const [major, minor] = TASKRAIL_VERSION.split('.');
   const manifest = {
     name: input.name,
     profile: input.profile,
+    taskrailCompatibility: `${major}.${minor}.x`,
     capabilities: [],
   };
 
