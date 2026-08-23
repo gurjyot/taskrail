@@ -6,12 +6,34 @@ const root = process.cwd();
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const gates = [];
 
+function tail(value, limit = 4000) {
+  const text = String(value || '').trim();
+  return text.length <= limit ? text : text.slice(-limit);
+}
+
 function run(name, args) {
   try {
-    execFileSync(npm, args, { cwd: root, stdio: 'inherit', env: process.env, timeout: 10 * 60 * 1000, maxBuffer: 256 * 1024 });
+    const stdout = execFileSync(npm, args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+      timeout: 10 * 60 * 1000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    if (stdout) process.stdout.write(stdout);
     gates.push({ name, ok: true });
   } catch (error) {
-    gates.push({ name, ok: false, detail: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) });
+    const stdout = error && typeof error === 'object' && 'stdout' in error ? tail(error.stdout) : '';
+    const stderr = error && typeof error === 'object' && 'stderr' in error ? tail(error.stderr) : '';
+    if (stdout) process.stdout.write(`${stdout}\n`);
+    if (stderr) process.stderr.write(`${stderr}\n`);
+    const message = error instanceof Error ? error.message : String(error);
+    gates.push({
+      name,
+      ok: false,
+      detail: tail([message, stdout && `stdout:\n${stdout}`, stderr && `stderr:\n${stderr}`].filter(Boolean).join('\n'), 6000),
+    });
   }
 }
 
