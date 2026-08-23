@@ -57,7 +57,7 @@ An automation may declare zero or one operational plugin. Do not model multiple 
 
 `doctor -> check -> test -> plan -> ship -> health`
 
-For Linux/systemd production, `ship` must also pass TaskRail's runtime-context gate: the declared service must be loaded, its real `User=` must be able to traverse `WorkingDirectory=`, and required shared files must be readable by that user. A code-level health pass does not replace this runtime check.
+For Linux/systemd production, `ship` must also pass TaskRail's runtime-context gate: the declared service must be loaded, its real `User=` must be able to traverse `WorkingDirectory=`, required shared files must be readable by that user, and declared timers must be enabled and active. A code-level health pass does not replace this runtime check. A post-activation runtime failure must fail the ship and trigger rollback verification.
 
 `test` and `ship` have one canonical CLI route each. Do not call legacy/deep CLI implementation files directly.
 
