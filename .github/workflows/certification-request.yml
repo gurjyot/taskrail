@@ -26,12 +26,16 @@ jobs:
         continue-on-error: true
         env:
           ISSUE_TITLE: ${{ github.event.issue.title }}
+        shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
-          test "$ISSUE_TITLE" = "Certify TaskRail v${VERSION}"
-          npm ci
-          npm run certify
+          mkdir -p .taskrail
+          {
+            VERSION="$(node -p "require('./package.json').version")"
+            test "$ISSUE_TITLE" = "Certify TaskRail v${VERSION}"
+            npm ci
+            npm run certify
+          } 2>&1 | tee .taskrail/request.log
       - name: Report result
         if: always()
         env:
@@ -50,11 +54,16 @@ jobs:
             certified=false
             failed=certification-report-missing
             verdict='TASKRAIL CERTIFICATION - NO REPORT'
-            details='Request validation, dependency installation, or certification failed before a certification report was produced.'
+            if [ -f .taskrail/request.log ]; then
+              request_tail="$(tail -c 6000 .taskrail/request.log)"
+              details="Request failed before a certification report was produced.\n\n### request\n\`\`\`text\n${request_tail}\n\`\`\`"
+            else
+              details='Request failed before a certification report or request log was produced.'
+            fi
           fi
           body="Certification outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
           if [ -n "$details" ]; then body="$body\n\n$details"; fi
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "${body:0:60000}"
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
       - name: Fail when certification failed
         if: steps.certify.outcome != 'success'
