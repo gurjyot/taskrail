@@ -69,8 +69,6 @@ export interface FrameworkManifest {
   database?: { required?: boolean; schema?: string; };
 }
 
-export type RawFrameworkManifest = Pick<FrameworkManifest, 'name'> & Partial<Omit<FrameworkManifest, 'name'>>;
-
 export interface FrameworkCapabilityDefinition { id: string; apply(manifest: FrameworkManifest): Partial<FrameworkManifest>; preconditions?(manifest: FrameworkManifest): string[]; }
 export interface FrameworkProfileDefinition { id: string; frameworkCapabilities: string[]; defaults: Partial<FrameworkManifest>; preconditions?(manifest: FrameworkManifest): string[]; }
 export type HealthCheckDefinition = | { type: 'command'; command: string } | { type: 'file'; path: string } | { type: 'http'; url: string; expectStatus?: number };
