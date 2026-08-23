@@ -101,10 +101,11 @@ export async function transactionalDeploy(
       ? 'rollback simulation prerequisites satisfied'
       : 'migration rollback compatibility requires explicit approval');
 
+    const declaredHealth = manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
     const readiness = await validateLastKnownGoodRecovery({
       state: priorState,
-      health: manifest.healthCheck ?? manifest.healthChecks?.[0],
-      configurationHealth: manifest.healthCheck ?? manifest.healthChecks?.[0],
+      health: declaredHealth,
+      configurationHealth: declaredHealth,
       plugin,
       migrationCompatible,
     });
@@ -115,7 +116,7 @@ export async function transactionalDeploy(
     checkpoint = await recordRecoveryReadiness(projectRoot, checkpoint, readiness);
 
     activationAttempted = true;
-    const outcome = await safeDeploy(manifest, plugin, options);
+    const outcome = await safeDeploy(manifest, plugin, { ...options, transactionalUpdate: true });
     if (outcome.deployed) {
       const currentState = await readPrivateState<DeployState & Record<string, unknown>>(deployStateFile(manifest, projectRoot), { allowLegacy: true });
       if (currentState) await writePrivateState(deployStateFile(manifest, projectRoot), currentState);
@@ -137,8 +138,8 @@ export async function transactionalDeploy(
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'rollback-required', outcome.failure || 'activation failed and rollback was attempted');
       const rollbackReadiness = await validateLastKnownGoodRecovery({
         state: priorState,
-        health: manifest.healthCheck ?? manifest.healthChecks?.[0],
-        configurationHealth: manifest.healthCheck ?? manifest.healthChecks?.[0],
+        health: declaredHealth,
+        configurationHealth: declaredHealth,
         plugin,
         migrationCompatible,
       });
