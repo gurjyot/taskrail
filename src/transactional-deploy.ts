@@ -107,6 +107,8 @@ export async function transactionalDeploy(
       health: declaredHealth,
       configurationHealth: declaredHealth,
       plugin,
+      manifest,
+      projectRoot,
       migrationCompatible,
     });
     if (!readiness.ok) {
@@ -124,7 +126,7 @@ export async function transactionalDeploy(
         currentRelease: outcome.releaseId,
         currentReleasePath: outcome.releasePath,
       });
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'verified', 'post-activation TaskRail health verification passed');
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'verified', 'post-activation operational readiness verification passed');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'transaction committed after successful verification', {
         currentRelease: outcome.releaseId,
         currentReleasePath: outcome.releasePath,
@@ -141,6 +143,8 @@ export async function transactionalDeploy(
         health: declaredHealth,
         configurationHealth: declaredHealth,
         plugin,
+        manifest,
+        projectRoot,
         migrationCompatible,
       });
       if (!rollbackReadiness.ok) {
@@ -149,7 +153,7 @@ export async function transactionalDeploy(
       }
       checkpoint = await recordRecoveryReadiness(projectRoot, checkpoint, rollbackReadiness);
       await restorePriorState(manifest, projectRoot, priorState);
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored, state restored, and release reverified');
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored, state restored, and operationally reverified');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'failed update closed after successful restore', {
         currentRelease: priorState.lastKnownGoodReleaseId,
         currentReleasePath: priorState.lastKnownGoodReleasePath,

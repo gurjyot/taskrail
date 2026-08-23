@@ -54,8 +54,9 @@ jobs:
           taskrail init automation hello-taskrail --profile smg-node-timer@1
           test -f hello-taskrail/automation.json
           test -f hello-taskrail/AGENTS.md
+          test -f hello-taskrail/src/main.js
           cd hello-taskrail
-          node --check src/index.js
+          node --check src/main.js
           node --test tests/*.test.js
 
   package-size:
