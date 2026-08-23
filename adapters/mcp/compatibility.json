@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewedForTaskRail": "3.0.8",
+  "reviewedForTaskRail": "3.1.0",
   "requiredReadActions": {
     "status": "taskrail_status",
     "components.list": "taskrail_components",
