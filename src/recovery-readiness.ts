@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
-import type { AutomationPlugin, DeployState, HealthCheckDefinition } from './types.js';
-import { runHealthCheck } from './deployment.js';
+import type { AutomationPlugin, DeployState, FrameworkManifest, HealthCheckDefinition } from './types.js';
+import { runHealthCheck, verifyOperationalReadiness } from './deployment.js';
+import { detectEnvironment } from './env.js';
 import { transitionUpdate, type UpdateCheckpoint } from './update-transaction.js';
 
 export interface RecoveryReadinessResult {
@@ -8,6 +9,7 @@ export interface RecoveryReadinessResult {
   releaseExists: boolean;
   healthVerified: boolean;
   configurationVerified: boolean;
+  operationalVerified: boolean;
   migrationCompatible: boolean;
   releasePath?: string;
   reasons: string[];
@@ -18,6 +20,8 @@ export async function validateLastKnownGoodRecovery(input: {
   health?: HealthCheckDefinition | HealthCheckDefinition[];
   configurationHealth?: HealthCheckDefinition | HealthCheckDefinition[];
   plugin?: AutomationPlugin;
+  manifest?: FrameworkManifest;
+  projectRoot?: string;
   migrationCompatible: boolean;
 }): Promise<RecoveryReadinessResult> {
   const releasePath = input.state?.lastKnownGoodReleasePath;
@@ -28,6 +32,7 @@ export async function validateLastKnownGoodRecovery(input: {
       releaseExists: false,
       healthVerified: false,
       configurationVerified: false,
+      operationalVerified: false,
       migrationCompatible: input.migrationCompatible,
       reasons: ['last-known-good release path is missing'],
     };
@@ -38,13 +43,29 @@ export async function validateLastKnownGoodRecovery(input: {
 
   let healthVerified = false;
   let configurationVerified = false;
+  let operationalVerified = false;
   if (releaseExists) {
-    const health = await runHealthCheck(input.health, releasePath, input.plugin);
-    healthVerified = health.ok;
-    if (!healthVerified) reasons.push(`last-known-good health probe failed${health.details ? `: ${health.details}` : ''}`);
+    if (input.manifest) {
+      const projectRoot = input.projectRoot || process.cwd();
+      const readiness = await verifyOperationalReadiness(
+        input.manifest,
+        releasePath,
+        input.plugin,
+        detectEnvironment(input.manifest, projectRoot),
+      );
+      healthVerified = readiness.health.ok;
+      operationalVerified = readiness.ok;
+      if (!healthVerified) reasons.push(`last-known-good health probe failed${readiness.health.details ? `: ${readiness.health.details}` : ''}`);
+      if (!operationalVerified) reasons.push(`last-known-good operational readiness failed${readiness.error ? `: ${readiness.error}` : ''}`);
+    } else {
+      const health = await runHealthCheck(input.health, releasePath, input.plugin);
+      healthVerified = health.ok;
+      operationalVerified = healthVerified;
+      if (!healthVerified) reasons.push(`last-known-good health probe failed${health.details ? `: ${health.details}` : ''}`);
+    }
 
     if (input.configurationHealth) {
-      const config = await runHealthCheck(input.configurationHealth, releasePath, input.plugin);
+      const config = await runHealthCheck(input.configurationHealth, releasePath);
       configurationVerified = config.ok;
       if (!configurationVerified) reasons.push(`last-known-good configuration probe failed${config.details ? `: ${config.details}` : ''}`);
     } else {
@@ -54,10 +75,11 @@ export async function validateLastKnownGoodRecovery(input: {
 
   if (!input.migrationCompatible) reasons.push('migration rollback compatibility is not verified');
   return {
-    ok: releaseExists && healthVerified && configurationVerified && input.migrationCompatible,
+    ok: releaseExists && healthVerified && configurationVerified && operationalVerified && input.migrationCompatible,
     releaseExists,
     healthVerified,
     configurationVerified,
+    operationalVerified,
     migrationCompatible: input.migrationCompatible,
     releasePath,
     reasons,
@@ -72,7 +94,7 @@ export async function recordRecoveryReadiness(
   if (!readiness.ok) throw new Error(`recovery readiness failed: ${readiness.reasons.join('; ')}`);
   const patch = {
     recovery: {
-      previousReleaseVerified: readiness.releaseExists && readiness.healthVerified,
+      previousReleaseVerified: readiness.releaseExists && readiness.healthVerified && readiness.operationalVerified,
       configurationVerified: readiness.configurationVerified,
       migrationCompatible: readiness.migrationCompatible,
       details: `verified ${readiness.releasePath}`,
