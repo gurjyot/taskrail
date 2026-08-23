@@ -1,0 +1,51 @@
+name: TaskRail Certification Request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  certify:
+    if: github.actor == github.repository_owner && github.event.issue.title == 'Certify TaskRail v3.0.8'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run certification
+        id: certify
+        continue-on-error: true
+        run: npm run certify
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          OUTCOME: ${{ steps.certify.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .taskrail/certification.json ]; then
+            certified="$(jq -r '.certified' .taskrail/certification.json)"
+            failed="$(jq -r 'if (.failed|length)==0 then "none" else (.failed|join(", ")) end' .taskrail/certification.json)"
+            verdict="$(jq -r '.verdict' .taskrail/certification.json)"
+          else
+            certified=false
+            failed=certification-report-missing
+            verdict='TASKRAIL CERTIFICATION - NO REPORT'
+          fi
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "Certification outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
+      - name: Fail when certification failed
+        if: steps.certify.outcome != 'success'
+        run: exit 1
