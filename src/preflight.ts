@@ -35,7 +35,7 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
       push('deployWritable', parentWritable, parentWritable ? 'deploy parent writable' : 'deploy parent not writable');
     }
   } else {
-    const parent = manifest.deployDir === '.' ? cwd : paths.deployDir;
+    const parent = manifest.deployDir === '.' ? cwd : path.dirname(paths.deployDir);
     await mkdir(parent, { recursive: true }).catch(() => undefined);
     push('deployDir', true, `skipped in ${envInfo.name}`);
   }
