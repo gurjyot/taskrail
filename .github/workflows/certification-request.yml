@@ -21,18 +21,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Validate certification request
+      - name: Validate and run certification
+        id: certify
+        continue-on-error: true
         env:
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
           test "$ISSUE_TITLE" = "Certify TaskRail v${VERSION}"
-      - run: npm ci
-      - name: Run certification
-        id: certify
-        continue-on-error: true
-        run: npm run certify
+          npm ci
+          npm run certify
       - name: Report result
         if: always()
         env:
@@ -51,7 +50,7 @@ jobs:
             certified=false
             failed=certification-report-missing
             verdict='TASKRAIL CERTIFICATION - NO REPORT'
-            details='No certification report was produced.'
+            details='Request validation, dependency installation, or certification failed before a certification report was produced.'
           fi
           body="Certification outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
           if [ -n "$details" ]; then body="$body\n\n$details"; fi
