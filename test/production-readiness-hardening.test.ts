@@ -91,7 +91,7 @@ test('plugin validation runs even when requiredChecks is empty', async () => {
   }
 });
 
-test('post-activation state commit exception restores the previous live files', async () => {
+test('post-activation state commit exception restores live files but remains recovery-required when state restoration fails', async () => {
   const { root, source, deploy } = await fixture();
   const statePath = path.join(root, 'app.deploy-state.json');
   try {
@@ -106,7 +106,10 @@ test('post-activation state commit exception restores the previous live files', 
     }, { projectRoot: root });
 
     assert.equal(result.deployed, false);
-    assert.equal(result.rolledBack, true);
+    assert.equal(result.rolledBack, false);
+    assert.equal(result.rollbackAttempted, true);
+    assert.equal(result.rollbackSucceeded, false);
+    assert.equal(result.recoveryRequired, true);
     assert.match(result.failure || '', /state commit failed/);
     assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
   } finally {
