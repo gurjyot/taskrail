@@ -4,6 +4,7 @@
 
 - Added production systemd runtime-context verification so TaskRail checks the real service `User=`, `WorkingDirectory=` traversal, unit load state, and environment-scoped required shared-file readability.
 - Made `taskrail ship` fail when a deployed systemd automation cannot actually run under its production service identity, preventing code-level health checks from masking `CHDIR`/permission failures.
+- Added automatic rollback and restored-runtime verification when the post-activation systemd runtime-context gate fails.
 - Added `taskrail-systemd-sync --verify-runtime` for explicit fleet/runtime audits and regression coverage for service-user working-directory and shared-file permission failures.
 - Reviewed MCP, packaged skills, source version, lockfile, and platform manifest for the release.
 
