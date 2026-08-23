@@ -629,8 +629,8 @@ export async function safeDeploy(manifest: FrameworkManifest, plugin?: Automatio
             restored = true;
           } else {
             if (await pathExists(target)) throw new Error('partial first deployment remains live after cleanup');
-            await restoreState(stateFile, priorState);
             initialCleanupSucceeded = true;
+            await restoreState(stateFile, priorState);
           }
         } catch (restoreFailure) {
           rollbackError = restoreFailure instanceof Error ? restoreFailure.message : String(restoreFailure);
