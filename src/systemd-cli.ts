@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { discoverAutomationManifests, findAutomation } from './capabilities.js';
 import { resolveFrameworkManifest } from './framework.js';
-import { installTaskRailDropIn, managedServiceUnits, managedSystemdUnits, renderTaskRailDropIn } from './systemd.js';
+import { installTaskRailDropIn, managedServiceUnits, managedSystemdUnits, renderTaskRailDropIn, verifySystemdRuntimeContext } from './systemd.js';
 import type { FrameworkManifest } from './types.js';
 
 async function readManifest(file: string) {
@@ -17,11 +17,12 @@ function systemctl(args: string[]) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('taskrail-systemd-sync [automation] [--all] [--apply] [--ensure-enabled] [--json]');
+    console.log('taskrail-systemd-sync [automation] [--all] [--apply] [--ensure-enabled] [--verify-runtime] [--json]');
     return;
   }
   const apply = args.includes('--apply');
   const ensureEnabled = args.includes('--ensure-enabled');
+  const verifyRuntime = args.includes('--verify-runtime');
   const json = args.includes('--json');
   const all = args.includes('--all');
   const target = args.find((arg) => !arg.startsWith('--'));
@@ -36,6 +37,7 @@ async function main() {
   const seenAutomations = new Set<string>();
   const seenUnits = new Set<string>();
   const results: Array<{ automation: string; unit: string; kind: 'service' | 'timer'; applied: boolean; enabled: boolean | null; enabledByTaskRail: boolean; path?: string; dropIn?: string }> = [];
+  const runtimeChecks: Array<ReturnType<typeof verifySystemdRuntimeContext>[number] & { automation: string }> = [];
   for (const file of files) {
     const manifest = await readManifest(file);
     if (!manifest.managed || manifest.serviceManager?.type !== 'systemd' || seenAutomations.has(manifest.name)) continue;
@@ -57,20 +59,25 @@ async function main() {
       }
       results.push({ automation: manifest.name, unit: unit.name, kind: unit.kind, applied: apply, enabled, enabledByTaskRail, path: installed, dropIn });
     }
+    if (verifyRuntime) runtimeChecks.push(...verifySystemdRuntimeContext(manifest).map((check) => ({ automation: manifest.name, ...check })));
   }
   if (apply) {
     const reload = systemctl(['daemon-reload']);
     if (reload.status !== 0) throw new Error(reload.stderr?.trim() || 'systemctl daemon-reload failed');
   }
   const disabled = results.filter((result) => result.enabled === false).map((result) => result.unit);
-  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, units: results.length, rebootReady: disabled.length === 0, disabled, results }, null, 2));
+  const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
+  if (json) console.log(JSON.stringify({ applied: apply, ensureEnabled, verifyRuntime, units: results.length, rebootReady: disabled.length === 0, runtimeReady: runtimeFailures.length === 0, disabled, runtimeFailures, runtimeChecks, results }, null, 2));
   else {
-    console.log(`STATUS: ${disabled.length ? 'WARN' : 'PASS'}`);
+    console.log(`STATUS: ${disabled.length || runtimeFailures.length ? 'WARN' : 'PASS'}`);
     console.log(`MODE: ${apply ? 'applied' : 'dry-run'}`);
     console.log(`UNITS: ${results.length}`);
     console.log(`REBOOT_READY: ${disabled.length ? 'NO' : 'YES'}`);
+    if (verifyRuntime) console.log(`RUNTIME_READY: ${runtimeFailures.length ? 'NO' : 'YES'}`);
     for (const result of results) console.log(`${result.automation}: ${result.unit} (${result.kind}) enabled=${String(result.enabled)}${result.enabledByTaskRail ? ' [enabled]' : ''}${result.path ? ` -> ${result.path}` : ''}`);
+    for (const check of runtimeChecks) console.log(`${check.automation}: ${check.unit} runtime=${check.passed ? 'PASS' : 'FAIL'} user=${check.user} workdir=${check.workingDirectory}${check.unreadableSharedFiles.length ? ` unreadable=${check.unreadableSharedFiles.join(',')}` : ''}`);
   }
+  if (runtimeFailures.length) process.exitCode = 1;
 }
 
 main().catch((error) => {
