@@ -1,6 +1,6 @@
 <h1 align="center">TASKRAIL</h1>
 
-<p align="center"><strong>Lightweight, AI-first automation infrastructure for building and operating production automations safely.</strong></p>
+<p align="center"><strong>Build automations fast. Run them robustly in production.</strong></p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/taskrail"><img alt="npm version" src="https://img.shields.io/npm/v/taskrail?label=version"></a>
@@ -15,6 +15,24 @@
 <!-- taskrail-size:start -->
 <p align="center"><strong>⚡ Tiny framework footprint: ~218 KiB compressed / ~1147 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
+
+## Primary goal
+
+**TaskRail exists to make creating production automations faster and simpler without sacrificing runtime reliability.**
+
+The priority order is deliberate:
+
+1. **Fast automation development.** An automation author should spend almost all of their time on business logic, not deployment plumbing, systemd details, retries, rollback, logging, secrets, compatibility or certification boilerplate.
+2. **Robust production execution.** TaskRail owns the reusable guardrails that make an automation safe to deploy, execute, verify, recover and operate under the real production runtime identity.
+3. **Low framework overhead.** Framework sophistication is not a goal. A feature belongs in TaskRail only when it solves a repeated problem once and makes future automations easier, safer or faster.
+
+The practical test for every TaskRail change is:
+
+> **Does this make the next automation faster to build while keeping production execution trustworthy?**
+
+If the answer is no, the change should normally stay out of the core.
+
+TaskRail therefore favors **convention over configuration, thin business logic, reusable capabilities, automatic production guardrails and coordinated migrations while the ecosystem is still small**. Reliability should be inherited from the framework rather than reimplemented inside every automation.
 
 ## TaskRail in 15 seconds
 
@@ -310,6 +328,8 @@ The README is intentionally the human-facing overview. Detailed contracts live i
 
 ## Development philosophy
 
-TaskRail optimizes for predictable AI-agent behavior, low context/token requirements, reusable technical building blocks, deterministic validation, safe production changes, explicit contracts, failure isolation, secure defaults, modular upgrades and low operational overhead.
+TaskRail optimizes first for **automation author speed**, then for **production reliability inherited from the framework**, while keeping context/token requirements, runtime overhead and operational machinery small.
+
+Automation authors should write business logic and declare only what cannot be inferred. TaskRail should own repeated infrastructure concerns once: deployment, runtime verification, retries, timeouts, state, logging, rollback, drift handling, compatibility and production certification. While the ecosystem is still small, coordinated migrations are preferred over preserving unnecessary legacy complexity indefinitely.
 
 A new core component should be added only when repeated real-world automation work demonstrates a stable vendor-neutral primitive that cannot be cleanly expressed with existing components and capabilities. A new control-plane feature should stay independently testable and remain outside the ordinary automation hot path unless runtime execution genuinely requires it.
