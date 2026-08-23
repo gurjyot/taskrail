@@ -1,7 +1,7 @@
 ---
 name: taskrail
 description: Build and operate TaskRail-managed automations using stable components and governed capabilities.
-reviewed_for_taskrail: 3.0.7
+reviewed_for_taskrail: 3.0.8
 ---
 # TaskRail
 
@@ -56,6 +56,8 @@ An automation may declare zero or one operational plugin. Do not model multiple 
 ## Delivery lifecycle
 
 `doctor -> check -> test -> plan -> ship -> health`
+
+For Linux/systemd production, `ship` must also pass TaskRail's runtime-context gate: the declared service must be loaded, its real `User=` must be able to traverse `WorkingDirectory=`, and required shared files must be readable by that user. A code-level health pass does not replace this runtime check.
 
 `test` and `ship` have one canonical CLI route each. Do not call legacy/deep CLI implementation files directly.
 
