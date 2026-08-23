@@ -28,6 +28,7 @@ test('init automation creates a runnable thin Node scaffold', async () => {
     assert.deepEqual(manifest, {
       name: 'demo-agent',
       profile: 'smg-node-timer@1',
+      taskrailCompatibility: '3.1.x',
       capabilities: [],
     });
     const resolved = resolveFrameworkManifest(manifest);
