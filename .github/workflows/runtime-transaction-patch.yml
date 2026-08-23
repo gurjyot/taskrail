@@ -1,25 +1,29 @@
 name: Runtime Transaction Patch
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/runtime-transaction-patch.yml
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   patch:
+    if: github.actor == github.repository_owner && github.event.issue.title == 'Apply transactional runtime patch v3.0.8'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
-      - name: Move runtime gate into deployment transaction
+      - name: Patch, build and focused test
+        id: patch
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
+          {
           python3 - <<'PY'
           from pathlib import Path
 
@@ -91,17 +95,33 @@ jobs:
           npm ci
           npm run build
           node --test dist/test/systemd.test.js dist/test/transactional-deploy.test.js
-      - name: Commit transactional fix
+          } 2>&1 | tee patch.log
+      - name: Commit when green
+        if: steps.patch.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/deployment.ts src/ship-command.ts
-          if git diff --cached --quiet; then
-            echo 'Transactional patch already present.'
-            exit 0
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: make runtime validation transactional'
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
-          git commit -m 'fix: make runtime validation transactional'
-          git pull --rebase origin main
-          git push origin HEAD:main
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          OUTCOME: ${{ steps.patch.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tail_text="$(tail -n 40 patch.log 2>/dev/null || true)"
+          body="Transactional runtime patch outcome: ${OUTCOME}\n\nLast output:\n\`\`\`\n${tail_text}\n\`\`\`"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "${body:0:60000}"
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
+      - name: Fail when patch failed
+        if: steps.patch.outcome != 'success'
+        run: exit 1
