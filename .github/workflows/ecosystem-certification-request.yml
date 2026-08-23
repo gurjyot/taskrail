@@ -1,0 +1,54 @@
+name: TaskRail Ecosystem Certification Request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    if: github.actor == github.repository_owner && github.event.issue.title == 'Verify TaskRail ecosystem v3.0.8'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-capabilities
+          path: .ecosystem/taskrail-capabilities
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-automations
+          path: .ecosystem/taskrail-automations
+      - name: Verify public ecosystem
+        id: verify
+        continue-on-error: true
+        env:
+          TASKRAIL_CAPABILITIES_REPO: ${{ github.workspace }}/.ecosystem/taskrail-capabilities
+          TASKRAIL_AUTOMATIONS_REPO: ${{ github.workspace }}/.ecosystem/taskrail-automations
+        run: node scripts/verify-public-ecosystem.mjs
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          OUTCOME: ${{ steps.verify.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "Public ecosystem verification outcome: ${OUTCOME}"
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
+      - name: Fail when ecosystem verification failed
+        if: steps.verify.outcome != 'success'
+        run: exit 1
