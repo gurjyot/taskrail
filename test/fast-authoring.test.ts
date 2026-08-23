@@ -20,7 +20,7 @@ test('thin node timer manifest resolves all standard operational defaults', () =
   assert.equal(manifest.validationCommand, 'node --check src/main.js');
   assert.equal(manifest.testCommand, 'node --test tests/*.test.js');
   assert.deepEqual(manifest.healthCheck, { type: 'command', command: 'node --check src/main.js' });
-  assert.deepEqual(manifest.requiredChecks, ['validation', 'test', 'health']);
+  assert.deepEqual(manifest.requiredChecks, ['validation', 'test']);
   assert.deepEqual(manifest.serviceManager?.units, [
     { name: 'daily-report.service', kind: 'service', oneshotOkay: true },
     { name: 'daily-report.timer', kind: 'timer' },
