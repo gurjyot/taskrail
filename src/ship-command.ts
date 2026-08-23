@@ -5,6 +5,7 @@ import { resolveFrameworkManifest } from './framework.js';
 import { detectEnvironment } from './env.js';
 import { inspectGitState } from './git.js';
 import { loadPlugins, safeDeploy } from './deployment.js';
+import { verifySystemdRuntimeContext } from './systemd.js';
 
 function compact(lines: string[]) {
   console.log(lines.join('\n'));
@@ -33,19 +34,26 @@ export async function runShipCli(args = process.argv.slice(3)) {
     sourceRevision: inspectGitState(cwd).sha,
     projectRoot: cwd,
   });
+  const runtimeChecks = result.deployed && process.platform === 'linux' && manifest.serviceManager?.type === 'systemd'
+    ? verifySystemdRuntimeContext(manifest)
+    : [];
+  const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
+  const shipped = result.deployed && runtimeFailures.length === 0;
 
   if (args.includes('--json')) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, runtimeReady: runtimeFailures.length === 0, runtimeChecks, shipped }, null, 2));
   } else {
     compact([
-      `STATUS: ${result.deployed ? 'PASS' : 'FAIL'}`,
+      `STATUS: ${shipped ? 'PASS' : 'FAIL'}`,
       `ENV: ${detectEnvironment(manifest, cwd).name}`,
       `SHA: ${result.sha || 'unknown'}`,
       `RELEASE: ${result.releaseId || 'unknown'}`,
+      ...(result.deployed && manifest.serviceManager?.type === 'systemd' ? [`RUNTIME: ${runtimeFailures.length ? 'FAIL' : 'PASS'}`] : []),
+      ...runtimeFailures.map((check) => `RUNTIME_FAILURE: ${check.unit} user=${check.user} workdir=${check.workingDirectory}${check.unreadableSharedFiles.length ? ` unreadable=${check.unreadableSharedFiles.join(',')}` : ''}`),
       ...(result.failure ? [`FAILURE: ${result.failure}`] : []),
       ...(result.report ? [`REPORT: ${result.report}`] : []),
-      `NEXT: ${result.deployed ? 'done' : 'taskrail explain deploy'}`,
+      `NEXT: ${shipped ? 'done' : runtimeFailures.length ? 'fix runtime permissions/systemd context, then taskrail-systemd-sync --verify-runtime' : 'taskrail explain deploy'}`,
     ]);
   }
-  if (!result.deployed) process.exitCode = 1;
+  if (!shipped) process.exitCode = 1;
 }
