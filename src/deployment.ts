@@ -719,7 +719,7 @@ export async function rollbackFromState(
   const previousReleasePath = state.previousReleasePath;
   const priorCurrentReleasePath = state.releasePath;
   try {
-    if (manifest?.deployStrategy?.type === 'replace-in-place' && previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath)) {
+    if ((manifest?.deployStrategy?.type ?? 'replace-in-place') === 'replace-in-place' && previousReleasePath && path.resolve(previousReleasePath) !== path.resolve(state.targetPath)) {
       await rm(state.targetPath, { recursive: true, force: true });
       await copyDir(previousReleasePath, state.targetPath);
     } else {
