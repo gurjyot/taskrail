@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { CapabilityContract, CapabilityManifest, FrameworkManifest } from './types.js';
 import { findHardRegistryConflicts } from './capability-governance.js';
+import { loadResolvedManifest } from './config.js';
 
 export interface ManagedAutomation {
   name: string;
@@ -219,16 +220,22 @@ export async function findAutomation(nameOrPath: string, cwd = process.cwd()) {
 export async function listManagedAutomations(cwd = process.cwd()): Promise<ManagedAutomation[]> {
   const manifests = await discoverAutomationManifests(cwd);
   const items: ManagedAutomation[] = [];
+  const seen = new Set<string>();
   for (const manifestPath of manifests) {
-    const manifest = await readJson<FrameworkManifest>(manifestPath);
-    if (!manifest?.managed) continue;
-    items.push({
-      name: manifest.name,
-      manifestPath,
-      runtime: manifest.runtime,
-      capabilities: unique(manifest.capabilities ?? []),
-      status: manifest.capabilities?.length ? 'capability-aware' : 'managed',
-    });
+    try {
+      const manifest = await loadResolvedManifest(manifestPath);
+      if (!manifest.managed || seen.has(manifest.name)) continue;
+      seen.add(manifest.name);
+      items.push({
+        name: manifest.name,
+        manifestPath,
+        runtime: manifest.runtime,
+        capabilities: unique(manifest.capabilities ?? []),
+        status: manifest.capabilities?.length ? 'capability-aware' : 'managed',
+      });
+    } catch {
+      continue;
+    }
   }
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -245,8 +252,12 @@ export async function capabilityImpact(name: string, cwd = process.cwd()) {
   const manifests = await discoverAutomationManifests(cwd);
   const consumers: Array<{ name: string; manifestPath: string }> = [];
   for (const manifestPath of manifests) {
-    const manifest = await readJson<FrameworkManifest>(manifestPath);
-    if ((manifest?.capabilities ?? []).includes(name)) consumers.push({ name: manifest!.name, manifestPath });
+    try {
+      const manifest = await loadResolvedManifest(manifestPath);
+      if ((manifest.capabilities ?? []).includes(name)) consumers.push({ name: manifest.name, manifestPath });
+    } catch {
+      continue;
+    }
   }
   return consumers.sort((a, b) => a.name.localeCompare(b.name));
 }
