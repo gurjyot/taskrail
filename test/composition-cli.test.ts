@@ -34,7 +34,7 @@ test('init automation creates a runnable thin Node scaffold', async () => {
     assert.equal(resolved.runtime, 'node');
     assert.equal(resolved.managed, true);
     assert.equal(resolved.validationCommand, 'node --check src/main.js');
-    assert.deepEqual(resolved.requiredChecks, ['validation', 'test', 'health']);
+    assert.deepEqual(resolved.requiredChecks, ['validation', 'test']);
     execFileSync(process.execPath, ['--test', 'tests/*.test.js'], { cwd: target, shell: true, stdio: 'pipe' });
   } finally {
     await rm(root, { recursive: true, force: true });
