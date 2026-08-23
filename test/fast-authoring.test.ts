@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { scaffoldAutomation } from '../src/automation-scaffold.js';
-import { resolveFrameworkManifest } from '../src/framework.js';
+import { frameworkProfiles, resolveFrameworkManifest } from '../src/framework.js';
 
 test('thin node timer manifest resolves all standard operational defaults', () => {
   const manifest = resolveFrameworkManifest({
@@ -58,6 +58,31 @@ test('scaffold writes a three-field manifest and conventional node layout', asyn
     assert.match(entry, /export async function run/);
     assert.match(selfTest, /..\/src\/main\.js/);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('scaffold derives runtime from the profile contract rather than its name', async () => {
+  const profile = 'custom-job@1';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'taskrail-profile-runtime-'));
+  frameworkProfiles[profile] = {
+    id: profile,
+    frameworkCapabilities: ['shell-runtime@1'],
+    defaults: {
+      managed: true,
+      sourceDir: '.',
+      deployDir: '/tmp/${automation}',
+      validationCommand: 'bash -n src/main.sh',
+      testCommand: 'bash tests/self-test.sh',
+    },
+  };
+
+  try {
+    const result = await scaffoldAutomation({ name: 'contract-runtime', profile, root });
+    assert.equal(result.runtime, 'shell');
+    assert.match(await readFile(path.join(result.path, 'src/main.sh'), 'utf8'), /automation not implemented/);
+  } finally {
+    delete frameworkProfiles[profile];
     await rm(root, { recursive: true, force: true });
   }
 });
