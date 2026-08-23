@@ -56,6 +56,18 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
   if (manifest.buildCommand) {
     const result = await runGateCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
     steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+  } else if (required.has('build')) {
+    steps.push({ name: 'build', ok: false, required: true, message: 'required build check is not configured' });
+  }
+
+  if (required.has('migrate')) {
+    const migrateCommand = manifest.migrations?.checkCommand;
+    if (!migrateCommand) {
+      steps.push({ name: 'migrate', ok: false, required: true, message: 'required migrate check is not configured' });
+    } else {
+      const result = await runGateCommand(migrateCommand, path.resolve(cwd, manifest.sourceDir));
+      steps.push({ name: 'migrate', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+    }
   }
 
   const healthDef = manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
