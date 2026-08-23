@@ -1,0 +1,121 @@
+name: Runtime Transaction Patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/runtime-transaction-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Move runtime gate into deployment transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/deployment.ts')
+          s = p.read_text()
+          old_import = "import { runBoundedCommand } from './bounded-command.js';\n"
+          new_import = old_import + "import { verifySystemdRuntimeContext } from './systemd.js';\n"
+          assert old_import in s and "from './systemd.js'" not in s
+          s = s.replace(old_import, new_import, 1)
+
+          marker = "function fingerprintInputs(manifest: FrameworkManifest, git: GitState) {\n"
+          helper = """function productionRuntimeChecks(manifest: FrameworkManifest, environment: EnvironmentInfo) {
+            if (environment.name !== 'production' || process.platform !== 'linux' || manifest.serviceManager?.type !== 'systemd') return [];
+            return verifySystemdRuntimeContext(manifest, { environment: environment.name });
+          }
+
+          """
+          assert marker in s and 'function productionRuntimeChecks' not in s
+          s = s.replace(marker, helper + marker, 1)
+
+          old_noop = """      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+                if (health.ok) {
+                  await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, priorState, existingReleasePath);
+                  return { deployed: true, rolledBack: false, releaseId: priorState.currentReleaseId, releasePath: existingReleasePath, sha: git.sha };
+                }
+          """
+          new_noop = """      const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], strategy === 'release-symlink' ? existingReleasePath : target, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+                const runtimeChecks = health.ok ? productionRuntimeChecks(manifest, envInfo) : [];
+                if (health.ok && runtimeChecks.every((check) => check.passed)) {
+                  await cleanupOwnedArtifacts(workspace, manifest, releaseRoot, priorState, existingReleasePath);
+                  return { deployed: true, rolledBack: false, releaseId: priorState.currentReleaseId, releasePath: existingReleasePath, sha: git.sha };
+                }
+          """
+          assert old_noop in s
+          s = s.replace(old_noop, new_noop, 1)
+
+          old_success = """    const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+              if (health.ok) {
+                nextState.lastKnownGoodReleasePath = release.path;
+          """
+          new_success = """    const health = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], liveCheckPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+              const runtimeChecks = health.ok ? productionRuntimeChecks(manifest, envInfo) : [];
+              const runtimeFailures = runtimeChecks.filter((check) => !check.passed);
+              if (health.ok && runtimeFailures.length === 0) {
+                nextState.lastKnownGoodReleasePath = release.path;
+          """
+          assert old_success in s
+          s = s.replace(old_success, new_success, 1)
+
+          old_restored = """    const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
+              const restored = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], restoredPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+              if (!restored.ok) {
+          """
+          new_restored = """    const restoredPath = strategy === 'release-symlink' ? (previousReleasePath || target) : target;
+              const restored = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], restoredPath, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+              const restoredRuntimeChecks = restored.ok ? productionRuntimeChecks(manifest, envInfo) : [];
+              const restoredRuntimeReady = restoredRuntimeChecks.every((check) => check.passed);
+              if (!restored.ok || !restoredRuntimeReady) {
+          """
+          assert old_restored in s
+          s = s.replace(old_restored, new_restored, 1)
+
+          old_fail1 = "failure: 'health check failed and rollback failed'"
+          new_fail1 = "failure: runtimeFailures.length ? 'runtime context failed and rollback verification failed' : 'health check failed and rollback failed'"
+          assert old_fail1 in s
+          s = s.replace(old_fail1, new_fail1, 1)
+
+          old_fail2 = "failure: 'health check failed; rollback succeeded'"
+          new_fail2 = "failure: runtimeFailures.length ? 'runtime context failed; rollback succeeded' : 'health check failed; rollback succeeded'"
+          assert old_fail2 in s
+          s = s.replace(old_fail2, new_fail2, 1)
+
+          p.write_text(s)
+
+          p = Path('src/ship-command.ts')
+          s = p.read_text()
+          s = s.replace("import { loadManifest, resolvePaths } from './config.js';", "import { loadManifest } from './config.js';")
+          s = s.replace("import { loadPlugins, rollbackFromState, safeDeploy } from './deployment.js';", "import { loadPlugins, safeDeploy } from './deployment.js';")
+          start = s.index("  const runtimeFailures = runtimeChecks.filter((check) => !check.passed);\n")
+          end = s.index("  const shipped = result.deployed && runtimeFailures.length === 0;\n", start)
+          s = s[:start] + "  const runtimeFailures = runtimeChecks.filter((check) => !check.passed);\n" + s[end:]
+          s = s.replace(", runtimeRollback, shipped", ", shipped")
+          s = s.replace("      ...(runtimeRollback.attempted ? [`RUNTIME_ROLLBACK: ${runtimeRollback.ok ? 'PASS' : 'FAIL'}`] : []),\n", "")
+          s = s.replace("runtimeFailures.length ? (runtimeRollback.ok ? 'fix runtime permissions/systemd context before retrying ship' : 'inspect rollback/runtime state before any retry') : 'taskrail explain deploy'", "runtimeFailures.length ? 'runtime context was rejected by the deployment transaction; fix permissions/systemd context before retrying ship' : 'taskrail explain deploy'")
+          p.write_text(s)
+          PY
+          npm ci
+          npm run build
+          npm test -- --test-name-pattern='systemd|transactional|deploy'
+      - name: Commit transactional fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/deployment.ts src/ship-command.ts
+          git commit -m 'fix: make runtime validation transactional'
+          git pull --rebase origin main
+          git push origin HEAD:main
