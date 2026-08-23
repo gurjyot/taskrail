@@ -1,0 +1,60 @@
+name: TaskRail Ecosystem Explain Request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  explain:
+    if: github.actor == github.repository_owner && github.event.issue.title == 'Explain TaskRail ecosystem failure v3.0.8'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-capabilities
+          path: .ecosystem/taskrail-capabilities
+      - uses: actions/checkout@v4
+        with:
+          repository: gurjyot/taskrail-automations
+          path: .ecosystem/taskrail-automations
+      - name: Explain representative failures
+        env:
+          TASKRAIL_CAPABILITY_ROOTS: ${{ github.workspace }}/.ecosystem/taskrail-capabilities/capabilities
+        shell: bash
+        run: |
+          set +e
+          : > explain.txt
+          for target in \
+            commerce/abandoned-checkout-escalation \
+            crm/lead-response-time-monitor \
+            monitoring/website-form-failure-detector \
+            wordpress/plugin-vulnerability-watch; do
+            echo "===== $target =====" >> explain.txt
+            node dist/src/taskrail-cli.js check ".ecosystem/taskrail-automations/$target/automation.json" >> explain.txt 2>&1
+            node dist/src/taskrail-cli.js explain check ".ecosystem/taskrail-automations/$target/automation.json" >> explain.txt 2>&1
+          done
+          exit 0
+      - name: Report explanation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(tail -c 50000 explain.txt)"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "\`\`\`text\n${body}\n\`\`\`"
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
