@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify:
-    if: github.actor == github.repository_owner && github.event.issue.title == 'Verify TaskRail ecosystem v3.0.8'
+    if: github.actor == github.repository_owner && startsWith(github.event.issue.title, 'Verify TaskRail ecosystem v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -21,6 +21,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Validate ecosystem request
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$ISSUE_TITLE" = "Verify TaskRail ecosystem v${VERSION}"
       - run: npm ci
       - run: npm run build
       - uses: actions/checkout@v4
