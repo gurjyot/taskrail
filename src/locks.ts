@@ -25,13 +25,25 @@ export async function acquireLock(lockDir: string, infoOverride: Partial<LockInf
       cwd: process.cwd(),
       ...infoOverride,
     };
-    await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify(info, null, 2));
+    try {
+      await writeFile(path.join(lockDir, 'lock.json'), JSON.stringify(info, null, 2));
+    } catch (error) {
+      await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
     return { ok: true, info };
   } catch {
     const holder = await readLock(lockDir);
     if (holder && await isStale(holder, lockDir)) {
       await rm(lockDir, { recursive: true, force: true });
       return acquireLock(lockDir, infoOverride);
+    }
+    if (!holder) {
+      const orphanAge = await stat(lockDir).then((value) => Date.now() - value.mtimeMs, () => 0);
+      if (orphanAge > 5_000) {
+        await rm(lockDir, { recursive: true, force: true });
+        return acquireLock(lockDir, infoOverride);
+      }
     }
     return { ok: false, holder: holder ? `${holder.host}:${holder.pid} ${holder.startedAt}` : undefined, info: holder ?? undefined, stale: false };
   }
