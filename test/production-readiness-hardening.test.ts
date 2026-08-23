@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { doctor, safeDeploy } from '../src/deployment.js';
+import type { FrameworkManifest } from '../src/types.js';
 import { validateConfig } from '../src/validation.js';
 
 async function fixture() {
@@ -18,16 +19,16 @@ async function fixture() {
   return { root, source, deploy };
 }
 
-function manifest(root: string, source: string, deploy: string, overrides: Record<string, unknown> = {}) {
+function manifest(root: string, source: string, deploy: string, overrides: Partial<FrameworkManifest> = {}): FrameworkManifest {
   return {
     name: 'app',
-    runtime: 'node' as const,
+    runtime: 'node',
     managed: true,
     sourceDir: source,
     deployDir: deploy,
     validationCommand: 'node check.js',
     testCommand: 'node check.js',
-    healthCheck: { type: 'file' as const, path: 'index.txt' },
+    healthCheck: { type: 'file', path: 'index.txt' },
     backup: { retain: 3 },
     requiredChecks: ['validation', 'test'],
     protectedPaths: [],
