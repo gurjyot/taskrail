@@ -3,6 +3,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition } from './types.js';
 
+type FrameworkManifestInput = Pick<FrameworkManifest, 'name'> & Partial<FrameworkManifest>;
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -180,14 +182,14 @@ function detectSystemdUnitHints(manifest: FrameworkManifest) {
   return { service: service.status === 0, timer: timer.status === 0 };
 }
 
-function assertFrameworkReferences(manifest: FrameworkManifest) {
+function assertFrameworkReferences(manifest: FrameworkManifestInput) {
   if (manifest.profile && !frameworkProfiles[manifest.profile]) throw new Error(`unknown TaskRail profile: ${manifest.profile}`);
   for (const id of manifest.frameworkCapabilities ?? []) {
     if (!frameworkCapabilities[id]) throw new Error(`unknown TaskRail framework capability: ${id}`);
   }
 }
 
-export function resolveFrameworkManifest(manifest: FrameworkManifest): FrameworkManifest {
+export function resolveFrameworkManifest(manifest: FrameworkManifestInput): FrameworkManifest {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -198,12 +200,12 @@ export function resolveFrameworkManifest(manifest: FrameworkManifest): Framework
     if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
-  resolved = deepMerge(resolved, clone(manifest));
+  resolved = deepMerge(resolved, clone(manifest) as Partial<FrameworkManifest>);
   if (profile) resolved.frameworkCapabilities = frameworkCaps;
   return resolved;
 }
 
-function resolveFrameworkDefaults(manifest: FrameworkManifest) {
+function resolveFrameworkDefaults(manifest: FrameworkManifestInput) {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
