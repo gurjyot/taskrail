@@ -81,7 +81,13 @@ export interface EnvironmentInfo { name: TaskrailEnv; overridden: boolean; reaso
 export interface LogEvent { level: Severity; message: string; scope?: string; data?: unknown; }
 export interface HealthResult { ok: boolean; details?: string; }
 export interface BackupResult { path: string; }
-export interface DeployResult { deployed: boolean; rolledBack: boolean; }
+export interface DeployResult {
+  deployed: boolean;
+  rolledBack: boolean;
+  rollbackAttempted?: boolean;
+  rollbackSucceeded?: boolean;
+  recoveryRequired?: boolean;
+}
 export interface GitState { available: boolean; repoRoot?: string; sha?: string; clean?: boolean; changedFiles?: string[]; error?: string; }
 export interface ReleaseMeta { releaseId: string; project: string; taskrailVersion: string; sourceRevision?: string; createdAt: string; path: string; environment?: TaskrailEnv; manifestHash?: string; receiptPath?: string; }
 export interface FailureReport { project: string; taskrailVersion: string; stage: string; failedCommand?: string; exitCode?: number; category: string; message: string; releaseId?: string; rollbackAttempted: boolean; rollbackResult?: 'success' | 'failed' | 'not-needed'; nextStep?: string; environment?: TaskrailEnv; }
