@@ -58,7 +58,7 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
     steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   }
 
-  const healthDef = manifest.healthCheck ?? manifest.healthChecks?.[0];
+  const healthDef = manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
   if (healthDef) {
     const health = await runHealthCheck(
       healthDef,
@@ -85,8 +85,12 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
   }
 
   for (const plugin of plugins) {
-    const result = await plugin.validate?.({ projectName: manifest.name, environment: process.env, manifest });
-    if (result?.length) steps.push({ name: `plugin:${plugin.name}`, ok: false, required: false, message: result.join(', ') });
+    try {
+      const result = await plugin.validate?.({ projectName: manifest.name, environment: process.env, manifest });
+      if (result?.length) steps.push({ name: `plugin:${plugin.name}`, ok: false, required: true, message: result.join(', ') });
+    } catch (error) {
+      steps.push({ name: `plugin:${plugin.name}`, ok: false, required: true, message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   const missingRequired = steps.filter((step) => step.required && !step.ok);
