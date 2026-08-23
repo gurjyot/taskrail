@@ -1,0 +1,48 @@
+name: TaskRail Release Certification Report
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-certification-report.yml
+
+permissions:
+  contents: write
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run certification
+        id: certify
+        continue-on-error: true
+        run: npm run certify
+      - name: Persist compact certification result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.certify.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .github/ops
+          if [ -f .taskrail/certification.json ]; then
+            jq '{schema,generatedAt,certified,verdict,failed,gates}' .taskrail/certification.json > .github/ops/taskrail-certification.json
+          else
+            jq -n --arg outcome "$OUTCOME" '{schema:1,certified:false,verdict:"TASKRAIL CERTIFICATION - NO REPORT",failed:["certification-report-missing"],outcome:$outcome}' > .github/ops/taskrail-certification.json
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/ops/taskrail-certification.json
+          git commit -m 'ops: record TaskRail certification [skip ci]' || exit 0
+          git push
+      - name: Fail when certification failed
+        if: steps.certify.outcome != 'success'
+        run: exit 1
