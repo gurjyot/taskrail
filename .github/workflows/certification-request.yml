@@ -39,12 +39,16 @@ jobs:
             certified="$(jq -r '.certified' .taskrail/certification.json)"
             failed="$(jq -r 'if (.failed|length)==0 then "none" else (.failed|join(", ")) end' .taskrail/certification.json)"
             verdict="$(jq -r '.verdict' .taskrail/certification.json)"
+            details="$(jq -r '[.gates[] | select(.ok == false) | "### " + .name + "\n```text\n" + (.detail // "no detail") + "\n```"] | join("\n\n")' .taskrail/certification.json)"
           else
             certified=false
             failed=certification-report-missing
             verdict='TASKRAIL CERTIFICATION - NO REPORT'
+            details='No certification report was produced.'
           fi
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "Certification outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
+          body="Certification outcome: ${OUTCOME}\nCertified: ${certified}\nVerdict: ${verdict}\nFailed gates: ${failed}"
+          if [ -n "$details" ]; then body="$body\n\n$details"; fi
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
       - name: Fail when certification failed
         if: steps.certify.outcome != 'success'
