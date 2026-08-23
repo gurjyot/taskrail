@@ -37,32 +37,44 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
   const required = new Set(manifest.requiredChecks ?? ['validation', 'test']);
   const steps: GateStep[] = [];
   const preflightResult = await preflight(manifest, cwd);
+  const sourceDir = path.resolve(cwd, manifest.sourceDir);
   steps.push({ name: 'preflight', ok: preflightResult.ok, required: true, message: preflightResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ') || 'ok' });
 
   if (required.has('validation')) {
-    const result = await runGateCommand(manifest.validationCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.validationCommand, sourceDir);
     steps.push({ name: 'validation', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'validation', ok: true, required: false, message: 'not required' });
   }
 
   if (required.has('test')) {
-    const result = await runGateCommand(manifest.testCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.testCommand, sourceDir);
     steps.push({ name: 'test', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
   } else {
     steps.push({ name: 'test', ok: true, required: false, message: 'not required' });
   }
 
   if (manifest.buildCommand) {
-    const result = await runGateCommand(manifest.buildCommand, path.resolve(cwd, manifest.sourceDir));
+    const result = await runGateCommand(manifest.buildCommand, sourceDir);
     steps.push({ name: 'build', ok: result.ok, required: required.has('build'), message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+  } else if (required.has('build')) {
+    steps.push({ name: 'build', ok: false, required: true, message: 'required build check is not configured' });
+  }
+
+  if (required.has('migrate')) {
+    if (manifest.migrations?.checkCommand) {
+      const result = await runGateCommand(manifest.migrations.checkCommand, sourceDir);
+      steps.push({ name: 'migrate', ok: result.ok, required: true, message: result.message, command: result.command, cwd: result.cwd, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+    } else {
+      steps.push({ name: 'migrate', ok: false, required: true, message: 'required migrate check is not configured' });
+    }
   }
 
   const healthDef = manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
   if (healthDef) {
     const health = await runHealthCheck(
       healthDef,
-      path.resolve(cwd, manifest.sourceDir),
+      sourceDir,
       plugins[0],
       manifest.healthCommand || manifest.runtimeHealthCommand,
     );
@@ -76,7 +88,7 @@ export async function runGate(manifest: FrameworkManifest, cwd = process.cwd(), 
       const statePath = stateFileFor(manifest, cwd);
       const state = JSON.parse(await readFile(statePath, 'utf8')) as { releasePath?: string };
       const liveTarget = path.resolve(cwd, manifest.deployDir);
-      const compareTarget = state.releasePath ? state.releasePath : path.resolve(cwd, manifest.sourceDir);
+      const compareTarget = state.releasePath ? state.releasePath : sourceDir;
       const drift = await detectDrift(liveTarget, compareTarget, manifest);
       steps.push({ name: 'drift', ok: !drift.drifted, required: true, message: drift.files.join(', ') || 'clean' });
     } catch {
