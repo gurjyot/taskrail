@@ -1,5 +1,4 @@
 import { access, constants, mkdir, stat } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { FrameworkManifest } from './types.js';
 import { isCompatible, isTaskRailCompatible, resolvePaths } from './config.js';
@@ -7,6 +6,7 @@ import { TASKRAIL_VERSION } from './version.js';
 import { capabilityRootsFor, loadCapabilities } from './capabilities.js';
 import { detectEnvironment, appliesToEnvironment } from './env.js';
 import { readUpdatePause } from './update-pause.js';
+import { runBoundedCommand } from './bounded-command.js';
 
 export interface PreflightResult {
   ok: boolean;
@@ -57,10 +57,10 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
     push(`capability:${capability}`, Boolean(contract), contract ? 'ok' : 'missing capability');
   }
   if (manifest.runtime === 'node') {
-    const nodeCheck = spawnSync(process.execPath, ['--version'], { encoding: 'utf8' });
+    const nodeCheck = await runBoundedCommand({ command: `"${process.execPath}" --version`, cwd, timeoutMs: 30_000, maxOutputBytes: 256 * 1024 });
     const current = nodeCheck.stdout.trim().replace(/^v/, '');
     const requested = manifest.runtimeVersion;
-    push('runtime', nodeCheck.status === 0 && (!requested || isCompatible(current, requested)), requested ? `${current} vs ${requested}` : current);
+    push('runtime', nodeCheck.ok && (!requested || isCompatible(current, requested)), requested ? `${current} vs ${requested}` : (current || nodeCheck.message));
   } else {
     push('runtime', true, manifest.runtime);
   }
@@ -72,8 +72,8 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
     }
   }
   if (envInfo.name === 'production' && manifest.serviceManager?.type === 'systemd') {
-    const systemctl = spawnSync('systemctl', ['--version'], { encoding: 'utf8' });
-    push('systemd', systemctl.status === 0, systemctl.status === 0 ? 'ok' : 'missing systemctl');
+    const systemctl = await runBoundedCommand({ command: 'systemctl --version', cwd, timeoutMs: 30_000, maxOutputBytes: 256 * 1024 });
+    push('systemd', systemctl.ok, systemctl.ok ? 'ok' : systemctl.message);
   }
   if (manifest.serviceManager?.units?.length) {
     const timers = manifest.serviceManager.units.filter((unit) => unit.kind === 'timer');
