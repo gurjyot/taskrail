@@ -1,9 +1,9 @@
 {
   "name": "taskrail",
-  "version": "3.0.8",
+  "version": "3.1.0",
   "private": false,
   "type": "module",
-  "description": "Lightweight AI-first automation framework with reusable components, governed capabilities, safe deployment, supervision, rollback, and agent skills.",
+  "description": "Lightweight automation framework for fast authoring with robust production deployment, verification, rollback, and reusable capabilities.",
   "keywords": ["automation","automation-framework","ai-automation","coding-agents","agentic-automation","workflow-automation","deployment-automation","automation-sdk","cli","typescript","nodejs","idempotency","capability-registry","ai-developer-tools"],
   "license": "MIT",
   "repository": {"type":"git","url":"git+https://github.com/gurjyot/taskrail.git"},
