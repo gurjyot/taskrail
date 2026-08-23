@@ -334,7 +334,7 @@ async function commandUpgrade(rawManifest: FrameworkManifest, manifest: Framewor
   if (write && changed) await import('node:fs/promises').then(({ writeFile }) => writeFile(manifestPath, `${JSON.stringify(compacted, null, 2)}\n`));
   const resolved = resolveFrameworkManifest(compacted);
   const checked = await frameworkCheck(resolved, { cwd });
-  const tested = await runGate(resolved, cwd, await loadPlugins(resolved).catch(() => []));
+  const tested = await runGate(resolved, cwd, await loadPlugins(resolved, cwd));
   compact([
     `STATUS: ${passLine(checked.ok && tested.verdict === 'PASS' && unsupportedCaps.length === 0 && !unsupportedProfile)}`,
     `ENV: ${detectEnvironment(resolved, cwd).name}`,
@@ -384,7 +384,7 @@ async function main() {
   }
 
   if (cmd === 'gate') {
-    const result = await runGate(manifest, cwd, await loadPlugins(manifest).catch(() => []));
+    const result = await runGate(manifest, cwd, await loadPlugins(manifest, cwd));
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${result.verdict}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `DEPLOYABLE: ${result.deployAllowed ? 'yes' : 'no'}`, `NEXT: ${result.deployAllowed ? 'taskrail ship' : 'taskrail explain gate'}`]);
     if (result.verdict !== 'PASS') process.exitCode = 1;
@@ -392,7 +392,7 @@ async function main() {
   }
 
   if (cmd === 'verify-change') {
-    const result = await inspectChange(manifest, cwd, await loadPlugins(manifest).catch(() => []));
+    const result = await inspectChange(manifest, cwd, await loadPlugins(manifest, cwd));
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${passLine(result.deployAllowed)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `RISK: ${result.risk}`, `CHANGED: ${result.changedFiles.length}`, `NEXT: ${result.deployAllowed ? 'taskrail ship' : 'inspect protected changes'}`]);
     if (!result.deployAllowed) process.exitCode = 1;
@@ -400,7 +400,7 @@ async function main() {
   }
 
   if (cmd === 'plan') {
-    const plan = buildPlan(manifest, await loadPlugins(manifest).catch(() => []));
+    const plan = buildPlan(manifest, await loadPlugins(manifest, cwd));
     if (rest.includes('--json')) return output({ version: TASKRAIL_VERSION, plan });
     compact([`STATUS: PASS`, `ENV: ${plan.environment}`, `TARGET: ${plan.target}`, `STRATEGY: ${plan.deployStrategy}`, `NEXT: taskrail ship`]);
     return;
@@ -429,7 +429,7 @@ async function main() {
   }
 
   if (cmd === 'health') {
-    const result = await runHealthCheck(manifest.healthCheck ?? manifest.healthChecks?.[0], resolvePaths(manifest, cwd).deployDir, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+    const result = await runHealthCheck(manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck, resolvePaths(manifest, cwd).deployDir, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
     compact([`STATUS: ${passLine(result.ok)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `HEALTH: ${result.details || 'ok'}`, `NEXT: ${result.ok ? 'done' : 'taskrail explain health'}`]);
     if (!result.ok) process.exitCode = 1;
     return;
@@ -441,7 +441,6 @@ async function main() {
     if (!result.ok) process.exitCode = 1;
     return;
   }
-
 
   console.error(`unknown command: ${cmd}`);
   process.exitCode = 1;
