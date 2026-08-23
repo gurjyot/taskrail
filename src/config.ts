@@ -1,14 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { FrameworkConfig, FrameworkManifest, RawFrameworkManifest, TaskrailEnv } from './types.js';
+import type { FrameworkConfig, FrameworkManifest, TaskrailEnv } from './types.js';
 import { resolveFrameworkManifest } from './framework.js';
 
 export function taskrailConfigFromManifest(manifest: FrameworkManifest, environment: Record<string, string | undefined> = process.env): FrameworkConfig {
   return { projectName: manifest.name, environment, manifest };
 }
 
-export async function loadManifest(manifestPath: string): Promise<RawFrameworkManifest> {
-  return JSON.parse(await readFile(manifestPath, 'utf8')) as RawFrameworkManifest;
+export async function loadManifest(manifestPath: string): Promise<FrameworkManifest> {
+  return JSON.parse(await readFile(manifestPath, 'utf8')) as FrameworkManifest;
 }
 
 export async function loadResolvedManifest(manifestPath: string): Promise<FrameworkManifest> {
