@@ -39,11 +39,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
-          test "$ISSUE_TITLE" = "Verify TaskRail ecosystem v${VERSION}"
-          npm ci
-          npm run build
-          node scripts/verify-public-ecosystem.mjs | tee ecosystem-report.json
+          mkdir -p .taskrail
+          {
+            VERSION="$(node -p "require('./package.json').version")"
+            test "$ISSUE_TITLE" = "Verify TaskRail ecosystem v${VERSION}"
+            npm ci
+            npm run build
+            node scripts/verify-public-ecosystem.mjs | tee ecosystem-report.json
+          } 2>&1 | tee .taskrail/ecosystem-request.log
       - name: Report result
         if: always()
         env:
@@ -56,8 +59,12 @@ jobs:
           if [ -s ecosystem-report.json ] && jq -e . ecosystem-report.json >/dev/null 2>&1; then
             summary="$(jq -r '[.checks[] | select(.ok==false) | (.name + (if .stderr then " :: stderr=" + (.stderr|gsub("\\n";" ")|.[-600:]) else "" end) + (if .stdout then " :: stdout=" + (.stdout|gsub("\\n";" ")|.[-600:]) else "" end))] | if length==0 then "none" else join("\n") end' ecosystem-report.json)"
             counts="$(jq -r '"Passed: \(.passed) | Failed: \(.failed)"' ecosystem-report.json)"
+          elif [ -f .taskrail/ecosystem-request.log ]; then
+            request_tail="$(tail -c 6000 .taskrail/ecosystem-request.log)"
+            summary="request failed before a valid ecosystem report was produced.\n\n### request\n\`\`\`text\n${request_tail}\n\`\`\`"
+            counts=""
           else
-            summary="request validation, dependency installation, build, or ecosystem verification failed before a valid report was produced"
+            summary="request failed before a valid ecosystem report or request log was produced"
             counts=""
           fi
           body="Public ecosystem verification outcome: ${OUTCOME}\n${counts}\nFailed checks:\n${summary}"
