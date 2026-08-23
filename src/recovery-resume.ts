@@ -40,6 +40,10 @@ async function writeRecoveredState(manifest: FrameworkManifest, cwd: string, che
   await writePrivateState(stateFile(manifest, cwd), state as DeployState & Record<string, unknown>);
 }
 
+function declaredHealth(manifest: FrameworkManifest) {
+  return manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck;
+}
+
 async function restoreRelease(manifest: FrameworkManifest, cwd: string, checkpoint: UpdateCheckpoint, plugin?: AutomationPlugin) {
   const source = checkpoint.lastKnownGoodReleasePath!;
   const target = resolvePaths(manifest, cwd).deployDir;
@@ -50,7 +54,7 @@ async function restoreRelease(manifest: FrameworkManifest, cwd: string, checkpoi
   await cp(source, candidate, { recursive: true, force: false });
 
   const offline = await runHealthCheck(
-    manifest.healthCheck ?? manifest.healthChecks?.[0],
+    declaredHealth(manifest),
     candidate,
     plugin,
     manifest.healthCommand || manifest.runtimeHealthCommand,
@@ -68,7 +72,7 @@ async function restoreRelease(manifest: FrameworkManifest, cwd: string, checkpoi
     }
     await rename(candidate, target);
     const restored = await runHealthCheck(
-      manifest.healthCheck ?? manifest.healthChecks?.[0],
+      declaredHealth(manifest),
       target,
       plugin,
       manifest.healthCommand || manifest.runtimeHealthCommand,
@@ -121,7 +125,7 @@ export async function recoverInterruptedAutomation(
   const preActivationPhases = new Set(['discovered', 'impact-checked', 'checkpointed', 'staged', 'validated', 'simulated', 'rollback-ready']);
   if (preActivationPhases.has(checkpoint.phase) && currentState?.currentReleaseId === checkpoint.lastKnownGoodRelease) {
     const health = await runHealthCheck(
-      manifest.healthCheck ?? manifest.healthChecks?.[0],
+      declaredHealth(manifest),
       resolvePaths(manifest, cwd).deployDir,
       plugin,
       manifest.healthCommand || manifest.runtimeHealthCommand,
@@ -147,8 +151,8 @@ export async function recoverInterruptedAutomation(
     };
     const readiness = await validateLastKnownGoodRecovery({
       state: recoveryState,
-      health: manifest.healthCheck ?? manifest.healthChecks?.[0],
-      configurationHealth: manifest.healthCheck ?? manifest.healthChecks?.[0],
+      health: declaredHealth(manifest),
+      configurationHealth: declaredHealth(manifest),
       plugin,
       migrationCompatible,
     });
