@@ -21,15 +21,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Validate ecosystem request
-        env:
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-        run: |
-          set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
-          test "$ISSUE_TITLE" = "Verify TaskRail ecosystem v${VERSION}"
-      - run: npm ci
-      - run: npm run build
       - uses: actions/checkout@v4
         with:
           repository: gurjyot/taskrail-capabilities
@@ -38,15 +29,20 @@ jobs:
         with:
           repository: gurjyot/taskrail-automations
           path: .ecosystem/taskrail-automations
-      - name: Verify public ecosystem
+      - name: Validate and verify public ecosystem
         id: verify
         continue-on-error: true
         env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
           TASKRAIL_CAPABILITIES_REPO: ${{ github.workspace }}/.ecosystem/taskrail-capabilities
           TASKRAIL_AUTOMATIONS_REPO: ${{ github.workspace }}/.ecosystem/taskrail-automations
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$ISSUE_TITLE" = "Verify TaskRail ecosystem v${VERSION}"
+          npm ci
+          npm run build
           node scripts/verify-public-ecosystem.mjs | tee ecosystem-report.json
       - name: Report result
         if: always()
@@ -61,7 +57,7 @@ jobs:
             summary="$(jq -r '[.checks[] | select(.ok==false) | (.name + (if .stderr then " :: stderr=" + (.stderr|gsub("\\n";" ")|.[-600:]) else "" end) + (if .stdout then " :: stdout=" + (.stdout|gsub("\\n";" ")|.[-600:]) else "" end))] | if length==0 then "none" else join("\n") end' ecosystem-report.json)"
             counts="$(jq -r '"Passed: \(.passed) | Failed: \(.failed)"' ecosystem-report.json)"
           else
-            summary="ecosystem report missing or invalid"
+            summary="request validation, dependency installation, build, or ecosystem verification failed before a valid report was produced"
             counts=""
           fi
           body="Public ecosystem verification outcome: ${OUTCOME}\n${counts}\nFailed checks:\n${summary}"
