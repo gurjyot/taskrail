@@ -7,6 +7,36 @@ function hasDuplicates(values: string[]) {
   return new Set(values).size !== values.length;
 }
 
+function validateHealthDefinition(definition: unknown, label: string, errors: string[]) {
+  if (!definition || typeof definition !== 'object') {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  const value = definition as Record<string, unknown>;
+  if (value.type === 'command') {
+    if (typeof value.command !== 'string' || !value.command.trim()) errors.push(`${label}.command must be a non-empty string`);
+    return;
+  }
+  if (value.type === 'file') {
+    if (typeof value.path !== 'string' || !value.path.trim()) errors.push(`${label}.path must be a non-empty string`);
+    return;
+  }
+  if (value.type === 'http') {
+    if (typeof value.url !== 'string' || !value.url.trim()) errors.push(`${label}.url must be a non-empty URL`);
+    else {
+      try {
+        const parsed = new URL(value.url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) errors.push(`${label}.url must use http or https`);
+      } catch {
+        errors.push(`${label}.url must be a valid URL`);
+      }
+    }
+    if (value.expectStatus !== undefined && (!Number.isInteger(value.expectStatus) || Number(value.expectStatus) < 100 || Number(value.expectStatus) > 599)) errors.push(`${label}.expectStatus must be an integer from 100 to 599`);
+    return;
+  }
+  errors.push(`${label}.type must be command, file, or http`);
+}
+
 export function validateConfig(config: FrameworkConfig): string[] {
   const errors: string[] = [];
   if (!config.projectName) errors.push('projectName is required');
@@ -16,8 +46,14 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (!config.manifest.deployDir) errors.push('manifest.deployDir is required');
   if (!config.manifest.validationCommand) errors.push('manifest.validationCommand is required');
   if (!config.manifest.testCommand) errors.push('manifest.testCommand is required');
-  if (config.manifest.healthCheck && config.manifest.healthChecks?.length) errors.push('manifest must use healthCheck or healthChecks, not both');
+  const rawManifest = config.manifest as any;
+  if (rawManifest.healthCheck && Array.isArray(rawManifest.healthChecks) && rawManifest.healthChecks.length) errors.push('manifest must use healthCheck or healthChecks, not both');
+  if (rawManifest.healthChecks !== undefined && !Array.isArray(rawManifest.healthChecks)) errors.push('manifest.healthChecks must be an array');
+  if (rawManifest.healthCheck !== undefined) validateHealthDefinition(rawManifest.healthCheck, 'manifest.healthCheck', errors);
+  if (Array.isArray(rawManifest.healthChecks)) rawManifest.healthChecks.forEach((item: unknown, index: number) => validateHealthDefinition(item, `manifest.healthChecks[${index}]`, errors));
   if (config.manifest.requiredChecks && !config.manifest.requiredChecks.every((check) => allowedChecks.has(check))) errors.push('manifest.requiredChecks contains an unsupported value');
+  if (config.manifest.requiredChecks?.includes('build') && !config.manifest.buildCommand?.trim()) errors.push('required build check requires manifest.buildCommand');
+  if (config.manifest.requiredChecks?.includes('migrate') && !config.manifest.migrations?.checkCommand?.trim()) errors.push('required migrate check requires manifest.migrations.checkCommand');
   if (config.manifest.protectedPaths && !config.manifest.protectedPaths.every((p) => typeof p === 'string' && p.trim().length > 0)) errors.push('manifest.protectedPaths must contain non-empty strings');
   if (config.manifest.components && !config.manifest.components.every((component) => typeof component === 'string' && component.trim().length > 0)) errors.push('manifest.components must contain non-empty strings');
   if (config.manifest.components && hasDuplicates(config.manifest.components)) errors.push('manifest.components must not contain duplicates');

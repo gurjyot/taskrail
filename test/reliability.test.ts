@@ -217,7 +217,10 @@ test('health failure triggers rollback and restores content', async () => {
     healthCheck: { type: 'command', command: 'node -e "process.exit(1)"' },
   });
   assert.equal(result.deployed, false);
-  assert.equal(result.rolledBack, true);
+  assert.equal(result.rolledBack, false);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackSucceeded, false);
+  assert.equal(result.recoveryRequired, true);
   assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
   await rm(base, { recursive: true, force: true });
 });
@@ -253,7 +256,7 @@ test('failed rollback is reported clearly', async () => {
   await writeFile(stateFile, JSON.stringify({ backupPath: path.join(base, 'missing-backup'), targetPath: path.join(base, 'target') }));
   const result = await rollbackFromState(stateFile, { type: 'command', command: 'node -e "process.exit(0)"' });
   assert.equal(result.ok, false);
-  assert.match(result.failure ?? '', /rollback failed|restored version failed health check/);
+  assert.match(result.failure ?? '', /rollback failed|restored (?:version|live target) failed health check/);
   await rm(base, { recursive: true, force: true });
 });
 
