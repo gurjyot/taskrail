@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { AutomationPlugin, DeployState, FrameworkManifest } from './types.js';
-import { check, safeDeploy, type DeployOptions, type DeployOutcome } from './deployment.js';
+import { check, safeDeploy, verifyOperationalReadiness, type DeployOptions, type DeployOutcome } from './deployment.js';
 import { resolvePaths } from './config.js';
 import {
   createUpdateCheckpoint,
@@ -11,6 +11,7 @@ import {
 } from './update-transaction.js';
 import { recordRecoveryReadiness, validateLastKnownGoodRecovery } from './recovery-readiness.js';
 import { readPrivateState, writePrivateState } from './private-state.js';
+import { detectEnvironment } from './env.js';
 
 export interface TransactionalDeployOptions extends DeployOptions {
   changeClass?: UpdateChangeClass;
@@ -136,8 +137,19 @@ export async function transactionalDeploy(
       return { ok: true, outcome, checkpoint };
     }
 
-    if (outcome.rolledBack) {
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'rollback-required', outcome.failure || 'activation failed and rollback was attempted');
+    if (outcome.rollbackAttempted && !outcome.rollbackSucceeded) {
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'recovery-required', outcome.failure || 'live rollback failed; manual recovery is required');
+      return { ok: false, reason: outcome.failure || 'live rollback failed; recovery is required', outcome, checkpoint };
+    }
+
+    if (outcome.rollbackSucceeded || outcome.rolledBack) {
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'rollback-required', outcome.failure || 'activation failed and rollback succeeded');
+      const liveTarget = resolvePaths(manifest, projectRoot).deployDir;
+      const liveReadiness = await verifyOperationalReadiness(manifest, liveTarget, plugin, detectEnvironment(manifest, projectRoot));
+      if (!liveReadiness.ok) {
+        checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'recovery-required', `restored live target verification failed${liveReadiness.error ? `: ${liveReadiness.error}` : liveReadiness.health.details ? `: ${liveReadiness.health.details}` : ''}`);
+        return { ok: false, reason: outcome.failure || 'restored live target requires recovery', outcome, checkpoint };
+      }
       const rollbackReadiness = await validateLastKnownGoodRecovery({
         state: priorState,
         health: declaredHealth,
@@ -153,7 +165,7 @@ export async function transactionalDeploy(
       }
       checkpoint = await recordRecoveryReadiness(projectRoot, checkpoint, rollbackReadiness);
       await restorePriorState(manifest, projectRoot, priorState);
-      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'last-known-good release restored, state restored, and operationally reverified');
+      checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'restored', 'live target and last-known-good release restored, state restored, and operationally reverified');
       checkpoint = await transitionUpdate(projectRoot, 'automation', manifest.name, 'committed', 'failed update closed after successful restore', {
         currentRelease: priorState.lastKnownGoodReleaseId,
         currentReleasePath: priorState.lastKnownGoodReleasePath,
