@@ -34,7 +34,7 @@
 - Synchronized MCP with every safe default read action, including TaskRail status and privacy-safe diagnostics preview, while keeping write/control operations deny-by-default.
 - Added a public first-party ecosystem gate that validates the capability catalog and every reference automation against the exact TaskRail candidate on PRs, main pushes, and releases.
 - Added automatic private ecosystem verification for new TaskRail main SHAs, with successful-SHA caching, retry-on-failure behavior, diagnostics evidence, and non-noisy Telegram reporting.
-- Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source version, lockfile, and platform manifest versions.
+- Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source, lockfile, and platform manifest versions.
 - Expanded update-surface self-protection so the release, MCP, ecosystem, installer, security/reliability, documentation, and compatibility gates themselves cannot be silently removed.
 
 ## 3.0.5
