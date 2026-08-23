@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { installTaskRailDropIn, managedServiceUnits, renderTaskRailDropIn, systemdIsolationDirectives, verifySystemdRuntimeContext } from '../src/systemd.js';
+import { installTaskRailDropIn, managedServiceUnits, renderTaskRailDropIn, systemdIsolationDirectives, verifySystemdOperationalContext, verifySystemdRuntimeContext } from '../src/systemd.js';
 import { resolveFrameworkManifest } from '../src/framework.js';
 
 test('systemd drop-in instruments services without changing business command', async () => {
@@ -100,4 +100,22 @@ test('systemd runtime verification handles environment-scoped shared-file rules'
   assert.deepEqual(checkedFiles, ['/opt/shared/prod.env']);
   assert.deepEqual(check.readableSharedFiles, ['/opt/shared/prod.env']);
   assert.deepEqual(check.unreadableSharedFiles, []);
+});
+
+test('systemd operational verification fails when a declared timer is disabled', () => {
+  const manifest = resolveFrameworkManifest({ name: 'timer-demo', profile: 'smg-node-timer@1' });
+  const spawn = ((command: string, args: readonly string[]) => {
+    if (command === 'systemctl' && args[0] === 'show') {
+      const property = args.find((arg) => arg.startsWith('--property='))?.slice('--property='.length);
+      const values: Record<string, string> = { LoadState: 'loaded', User: 'root', Group: 'root', WorkingDirectory: '/' };
+      return { status: 0, stdout: `${values[property ?? ''] ?? ''}\n`, stderr: '' };
+    }
+    if (command === 'systemctl' && args[0] === 'is-enabled') return { status: 1, stdout: 'disabled\n', stderr: '' };
+    if (command === 'systemctl' && args[0] === 'is-active') return { status: 0, stdout: 'active\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  }) as any;
+  const result = verifySystemdOperationalContext(manifest, { spawn });
+  assert.equal(result.runtimeChecks.every((item) => item.passed), true);
+  assert.equal(result.timerChecks[0].enabled, false);
+  assert.equal(result.passed, false);
 });
