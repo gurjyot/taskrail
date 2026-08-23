@@ -55,21 +55,25 @@ function run(name, args) {
   }
 }
 
-run('update-surfaces', ['run', 'surfaces:check']);
-run('core-ci', ['test']);
-run('public-api-security', ['run', 'check']);
-run('mcp-packed-compatibility', ['run', 'mcp:check']);
-run('performance', ['run', 'performance:check']);
-run('release-readiness', ['run', 'release:readiness']);
-run('install-release-build', ['run', 'build:install-release']);
-run('fault-injection-contract', ['run', 'fault:contract']);
+run('build', ['run', 'build']);
+const buildPassed = gates.at(-1)?.ok === true;
+if (buildPassed) {
+  run('update-surfaces', ['run', 'surfaces:check']);
+  run('core-ci', ['run', 'test:built']);
+  run('public-api-security', ['run', 'check:built']);
+  run('mcp-packed-compatibility', ['run', 'mcp:check']);
+  run('performance', ['run', 'performance:check:built']);
+  run('release-readiness', ['run', 'release:readiness']);
+  run('install-release-build', ['run', 'build:install-release:built']);
+  run('fault-injection-contract', ['run', 'fault:contract:built']);
+}
 
 const failed = gates.filter((gate) => !gate.ok).map((gate) => gate.name);
 const report = {
   schema: 1,
   generatedAt: new Date().toISOString(),
-  certified: failed.length === 0,
-  verdict: failed.length === 0 ? 'TASKRAIL CERTIFIED - PASS' : 'TASKRAIL CERTIFICATION - FAIL',
+  certified: failed.length === 0 && buildPassed,
+  verdict: failed.length === 0 && buildPassed ? 'TASKRAIL CERTIFIED - PASS' : 'TASKRAIL CERTIFICATION - FAIL',
   failed,
   gates,
 };
