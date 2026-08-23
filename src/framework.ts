@@ -9,20 +9,15 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function mergeArrays(left: unknown, right: unknown) {
-  if (Array.isArray(left) && Array.isArray(right)) return [...right];
-  return right;
-}
-
 function deepMerge<T extends Record<string, any>>(base: T, patch: Partial<T>): T {
   const output: Record<string, any> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (Array.isArray(value)) {
-      output[key] = mergeArrays(output[key], value);
+      output[key] = [...value];
       continue;
     }
-    if (value && typeof value === 'object' && !Array.isArray(value) && output[key] && typeof output[key] === 'object' && !Array.isArray(output[key])) {
+    if (value && typeof value === 'object' && output[key] && typeof output[key] === 'object' && !Array.isArray(output[key])) {
       output[key] = deepMerge(output[key], value as Record<string, any>);
       continue;
     }
@@ -189,7 +184,7 @@ function assertFrameworkReferences(manifest: FrameworkManifestInput) {
   }
 }
 
-export function resolveFrameworkManifest(manifest: FrameworkManifestInput): FrameworkManifest {
+function resolveFrameworkLayer(manifest: FrameworkManifestInput) {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -200,34 +195,22 @@ export function resolveFrameworkManifest(manifest: FrameworkManifestInput): Fram
     if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
-  resolved = deepMerge(resolved, clone(manifest) as Partial<FrameworkManifest>);
   if (profile) resolved.frameworkCapabilities = frameworkCaps;
   return resolved;
 }
 
-function resolveFrameworkDefaults(manifest: FrameworkManifestInput) {
-  assertFrameworkReferences(manifest);
-  const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
-  const automation = manifest.name;
-  let resolved = profile ? clone(interpolate(profile.defaults, automation) as FrameworkManifest) : {} as FrameworkManifest;
-  const frameworkCaps = [...new Set([...(profile?.frameworkCapabilities ?? []), ...(manifest.frameworkCapabilities ?? [])])];
-  for (const id of frameworkCaps) {
-    const capability = frameworkCapabilities[id];
-    if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
-    resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
-  }
-  if (profile) resolved.frameworkCapabilities = frameworkCaps;
-  return resolved;
+export function resolveFrameworkManifest(manifest: FrameworkManifestInput): FrameworkManifest {
+  return deepMerge(resolveFrameworkLayer(manifest), clone(manifest) as Partial<FrameworkManifest>);
 }
 
 export function compactManifest(manifest: FrameworkManifest): FrameworkManifest {
   const raw = clone(manifest);
   if (!raw.profile || !frameworkProfiles[raw.profile]) return raw;
-  const defaults = resolveFrameworkDefaults(raw);
+  const defaults = resolveFrameworkLayer(raw);
+  const defaultMap = defaults as unknown as Record<string, unknown>;
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
     if (key === 'frameworkCapabilities' && Array.isArray(value) && value.length === 0) continue;
-    const defaultMap = defaults as unknown as Record<string, unknown>;
     if (JSON.stringify(value) === JSON.stringify(defaultMap[key])) continue;
     output[key] = value;
   }
@@ -238,29 +221,37 @@ export function compactManifest(manifest: FrameworkManifest): FrameworkManifest 
   return output as unknown as FrameworkManifest;
 }
 
+function timerProfile(runtime: FrameworkManifest['runtime']) {
+  if (runtime === 'node') return 'smg-node-timer@1';
+  if (runtime === 'shell') return 'smg-shell-timer@1';
+  if (runtime === 'php') return 'smg-php-timer@1';
+  return null;
+}
+
+function profileFromUnitHints(manifest: FrameworkManifest, hints: { service: boolean; timer: boolean }) {
+  if (hints.timer && hints.service) return timerProfile(manifest.runtime);
+  if (manifest.runtime === 'node' && manifest.database?.required && hints.service) return 'smg-node-postgres-service@1';
+  if (manifest.runtime === 'node' && hints.service) return 'smg-node-service@1';
+  return null;
+}
+
 export function inferProfile(manifest: FrameworkManifest, cwd = process.cwd()): string | null {
   if (manifest.profile) return manifest.profile;
   if (path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
     try { if (!statSync(manifest.deployDir).isDirectory()) return null; } catch {}
   }
+
   const units = manifest.serviceManager?.units ?? [];
   const timer = units.some((unit) => unit.kind === 'timer');
-  if (timer && manifest.runtime === 'node') return 'smg-node-timer@1';
-  if (timer && manifest.runtime === 'shell') return 'smg-shell-timer@1';
-  if (timer && manifest.runtime === 'php') return 'smg-php-timer@1';
+  if (timer) {
+    const profile = timerProfile(manifest.runtime);
+    if (profile) return profile;
+  }
   if (manifest.runtime === 'node' && manifest.database?.required) return 'smg-node-postgres-service@1';
   if (manifest.runtime === 'node' && units.length) return 'smg-node-service@1';
-  const localHints = detectProjectUnitHints(manifest, cwd);
-  if (localHints.timer && localHints.service && manifest.runtime === 'node') return 'smg-node-timer@1';
-  if (localHints.timer && localHints.service && manifest.runtime === 'shell') return 'smg-shell-timer@1';
-  if (localHints.timer && localHints.service && manifest.runtime === 'php') return 'smg-php-timer@1';
-  if (manifest.runtime === 'node' && manifest.database?.required && localHints.service) return 'smg-node-postgres-service@1';
-  if (manifest.runtime === 'node' && localHints.service) return 'smg-node-service@1';
-  const systemdHints = detectSystemdUnitHints(manifest);
-  if (systemdHints.timer && systemdHints.service && manifest.runtime === 'node') return 'smg-node-timer@1';
-  if (systemdHints.timer && systemdHints.service && manifest.runtime === 'shell') return 'smg-shell-timer@1';
-  if (systemdHints.timer && systemdHints.service && manifest.runtime === 'php') return 'smg-php-timer@1';
-  if (manifest.runtime === 'node' && manifest.database?.required && systemdHints.service) return 'smg-node-postgres-service@1';
-  if (manifest.runtime === 'node' && systemdHints.service) return 'smg-node-service@1';
-  return null;
+
+  const localProfile = profileFromUnitHints(manifest, detectProjectUnitHints(manifest, cwd));
+  if (localProfile) return localProfile;
+  if (!timerProfile(manifest.runtime) && manifest.runtime !== 'node') return null;
+  return profileFromUnitHints(manifest, detectSystemdUnitHints(manifest));
 }
