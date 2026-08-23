@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition } from './types.js';
+import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition, RawFrameworkManifest } from './types.js';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -48,7 +48,7 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
   },
   'immutable-deploy@1': { id: 'immutable-deploy@1', apply: () => ({ backup: { retain: 3 }, deployStrategy: { type: 'replace-in-place' } }) },
   'postgres-migrations@1': { id: 'postgres-migrations@1', apply: () => ({ database: { required: true } }) },
-  'health@1': { id: 'health@1', apply: () => ({ requiredChecks: ['validation', 'test'] }) },
+  'health@1': { id: 'health@1', apply: () => ({ requiredChecks: ['validation', 'test', 'health'] }) },
   'drift@1': { id: 'drift@1', apply: (manifest) => ({ runtimePaths: manifest.runtimePaths ?? runtimePaths, generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
   'change-detection@1': { id: 'change-detection@1', apply: () => ({}) },
   'release-retention@1': { id: 'release-retention@1', apply: () => ({ generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
@@ -84,10 +84,32 @@ const shellCommon = ['shell-runtime@1', ...operational];
 const phpCommon = ['php-runtime@1', ...operational];
 const portableNodeCommon = ['node-runtime@1', ...portableOperational];
 
-function timerDefaults(sourceDir = 'src'): Partial<FrameworkManifest> {
+function authoringDefaults(runtime: 'node' | 'shell' | 'php'): Partial<FrameworkManifest> {
+  if (runtime === 'shell') {
+    return {
+      validationCommand: 'bash -n src/main.sh',
+      testCommand: 'bash tests/self-test.sh',
+      healthCheck: { type: 'command', command: 'bash -n src/main.sh' },
+    };
+  }
+  if (runtime === 'php') {
+    return {
+      validationCommand: 'php -l src/main.php',
+      testCommand: 'php tests/self-test.php',
+      healthCheck: { type: 'command', command: 'php -l src/main.php' },
+    };
+  }
   return {
+    validationCommand: 'node --check src/main.js',
+    testCommand: 'node --test tests/*.test.js',
+    healthCheck: { type: 'command', command: 'node --check src/main.js' },
+  };
+}
+
+function timerDefaults(runtime: 'node' | 'shell' | 'php'): Partial<FrameworkManifest> {
+  return deepMerge({
     managed: true,
-    sourceDir,
+    sourceDir: '.',
     deployDir: '/opt/smg-automations/automations/${automation}',
     execution: { staleAfterMs: 93_600_000 },
     serviceManager: {
@@ -97,49 +119,48 @@ function timerDefaults(sourceDir = 'src'): Partial<FrameworkManifest> {
         { name: '${automation}.timer', kind: 'timer' },
       ],
     },
-    releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'capabilities', 'adapters', 'tools'],
-  };
+    releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'capabilities', 'adapters', 'tools'],
+  } as Partial<FrameworkManifest>, authoringDefaults(runtime));
+}
+
+function nodeServiceDefaults(extra: Partial<FrameworkManifest> = {}): Partial<FrameworkManifest> {
+  return deepMerge(deepMerge({
+    managed: true,
+    sourceDir: '.',
+    deployDir: '/opt/smg-automations/automations/${automation}',
+    execution: { staleAfterMs: 900_000 },
+    serviceManager: { type: 'systemd', units: [{ name: '${automation}.service', kind: 'service' }] },
+    releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib'],
+  } as Partial<FrameworkManifest>, authoringDefaults('node')), extra);
 }
 
 export const frameworkProfiles: Record<string, FrameworkProfileDefinition> = {
   'portable-node@1': {
     id: 'portable-node@1',
     frameworkCapabilities: portableNodeCommon,
-    defaults: {
+    defaults: deepMerge({
       managed: true,
       sourceDir: '.',
       deployDir: '../.taskrail/${automation}/live',
       statePath: '../.taskrail/${automation}/state',
       isolation: { level: 'standard' },
       releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib', 'capabilities', 'adapters', 'tools'],
-    },
+    } as Partial<FrameworkManifest>, authoringDefaults('node')),
   },
-  'smg-node-timer@1': { id: 'smg-node-timer@1', frameworkCapabilities: nodeCommon, defaults: timerDefaults('src') },
-  'smg-shell-timer@1': { id: 'smg-shell-timer@1', frameworkCapabilities: shellCommon, defaults: timerDefaults('.') },
-  'smg-php-timer@1': { id: 'smg-php-timer@1', frameworkCapabilities: phpCommon, defaults: timerDefaults('.') },
+  'smg-node-timer@1': { id: 'smg-node-timer@1', frameworkCapabilities: nodeCommon, defaults: timerDefaults('node') },
+  'smg-shell-timer@1': { id: 'smg-shell-timer@1', frameworkCapabilities: shellCommon, defaults: timerDefaults('shell') },
+  'smg-php-timer@1': { id: 'smg-php-timer@1', frameworkCapabilities: phpCommon, defaults: timerDefaults('php') },
   'smg-node-service@1': {
     id: 'smg-node-service@1',
     frameworkCapabilities: nodeCommon,
-    defaults: {
-      managed: true,
-      sourceDir: '.',
-      deployDir: '/opt/smg-automations/automations/${automation}',
-      execution: { staleAfterMs: 900_000 },
-      serviceManager: { type: 'systemd', units: [{ name: '${automation}.service', kind: 'service' }] },
-      releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib'],
-    },
+    defaults: nodeServiceDefaults(),
   },
   'smg-node-postgres-service@1': {
     id: 'smg-node-postgres-service@1',
     frameworkCapabilities: [...nodeCommon, 'postgres-migrations@1'],
-    defaults: {
-      managed: true,
-      sourceDir: '.',
-      deployDir: '/opt/smg-automations/automations/${automation}',
-      execution: { staleAfterMs: 900_000 },
-      serviceManager: { type: 'systemd', units: [{ name: '${automation}.service', kind: 'service' }] },
+    defaults: nodeServiceDefaults({
       releaseOwnedPaths: ['automation.json', 'main.js', 'src', 'tests', 'README.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'scripts', 'lib', 'migrations'],
-    },
+    }),
   },
 };
 
@@ -147,26 +168,26 @@ function hasFile(cwd: string, ...parts: string[]) {
   return existsSync(path.join(cwd, ...parts));
 }
 
-function detectProjectUnitHints(manifest: FrameworkManifest, cwd: string) {
+function detectProjectUnitHints(manifest: RawFrameworkManifest, cwd: string) {
   const serviceNames = [`${manifest.name}.service`, path.join('service', `${manifest.name}.service`)];
   const timerNames = [`${manifest.name}.timer`, path.join('timer', `${manifest.name}.timer`)];
   return { service: serviceNames.some((file) => hasFile(cwd, file)), timer: timerNames.some((file) => hasFile(cwd, file)) };
 }
 
-function detectSystemdUnitHints(manifest: FrameworkManifest) {
+function detectSystemdUnitHints(manifest: RawFrameworkManifest) {
   const service = spawnSync('systemctl', ['cat', `${manifest.name}.service`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
   const timer = spawnSync('systemctl', ['cat', `${manifest.name}.timer`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
   return { service: service.status === 0, timer: timer.status === 0 };
 }
 
-function assertFrameworkReferences(manifest: FrameworkManifest) {
+function assertFrameworkReferences(manifest: RawFrameworkManifest) {
   if (manifest.profile && !frameworkProfiles[manifest.profile]) throw new Error(`unknown TaskRail profile: ${manifest.profile}`);
   for (const id of manifest.frameworkCapabilities ?? []) {
     if (!frameworkCapabilities[id]) throw new Error(`unknown TaskRail framework capability: ${id}`);
   }
 }
 
-export function resolveFrameworkManifest(manifest: FrameworkManifest): FrameworkManifest {
+export function resolveFrameworkManifest(manifest: RawFrameworkManifest): FrameworkManifest {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -177,12 +198,12 @@ export function resolveFrameworkManifest(manifest: FrameworkManifest): Framework
     if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
-  resolved = deepMerge(resolved, clone(manifest));
+  resolved = deepMerge(resolved, clone(manifest) as FrameworkManifest);
   if (profile) resolved.frameworkCapabilities = frameworkCaps;
   return resolved;
 }
 
-function resolveFrameworkDefaults(manifest: FrameworkManifest) {
+function resolveFrameworkDefaults(manifest: RawFrameworkManifest) {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -197,7 +218,7 @@ function resolveFrameworkDefaults(manifest: FrameworkManifest) {
   return resolved;
 }
 
-export function compactManifest(manifest: FrameworkManifest): FrameworkManifest {
+export function compactManifest(manifest: FrameworkManifest): RawFrameworkManifest {
   const raw = clone(manifest);
   if (!raw.profile || !frameworkProfiles[raw.profile]) return raw;
   const defaults = resolveFrameworkDefaults(raw);
@@ -210,16 +231,14 @@ export function compactManifest(manifest: FrameworkManifest): FrameworkManifest 
   }
   output.name = raw.name;
   output.profile = raw.profile;
-  if (raw.runtime) output.runtime = raw.runtime;
-  if (typeof raw.managed === 'boolean') output.managed = raw.managed;
   if (raw.frameworkCapabilities?.length) output.frameworkCapabilities = raw.frameworkCapabilities;
   if (raw.taskrailCompatibility) output.taskrailCompatibility = raw.taskrailCompatibility;
-  return output as unknown as FrameworkManifest;
+  return output as RawFrameworkManifest;
 }
 
-export function inferProfile(manifest: FrameworkManifest, cwd = process.cwd()): string | null {
+export function inferProfile(manifest: RawFrameworkManifest, cwd = process.cwd()): string | null {
   if (manifest.profile) return manifest.profile;
-  if (path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
+  if (manifest.deployDir && path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
     try { if (!statSync(manifest.deployDir).isDirectory()) return null; } catch {}
   }
   const units = manifest.serviceManager?.units ?? [];
