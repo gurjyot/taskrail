@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FrameworkManifest } from './types.js';
 import { discoverAutomationManifests, capabilityRootsFor, loadCapabilities } from './capabilities.js';
 import { capabilityMetadata } from './capability-governance.js';
 import { listComponents } from './component-registry.js';
+import { loadResolvedManifest } from './config.js';
 
 export interface AutomationUsageNode {
   name: string;
@@ -55,14 +55,6 @@ function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))].sort();
 }
 
-async function readManifest(file: string): Promise<FrameworkManifest | null> {
-  try {
-    return JSON.parse(await readFile(file, 'utf8')) as FrameworkManifest;
-  } catch {
-    return null;
-  }
-}
-
 export async function buildUsageGraph(cwd = process.cwd()): Promise<UsageGraph> {
   const manifestPaths = await discoverAutomationManifests(cwd);
   const automations: AutomationUsageNode[] = [];
@@ -72,8 +64,18 @@ export async function buildUsageGraph(cwd = process.cwd()): Promise<UsageGraph> 
   const errors: string[] = [];
 
   for (const manifestPath of manifestPaths) {
-    const manifest = await readManifest(manifestPath);
-    if (!manifest?.managed || seenNames.has(manifest.name)) continue;
+    let manifest: FrameworkManifest;
+    try {
+      manifest = await loadResolvedManifest(manifestPath);
+    } catch (error) {
+      errors.push(`${manifestPath}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    if (!manifest.managed) continue;
+    if (seenNames.has(manifest.name)) {
+      errors.push(`duplicate automation name: ${manifest.name}`);
+      continue;
+    }
     seenNames.add(manifest.name);
     manifests.set(manifestPath, manifest);
     const projectRoot = path.dirname(manifestPath);
