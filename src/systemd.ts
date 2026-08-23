@@ -71,16 +71,18 @@ export interface SystemdRuntimeCheck {
   passed: boolean;
 }
 
+const boundedSpawnOptions = { encoding: 'utf8' as const, timeout: 30_000, maxBuffer: 256 * 1024 };
+
 function systemctlShow(unit: string, property: string, spawn: SpawnLike) {
-  const result = spawn('systemctl', ['show', unit, `--property=${property}`, '--value'], { encoding: 'utf8' });
+  const result = spawn('systemctl', ['show', unit, `--property=${property}`, '--value'], boundedSpawnOptions);
   if (result.status !== 0) throw new Error(result.stderr?.trim() || `systemctl show ${unit} ${property} failed`);
   return String(result.stdout ?? '').trim();
 }
 
 function asUser(user: string, args: string[], spawn: SpawnLike) {
-  if (!user || user === 'root') return spawn(args[0], args.slice(1), { encoding: 'utf8' });
-  if (typeof process.getuid === 'function' && process.getuid() === 0) return spawn('runuser', ['-u', user, '--', ...args], { encoding: 'utf8' });
-  return spawn('sudo', ['-n', '-u', user, '--', ...args], { encoding: 'utf8' });
+  if (!user || user === 'root') return spawn(args[0], args.slice(1), boundedSpawnOptions);
+  if (typeof process.getuid === 'function' && process.getuid() === 0) return spawn('runuser', ['-u', user, '--', ...args], boundedSpawnOptions);
+  return spawn('sudo', ['-n', '-u', user, '--', ...args], boundedSpawnOptions);
 }
 
 function sharedFilesForEnvironment(manifest: FrameworkManifest, environment: TaskrailEnv) {
@@ -121,4 +123,31 @@ export function verifySystemdRuntimeContext(manifest: FrameworkManifest, options
       passed: loadState === 'loaded' && canTraverseWorkingDirectory && unreadableSharedFiles.length === 0,
     };
   });
+}
+
+export interface SystemdTimerCheck {
+  unit: string;
+  enabled: boolean;
+  active: boolean;
+  passed: boolean;
+}
+
+export interface SystemdOperationalContext {
+  runtimeChecks: SystemdRuntimeCheck[];
+  timerChecks: SystemdTimerCheck[];
+  passed: boolean;
+}
+
+export function verifySystemdOperationalContext(manifest: FrameworkManifest, options: { spawn?: SpawnLike; environment?: TaskrailEnv } = {}): SystemdOperationalContext {
+  if (manifest.serviceManager?.type !== 'systemd') return { runtimeChecks: [], timerChecks: [], passed: true };
+  const spawn = options.spawn ?? spawnSync;
+  const runtimeChecks = verifySystemdRuntimeContext(manifest, options);
+  const timerChecks = (manifest.serviceManager.units ?? [])
+    .filter((unit) => unit.kind === 'timer')
+    .map((unit) => {
+      const enabled = spawn('systemctl', ['is-enabled', unit.name], boundedSpawnOptions).status === 0;
+      const active = spawn('systemctl', ['is-active', unit.name], boundedSpawnOptions).status === 0;
+      return { unit: unit.name, enabled, active, passed: enabled && active };
+    });
+  return { runtimeChecks, timerChecks, passed: runtimeChecks.every((check) => check.passed) && timerChecks.every((check) => check.passed) };
 }
