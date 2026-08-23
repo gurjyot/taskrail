@@ -8,6 +8,9 @@ export interface AuditEvent {
   taskrailVersion: string;
   releaseId?: string;
   sha?: string;
+  stage?: string;
+  error?: string;
+  rollbackError?: string;
   data?: Record<string, unknown>;
 }
 
