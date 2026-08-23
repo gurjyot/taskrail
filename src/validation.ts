@@ -16,6 +16,7 @@ export function validateConfig(config: FrameworkConfig): string[] {
   if (!config.manifest.deployDir) errors.push('manifest.deployDir is required');
   if (!config.manifest.validationCommand) errors.push('manifest.validationCommand is required');
   if (!config.manifest.testCommand) errors.push('manifest.testCommand is required');
+  if (config.manifest.healthCheck && config.manifest.healthChecks?.length) errors.push('manifest must use healthCheck or healthChecks, not both');
   if (config.manifest.requiredChecks && !config.manifest.requiredChecks.every((check) => allowedChecks.has(check))) errors.push('manifest.requiredChecks contains an unsupported value');
   if (config.manifest.protectedPaths && !config.manifest.protectedPaths.every((p) => typeof p === 'string' && p.trim().length > 0)) errors.push('manifest.protectedPaths must contain non-empty strings');
   if (config.manifest.components && !config.manifest.components.every((component) => typeof component === 'string' && component.trim().length > 0)) errors.push('manifest.components must contain non-empty strings');
