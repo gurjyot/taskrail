@@ -13,7 +13,7 @@
 </p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~224 KiB compressed / ~1179 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~227 KiB compressed / ~1193 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 ## Primary goal
@@ -291,7 +291,7 @@ Internal implementation files can evolve without turning every source path into 
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~224 KiB compressed / ~1179 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~227 KiB compressed / ~1193 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
