@@ -3,6 +3,7 @@ import { findAutomation } from './capabilities.js';
 import { loadManifest } from './config.js';
 import { resolveFrameworkManifest } from './framework.js';
 import { recoverInterruptedAutomation } from './recovery-resume.js';
+import { loadPlugins } from './deployment.js';
 
 export async function runRecoveryResumeCli(args = process.argv.slice(2)) {
   const target = args[1];
@@ -23,7 +24,8 @@ export async function runRecoveryResumeCli(args = process.argv.slice(2)) {
   }
   const cwd = path.dirname(manifestPath);
   const manifest = resolveFrameworkManifest(await loadManifest(manifestPath));
-  const result = await recoverInterruptedAutomation(manifest, cwd, undefined, migrationCompatible || !manifest.migrations);
+  const plugin = (await loadPlugins(manifest, cwd))[0];
+  const result = await recoverInterruptedAutomation(manifest, cwd, plugin, migrationCompatible || !manifest.migrations);
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log([
     `STATUS: ${result.ok ? 'PASS' : 'FAIL'}`,
