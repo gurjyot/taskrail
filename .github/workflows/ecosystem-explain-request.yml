@@ -31,23 +31,30 @@ jobs:
         with:
           repository: gurjyot/taskrail-automations
           path: .ecosystem/taskrail-automations
-      - name: Explain representative failures
+      - name: Print underlying check results
         env:
           TASKRAIL_CAPABILITY_ROOTS: ${{ github.workspace }}/.ecosystem/taskrail-capabilities/capabilities
         shell: bash
         run: |
-          set +e
-          : > explain.txt
-          for target in \
-            commerce/abandoned-checkout-escalation \
-            crm/lead-response-time-monitor \
-            monitoring/website-form-failure-detector \
-            wordpress/plugin-vulnerability-watch; do
-            echo "===== $target =====" >> explain.txt
-            node dist/src/taskrail-cli.js check ".ecosystem/taskrail-automations/$target/automation.json" >> explain.txt 2>&1
-            node dist/src/taskrail-cli.js explain check ".ecosystem/taskrail-automations/$target/automation.json" >> explain.txt 2>&1
-          done
-          exit 0
+          node --input-type=module <<'NODE' > explain.txt
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { check } from './dist/src/deployment.js';
+          import { resolveFrameworkManifest } from './dist/src/framework.js';
+          const targets = [
+            'commerce/abandoned-checkout-escalation',
+            'crm/lead-response-time-monitor',
+            'monitoring/website-form-failure-detector',
+            'wordpress/plugin-vulnerability-watch',
+          ];
+          for (const target of targets) {
+            const manifestPath = path.resolve('.ecosystem/taskrail-automations', target, 'automation.json');
+            const manifest = resolveFrameworkManifest(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+            const result = await check(manifest, { cwd: path.dirname(manifestPath) });
+            console.log(`===== ${target} =====`);
+            console.log(JSON.stringify(result, null, 2));
+          }
+          NODE
       - name: Report explanation
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,6 +62,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          body="$(tail -c 50000 explain.txt)"
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "\`\`\`text\n${body}\n\`\`\`"
+          body="$(tail -c 55000 explain.txt)"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "\`\`\`json\n${body}\n\`\`\`"
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
