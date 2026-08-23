@@ -1,9 +1,7 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FrameworkManifest } from './types.js';
 import { discoverAutomationManifests } from './capabilities.js';
-import { resolveFrameworkManifest } from './framework.js';
-import { resolvePaths } from './config.js';
+import { loadResolvedManifest, resolvePaths } from './config.js';
 
 export type IsolationRootKind = 'deploy' | 'state';
 
@@ -27,14 +25,6 @@ export interface IsolationAudit {
   errors: string[];
 }
 
-async function readManifest(file: string): Promise<FrameworkManifest | null> {
-  try {
-    return JSON.parse(await readFile(file, 'utf8')) as FrameworkManifest;
-  } catch {
-    return null;
-  }
-}
-
 function contains(parent: string, child: string) {
   const relative = path.relative(parent, child);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -55,11 +45,10 @@ export async function auditFleetIsolation(cwd = process.cwd()): Promise<Isolatio
   const seenAutomations = new Set<string>();
 
   for (const manifestPath of manifestPaths) {
-    const raw = await readManifest(manifestPath);
-    if (!raw?.managed || seenAutomations.has(raw.name)) continue;
-    seenAutomations.add(raw.name);
     try {
-      const resolved = resolveFrameworkManifest(raw);
+      const resolved = await loadResolvedManifest(manifestPath);
+      if (!resolved.managed || seenAutomations.has(resolved.name)) continue;
+      seenAutomations.add(resolved.name);
       const projectRoot = path.dirname(manifestPath);
       const paths = resolvePaths(resolved, projectRoot);
       roots.push({ automation: resolved.name, manifestPath, kind: 'deploy', path: path.resolve(paths.deployDir) });
@@ -68,7 +57,7 @@ export async function auditFleetIsolation(cwd = process.cwd()): Promise<Isolatio
         roots.push({ automation: resolved.name, manifestPath, kind: 'state', path: path.resolve(state) });
       }
     } catch (error) {
-      errors.push(`${raw.name}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`${manifestPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
