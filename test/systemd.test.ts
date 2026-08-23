@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { installTaskRailDropIn, managedServiceUnits, renderTaskRailDropIn, systemdIsolationDirectives } from '../src/systemd.js';
+import { installTaskRailDropIn, managedServiceUnits, renderTaskRailDropIn, systemdIsolationDirectives, verifySystemdRuntimeContext } from '../src/systemd.js';
 import { resolveFrameworkManifest } from '../src/framework.js';
 
 test('systemd drop-in instruments services without changing business command', async () => {
@@ -49,4 +49,29 @@ test('strict isolation renders read-only system with only declared automation wr
   assert.match(content, /ProtectSystem=strict/);
   assert.match(content, /ReadWritePaths="\/var\/lib\/taskrail\/isolated"/);
   assert.doesNotMatch(content, /ReadWritePaths="\/opt\/apps\/isolated"/);
+});
+
+test('systemd runtime verification detects service-user CHDIR and shared-file failures', () => {
+  const manifest = resolveFrameworkManifest({
+    name: 'demo', profile: 'smg-node-timer@1', runtime: 'node', managed: true,
+    sourceDir: '.', deployDir: '/opt/apps/demo', validationCommand: 'true', testCommand: 'true',
+    requiredSharedFiles: ['/opt/shared/.env'],
+  });
+  const spawn = ((command: string, args: readonly string[]) => {
+    if (command === 'systemctl') {
+      const property = args.find((arg) => arg.startsWith('--property='))?.slice('--property='.length);
+      const values: Record<string, string> = { LoadState: 'loaded', User: 'smg-automation', Group: 'smg-automation', WorkingDirectory: '/opt/apps/demo' };
+      return { status: 0, stdout: `${values[property ?? ''] ?? ''}\n`, stderr: '' };
+    }
+    if ((command === 'runuser' || command === 'sudo') && args.includes('/bin/sh')) return { status: 1, stdout: '', stderr: 'Permission denied' };
+    if ((command === 'runuser' || command === 'sudo') && args.includes('/usr/bin/test')) return { status: 1, stdout: '', stderr: 'Permission denied' };
+    return { status: 0, stdout: '', stderr: '' };
+  }) as any;
+  const [check] = verifySystemdRuntimeContext(manifest, { spawn });
+  assert.equal(check.unit, 'demo.service');
+  assert.equal(check.user, 'smg-automation');
+  assert.equal(check.workingDirectory, '/opt/apps/demo');
+  assert.equal(check.canTraverseWorkingDirectory, false);
+  assert.deepEqual(check.unreadableSharedFiles, ['/opt/shared/.env']);
+  assert.equal(check.passed, false);
 });
