@@ -1,7 +1,7 @@
 ---
 name: taskrail
 description: Build and operate TaskRail-managed automations quickly using thin business logic and framework-owned production guardrails.
-reviewed_for_taskrail: 3.0.8
+reviewed_for_taskrail: 3.1.0
 ---
 # TaskRail
 
