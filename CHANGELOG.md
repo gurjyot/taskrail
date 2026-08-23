@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.8
+
+- Added production systemd runtime-context verification so TaskRail checks the real service `User=`, `WorkingDirectory=` traversal, unit load state, and environment-scoped required shared-file readability.
+- Made `taskrail ship` fail when a deployed systemd automation cannot actually run under its production service identity, preventing code-level health checks from masking `CHDIR`/permission failures.
+- Added `taskrail-systemd-sync --verify-runtime` for explicit fleet/runtime audits and regression coverage for service-user working-directory and shared-file permission failures.
+- Reviewed MCP, packaged skills, source version, lockfile, and platform manifest for the release.
+
 ## 3.0.7
 
 - Fixed production preflight so a first deployment may target a new directory when its immediate parent already exists and is writable, while existing targets must still be writable directories.
@@ -29,7 +36,7 @@
 
 - Refreshed all packaged TaskRail agent skills for the current canonical CLI, plugin, command-execution, package-surface, deployment, performance, and framework-restraint contracts.
 - Added `reviewed_for_taskrail` version markers plus `npm run skills:check`, dynamically covering every packaged `skills/*/SKILL.md`.
-- Made skill freshness part of `npm run check`, release certification, CI, and regression coverage so a future framework version cannot be certified while its skills remain stale.
+- Made skill freshness part of `npm run check`, release certification, and CI.
 
 ## 3.0.3
 
