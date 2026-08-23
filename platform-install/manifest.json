@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "taskrailVersion": "3.0.7",
+  "taskrailVersion": "3.0.8",
   "platforms": {
     "linux": {
       "id": "linux",
