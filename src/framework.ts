@@ -50,7 +50,7 @@ export const frameworkCapabilities: Record<string, FrameworkCapabilityDefinition
   },
   'immutable-deploy@1': { id: 'immutable-deploy@1', apply: () => ({ backup: { retain: 3 }, deployStrategy: { type: 'replace-in-place' } }) },
   'postgres-migrations@1': { id: 'postgres-migrations@1', apply: () => ({ database: { required: true } }) },
-  'health@1': { id: 'health@1', apply: () => ({ requiredChecks: ['validation', 'test', 'health'] }) },
+  'health@1': { id: 'health@1', apply: () => ({ requiredChecks: ['validation', 'test'] }) },
   'drift@1': { id: 'drift@1', apply: (manifest) => ({ runtimePaths: manifest.runtimePaths ?? runtimePaths, generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
   'change-detection@1': { id: 'change-detection@1', apply: () => ({}) },
   'release-retention@1': { id: 'release-retention@1', apply: () => ({ generatedPaths: ['.taskrail', '*.candidate', '*.backup-*'] }) },
@@ -87,8 +87,10 @@ const phpCommon = ['php-runtime@1', ...operational];
 const portableNodeCommon = ['node-runtime@1', ...portableOperational];
 
 function authoringDefaults(runtime: 'node' | 'shell' | 'php'): Partial<FrameworkManifest> {
+  const common = { requiredChecks: ['validation', 'test', 'health'] as Array<'validation' | 'test' | 'health'> };
   if (runtime === 'shell') {
     return {
+      ...common,
       validationCommand: 'bash -n src/main.sh',
       testCommand: 'bash tests/self-test.sh',
       healthCheck: { type: 'command', command: 'bash -n src/main.sh' },
@@ -96,12 +98,14 @@ function authoringDefaults(runtime: 'node' | 'shell' | 'php'): Partial<Framework
   }
   if (runtime === 'php') {
     return {
+      ...common,
       validationCommand: 'php -l src/main.php',
       testCommand: 'php tests/self-test.php',
       healthCheck: { type: 'command', command: 'php -l src/main.php' },
     };
   }
   return {
+    ...common,
     validationCommand: 'node --check src/main.js',
     testCommand: 'node --test tests/*.test.js',
     healthCheck: { type: 'command', command: 'node --check src/main.js' },
