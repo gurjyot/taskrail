@@ -136,7 +136,6 @@ test('valid deployment succeeds and creates backup', async () => {
 });
 
 
-
 test('safeDeploy resolves relative sourceDir from the project root', async () => {
   const base = await fixtureDir();
   const source = path.join(base, 'src');
@@ -200,7 +199,7 @@ test('candidate invalid does not overwrite target', async () => {
   await rm(base, { recursive: true, force: true });
 });
 
-test('health failure triggers rollback and restores content', async () => {
+test('health failure restores content but remains recovery-required when restored health also fails', async () => {
   const base = await fixtureDir();
   const source = path.join(base, 'source');
   const deploy = path.join(base, 'deploy');
@@ -217,7 +216,10 @@ test('health failure triggers rollback and restores content', async () => {
     healthCheck: { type: 'command', command: 'node -e "process.exit(1)"' },
   });
   assert.equal(result.deployed, false);
-  assert.equal(result.rolledBack, true);
+  assert.equal(result.rolledBack, false);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackSucceeded, false);
+  assert.equal(result.recoveryRequired, true);
   assert.equal(await readFile(path.join(deploy, 'index.txt'), 'utf8'), 'old');
   await rm(base, { recursive: true, force: true });
 });
