@@ -1,70 +1,87 @@
 ---
 name: taskrail
-description: Build and operate TaskRail-managed automations using stable components and governed capabilities.
+description: Build and operate TaskRail-managed automations quickly using thin business logic and framework-owned production guardrails.
 reviewed_for_taskrail: 3.0.8
 ---
 # TaskRail
 
 Use this skill for ordinary TaskRail-managed automation work.
 
-## Start cheap
+## North star
 
-Read the automation manifest and run:
+Build the automation fast; inherit production reliability from TaskRail.
 
-- `taskrail doctor`
-- `taskrail components`
-- `taskrail capability-find "<needed behavior>"`
+Automation code should contain business logic and genuine domain-specific configuration. Do not repeat standard runtime, deployment, validation, testing, health, systemd, rollback or operational plumbing when the selected profile already supplies it.
 
-Do not load every component/capability implementation. Read detailed docs only for shortlisted building blocks.
+For a conventional automation, prefer a thin manifest such as:
 
-## Required design decision
+```json
+{
+  "name": "example-report",
+  "profile": "smg-node-timer@1",
+  "capabilities": ["telegram-bot"]
+}
+```
 
-Before substantial new automation or feature code, record exactly one capability decision:
+Add manifest fields only when the automation genuinely differs from the profile convention.
 
-- `REUSE:<capability>` — existing capability fits
-- `EXTEND:<capability>` — a small backwards-compatible operation should be added
-- `CREATE:<capability>` — materially distinct reusable integration/technical behavior is missing
-- `LOCAL:<reason>` — automation-specific business/domain logic
+## Fast development loop
 
-Do not start implementation before this lookup and decision.
+Start with the requirement and the existing automation files. During normal implementation use:
 
-## Components and imports
+```text
+implement -> test -> check
+```
 
-Use TaskRail components for generic infrastructure such as HTTP, config, logging, state, idempotency, retry, timeout, bounded concurrency, and safe files.
+Run:
 
-Components are TaskRail-owned. Do not create or modify components during ordinary automation work. New work must use the deliberate public surfaces such as `taskrail/components`, `taskrail/capabilities`, `taskrail/manifest`, `taskrail/testing`, `taskrail/control`, `taskrail/agent`, and `taskrail/platform` rather than deep `dist` internals.
+- `taskrail capability-find "<needed behavior>"` when the automation needs an external/service integration
+- `taskrail test` after meaningful logic changes
+- `taskrail check` before considering the implementation locally complete
 
-## Capabilities
+Do not scan the entire component or capability registry by default. Load only what the automation actually needs.
+
+## Reuse without ceremony
+
+Business/domain logic stays local to the automation.
+
+When an external or reusable integration is needed:
 
 - reuse the canonical active capability when it fits
 - extend rather than fork when the existing capability can safely cover the operation
-- use `taskrail init capability` only after discovery
-- never create semantically overlapping capabilities to avoid changing an existing contract
-- when generic integration logic would be copied into a second automation, evaluate promotion into a capability first
-- keep capabilities small, modular, testable, explicit about side effects/idempotency, and free of secrets
+- create a capability only when materially distinct reusable integration behavior is missing
+- keep automation-specific decisions out of shared capabilities
+
+Use TaskRail components when generic infrastructure is actually needed, but do not browse or import components merely because they exist. Components are TaskRail-owned and ordinary automation work should not modify them.
 
 For capability authoring or extension, switch to the `taskrail-capability` skill.
 
+## Public imports only
+
+New work must use deliberate public surfaces such as `taskrail/components`, `taskrail/capabilities`, `taskrail/manifest`, `taskrail/testing`, `taskrail/control`, `taskrail/agent`, and `taskrail/platform` rather than deep `dist` internals.
+
 ## Commands are not shell snippets
 
-TaskRail executes declared commands with its bounded argument runner, not through a shell. Simple quoted/unquoted arguments are supported. Do not put shell operators, pipes, redirects, `&&`, or inline environment assignments into manifest commands. Put complex behavior in a checked-in script and invoke that script explicitly.
+TaskRail executes declared command overrides with its bounded argument runner, not through a shell. Do not put shell operators, pipes, redirects, `&&`, or inline environment assignments into manifest commands. Put complex behavior in a checked-in script and invoke that script explicitly.
 
-## Operational plugin contract
+Most conventional automations should not need to declare validation/test/health commands at all; the profile owns them.
 
-An automation may declare zero or one operational plugin. Do not model multiple operational plugins in one manifest; TaskRail validates this contract explicitly.
+## Production lifecycle
 
-## Delivery lifecycle
+Production is deliberately stricter than local development:
 
-`doctor -> check -> test -> plan -> ship -> health`
+```text
+doctor -> check -> test -> plan -> ship -> runtime verification -> health
+```
 
-For Linux/systemd production, `ship` must also pass TaskRail's runtime-context gate: the declared service must be loaded, its real `User=` must be able to traverse `WorkingDirectory=`, required shared files must be readable by that user, and declared timers must be enabled and active. A code-level health pass does not replace this runtime check. A post-activation runtime failure must fail the ship and trigger rollback verification.
+TaskRail owns this production ceremony. Do not reproduce it inside automation code.
 
-`test` and `ship` have one canonical CLI route each. Do not call legacy/deep CLI implementation files directly.
+For Linux/systemd production, `ship` must pass the runtime-context gate: the declared service must be loaded, its real `User=` must be able to traverse `WorkingDirectory=`, required shared files must be readable by that user, and declared timers must be enabled and active. A code-level health pass does not replace this runtime check. A post-activation runtime failure must fail the ship and trigger rollback verification.
 
-Use `gate` and `verify-change` when reviewing risky/shared changes. Treat drift as reconciliation, not silent overwrite. `ship` resolves automation source-relative dependency and lockfile paths from the automation workspace, so avoid CWD-dependent assumptions in automation code.
+Treat drift as reconciliation, not silent overwrite. Use `gate` and `verify-change` for genuinely risky/shared changes.
 
 ## Restraint
 
-Business decisions stay in automations. Service/integration reuse belongs in capabilities. Generic stable infrastructure belongs in TaskRail components. Do not expand TaskRail core for automation-specific needs.
+Framework sophistication is not a goal. Before adding TaskRail core machinery, ask whether it makes future automations faster to build or materially strengthens production execution without increasing normal authoring complexity.
 
-Do not add caches, daemons, indexes, worker services, or other framework machinery to optimize hypothetical scale. Require measured evidence of a real bottleneck first.
+Do not add caches, daemons, indexes, worker services, dashboards or other framework machinery for hypothetical scale. Require measured evidence of a real need first.
