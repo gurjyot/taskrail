@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition, RawFrameworkManifest } from './types.js';
+import type { FrameworkCapabilityDefinition, FrameworkManifest, FrameworkProfileDefinition } from './types.js';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -168,26 +168,26 @@ function hasFile(cwd: string, ...parts: string[]) {
   return existsSync(path.join(cwd, ...parts));
 }
 
-function detectProjectUnitHints(manifest: RawFrameworkManifest, cwd: string) {
+function detectProjectUnitHints(manifest: FrameworkManifest, cwd: string) {
   const serviceNames = [`${manifest.name}.service`, path.join('service', `${manifest.name}.service`)];
   const timerNames = [`${manifest.name}.timer`, path.join('timer', `${manifest.name}.timer`)];
   return { service: serviceNames.some((file) => hasFile(cwd, file)), timer: timerNames.some((file) => hasFile(cwd, file)) };
 }
 
-function detectSystemdUnitHints(manifest: RawFrameworkManifest) {
+function detectSystemdUnitHints(manifest: FrameworkManifest) {
   const service = spawnSync('systemctl', ['cat', `${manifest.name}.service`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
   const timer = spawnSync('systemctl', ['cat', `${manifest.name}.timer`], { encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 });
   return { service: service.status === 0, timer: timer.status === 0 };
 }
 
-function assertFrameworkReferences(manifest: RawFrameworkManifest) {
+function assertFrameworkReferences(manifest: FrameworkManifest) {
   if (manifest.profile && !frameworkProfiles[manifest.profile]) throw new Error(`unknown TaskRail profile: ${manifest.profile}`);
   for (const id of manifest.frameworkCapabilities ?? []) {
     if (!frameworkCapabilities[id]) throw new Error(`unknown TaskRail framework capability: ${id}`);
   }
 }
 
-export function resolveFrameworkManifest(manifest: RawFrameworkManifest): FrameworkManifest {
+export function resolveFrameworkManifest(manifest: FrameworkManifest): FrameworkManifest {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -198,12 +198,12 @@ export function resolveFrameworkManifest(manifest: RawFrameworkManifest): Framew
     if (!capability) throw new Error(`unknown TaskRail framework capability: ${id}`);
     resolved = deepMerge(resolved, interpolate(capability.apply(resolved), automation) as Partial<FrameworkManifest>);
   }
-  resolved = deepMerge(resolved, clone(manifest) as FrameworkManifest);
+  resolved = deepMerge(resolved, clone(manifest));
   if (profile) resolved.frameworkCapabilities = frameworkCaps;
   return resolved;
 }
 
-function resolveFrameworkDefaults(manifest: RawFrameworkManifest) {
+function resolveFrameworkDefaults(manifest: FrameworkManifest) {
   assertFrameworkReferences(manifest);
   const profile = manifest.profile ? frameworkProfiles[manifest.profile] : undefined;
   const automation = manifest.name;
@@ -218,7 +218,7 @@ function resolveFrameworkDefaults(manifest: RawFrameworkManifest) {
   return resolved;
 }
 
-export function compactManifest(manifest: FrameworkManifest): RawFrameworkManifest {
+export function compactManifest(manifest: FrameworkManifest): FrameworkManifest {
   const raw = clone(manifest);
   if (!raw.profile || !frameworkProfiles[raw.profile]) return raw;
   const defaults = resolveFrameworkDefaults(raw);
@@ -233,12 +233,12 @@ export function compactManifest(manifest: FrameworkManifest): RawFrameworkManife
   output.profile = raw.profile;
   if (raw.frameworkCapabilities?.length) output.frameworkCapabilities = raw.frameworkCapabilities;
   if (raw.taskrailCompatibility) output.taskrailCompatibility = raw.taskrailCompatibility;
-  return output as RawFrameworkManifest;
+  return output as unknown as FrameworkManifest;
 }
 
-export function inferProfile(manifest: RawFrameworkManifest, cwd = process.cwd()): string | null {
+export function inferProfile(manifest: FrameworkManifest, cwd = process.cwd()): string | null {
   if (manifest.profile) return manifest.profile;
-  if (manifest.deployDir && path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
+  if (path.isAbsolute(manifest.deployDir) && existsSync(manifest.deployDir)) {
     try { if (!statSync(manifest.deployDir).isDirectory()) return null; } catch {}
   }
   const units = manifest.serviceManager?.units ?? [];
