@@ -93,8 +93,8 @@ export async function detectDrift(liveDir: string, releaseDir: string, manifest?
       items.push({ path: file, kind, reason: 'size differs' });
       continue;
     }
-    const [a, b] = await Promise.all([readFile(livePath, 'utf8').catch(() => ''), readFile(sourcePath, 'utf8').catch(() => '')]);
-    if (a !== b) {
+    const [a, b] = await Promise.all([readFile(livePath).catch(() => Buffer.alloc(0)), readFile(sourcePath).catch(() => Buffer.alloc(0))]);
+    if (!a.equals(b)) {
       if (kind === 'source') drifted.push(file);
       items.push({ path: file, kind, reason: 'content differs' });
     }
