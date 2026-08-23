@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   certify:
-    if: github.actor == github.repository_owner && github.event.issue.title == 'Certify TaskRail v3.1.0'
+    if: github.actor == github.repository_owner && startsWith(github.event.issue.title, 'Certify TaskRail v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -21,6 +21,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Validate certification request
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$ISSUE_TITLE" = "Certify TaskRail v${VERSION}"
       - run: npm ci
       - name: Run certification
         id: certify
