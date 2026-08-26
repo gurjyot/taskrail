@@ -7,7 +7,7 @@ This is the navigation page for maintainers, AI agents, operators, and contribut
 - `../README.md` — product purpose, quick start, user-facing capabilities, current performance/release posture.
 - `../AGENTS.md` — mandatory working rules for agents and contributors.
 - `../FRAMEWORK.md` — canonical framework contract and operating model.
-- `DOCUMENTATION_POLICY.md` — rule that documentation changes with implementation.
+- `DOCUMENTATION_POLICY.md` — documentation maintenance policy and mandatory documentation diagnostics.
 
 ## Architecture and contracts
 
@@ -22,9 +22,17 @@ This is the navigation page for maintainers, AI agents, operators, and contribut
 - `ERROR-INTELLIGENCE.md` — Error Intelligence behavior and evidence model.
 - `operations/` — operational contracts/runbooks where present.
 
+## Documentation diagnostics
+
+Run `npm run docs:check` whenever documentation is added or changed. It is also part of the normal TaskRail repository check path.
+
+Every new documentation file must be discoverable from this index (directly or through an indexed documentation directory). If a new documentation type introduces a maintenance risk not covered by the current structural checks, extend the documentation diagnostic in the same change.
+
+A documentation diagnostic PASS means the structural/document-governance checks passed; it does not replace runtime, security, deployment, performance, or behavioral verification.
+
 ## Release and compatibility
 
-When changing TaskRail core, review all surfaces together: CLI, public SDK, MCP adapter, skills, installers/platform assets, manifests, docs, tests, release metadata, and compatibility declarations. `npm run surfaces:check`, `npm run mcp:check`, and `npm run certify` are the authoritative repository gates.
+When changing TaskRail core, review all surfaces together: CLI, public SDK, MCP adapter, skills, installers/platform assets, manifests, docs, tests, release metadata, and compatibility declarations. `npm run surfaces:check`, `npm run docs:check`, `npm run mcp:check`, and `npm run certify` are authoritative repository gates.
 
 ## How to use these docs
 
