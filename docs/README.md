@@ -22,6 +22,10 @@ This is the navigation page for maintainers, AI agents, operators, and contribut
 - `ERROR-INTELLIGENCE.md` — Error Intelligence behavior and evidence model.
 - `operations/` — operational contracts/runbooks where present.
 
+## Research and evaluations
+
+- `research/components-capabilities-market-review.md` — research and market review informing the components/capabilities model.
+
 ## Documentation diagnostics
 
 Run `npm run docs:check` whenever documentation is added or changed. It is also part of the normal TaskRail repository check path.
