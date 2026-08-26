@@ -25,6 +25,8 @@ At minimum review:
 - `CHANGELOG.md` when the change is release-significant.
 - this `AGENTS.md` when agent workflow or invariants change.
 
+Every new documentation file must be indexed and covered by documentation diagnostics in the same iteration. If a new kind of documentation cannot be meaningfully checked by the existing diagnostics, extend the diagnostics as part of that change. Run `npm run docs:check` before considering documentation work complete.
+
 Never leave knowingly stale docs behind. If behavior is implemented but not yet runtime-verified, document it as implemented/unverified rather than as passing.
 
 For the full policy, read `docs/DOCUMENTATION_POLICY.md`.
@@ -75,6 +77,7 @@ Before substantial automation or feature implementation:
 
 - use the `taskrail-core` skill
 - run `npm run surfaces:check`; MCP, skills, platform/install assets, public APIs, critical docs/contracts, and release surfaces must be reviewed together
+- run `npm run docs:check`; new documentation must be indexed and governed by diagnostics
 - classify every top-level CLI command in `adapters/mcp/compatibility.json` as MCP-exposed or intentionally excluded
 - run the packed MCP compatibility gate with `npm run mcp:check`
 - advance every packaged skill review marker when the TaskRail version advances
@@ -87,4 +90,5 @@ Before substantial automation or feature implementation:
 - create TaskRail components inside an automation/capability repository
 - add SMG-specific logic to public core
 - claim verification that did not actually run
+- create orphaned/unindexed documentation or documentation without a maintenance diagnostic
 - merge behavior changes while knowingly leaving affected documentation stale
