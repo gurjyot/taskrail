@@ -13,6 +13,9 @@ Build the automation fast; inherit production reliability from TaskRail.
 
 Automation code should contain business logic and genuine domain-specific configuration. Do not repeat standard runtime, deployment, validation, testing, health, systemd, rollback or operational plumbing when the selected profile already supplies it.
 
+Changing an automation:
+`doctor -> gate -> verify-change -> plan -> deploy -> health`
+
 For a conventional automation, prefer a thin manifest such as:
 
 ```json
