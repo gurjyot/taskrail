@@ -332,7 +332,8 @@ async function commandUpgrade(rawManifest: FrameworkManifest, manifest: Framewor
     return;
   }
   if (write && changed) await import('node:fs/promises').then(({ writeFile }) => writeFile(manifestPath, `${JSON.stringify(compacted, null, 2)}\n`));
-  const resolved = resolveFrameworkManifest(compacted);
+  const verifiedRaw = write ? await loadManifest(manifestPath).catch(() => compacted) : compacted;
+  const resolved = resolveFrameworkManifest(verifiedRaw);
   const checked = await frameworkCheck(resolved, { cwd });
   const tested = await runGate(resolved, cwd, await loadPlugins(resolved, cwd));
   compact([

@@ -21,7 +21,7 @@ export function detectEnvironment(manifest: FrameworkManifest, cwd = process.cwd
 
   const deployDir = path.resolve(cwd, manifest.deployDir);
   const sourceDir = path.resolve(cwd, manifest.sourceDir);
-  const looksProduction = deployDir.startsWith('/opt/') || sourceDir.startsWith('/opt/') || Boolean(manifest.serviceManager);
+  const looksProduction = deployDir.startsWith('/opt/') || sourceDir.startsWith('/opt/');
   if (looksProduction) return { name: 'production', overridden: false, reason: 'production path or service manager' };
 
   return { name: 'local', overridden: false, reason: 'default local' };
