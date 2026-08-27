@@ -71,11 +71,12 @@ test('upgrade infers profile, writes safe declarative manifest, and is idempoten
       name: 'demo',
       taskrailCompatibility: '2.0.x',
       runtime: 'node',
+      runtimeVersion: '>=18.0.0 <27.0.0',
       managed: true,
-      sourceDir: 'src',
-      deployDir: '/opt/smg-automations/automations/demo',
-      validationCommand: 'node main.js',
-      testCommand: 'node ../tests/self-test.js',
+      sourceDir: '.',
+      deployDir: './deploy',
+      validationCommand: 'node src/main.js',
+      testCommand: 'node tests/self-test.js',
       serviceManager: {
         type: 'systemd',
         units: [

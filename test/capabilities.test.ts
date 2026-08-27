@@ -208,6 +208,38 @@ test('existing manifests without capabilities still validate', () => {
   assert.deepEqual(errors, []);
 });
 
+test('profile-only managed manifests are discovered as managed', async () => {
+  const base = await fixtureDir();
+  await writeFixture(base, {
+    'framework-managed/capabilities/telegram-send/capability.json': JSON.stringify({ name: 'telegram-send', version: '1.0.0', description: 'Send Telegram messages', runtime: 'node', canonicalPath: 'index.js' }, null, 2),
+    'framework-managed/capabilities/telegram-send/index.js': 'module.exports = {}',
+    'framework-managed/local-seo-agent/automation.json': JSON.stringify({
+      name: 'local-seo-agent',
+      profile: 'smg-node-timer@1',
+      runtime: 'node',
+      sourceDir: '.',
+      deployDir: '/opt/smg-automations/automations/local-seo-agent',
+      validationCommand: 'node -e "process.exit(0)"',
+      testCommand: 'node -e "process.exit(0)"',
+      capabilities: ['telegram-send'],
+      capabilityRoots: ['../capabilities'],
+      serviceManager: {
+        type: 'systemd',
+        units: [
+          { name: 'local-seo-agent.service', kind: 'service', oneshotOkay: true },
+          { name: 'local-seo-agent.timer', kind: 'timer' },
+        ],
+      },
+    }, null, 2),
+    'framework-managed/local-seo-agent/src/index.ts': '',
+    'framework-managed/local-seo-agent/deploy/index.ts': '',
+  });
+  const list = await listManagedAutomations(base);
+  assert.deepEqual(list.map((item) => item.name), ['local-seo-agent']);
+  assert.deepEqual((await capabilityImpact('telegram-send', base)).map((item) => item.name), ['local-seo-agent']);
+  await rm(base, { recursive: true, force: true });
+});
+
 test('discovery commands emit concise json', async () => {
   const base = await fixtureDir();
   await writeFixture(base, {

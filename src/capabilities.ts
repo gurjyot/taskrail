@@ -1,8 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { CapabilityContract, CapabilityManifest, FrameworkManifest } from './types.js';
-import { findHardRegistryConflicts } from './capability-governance.js';
-import { loadResolvedManifest } from './config.js';
+import { resolveFrameworkManifest } from './framework.js';
 
 export interface ManagedAutomation {
   name: string;
@@ -64,17 +63,9 @@ async function readJson<T>(file: string): Promise<T | null> {
 }
 
 export function projectDirForManifest(manifest: FrameworkManifest, cwd = process.cwd()) {
-  if (!manifest.sourceDir) return cwd;
   const resolved = path.resolve(cwd, manifest.sourceDir);
   if (manifest.sourceDir === '.' || manifest.sourceDir === './' || manifest.sourceDir === '') return resolved;
   return path.dirname(resolved);
-}
-
-function inferredCapabilityRoots(projectDir: string) {
-  const roots = [path.join(projectDir, 'capabilities')];
-  const parent = path.dirname(projectDir);
-  if (path.basename(parent) === 'framework-managed') roots.push(path.join(parent, 'capabilities'));
-  return roots;
 }
 
 export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
@@ -82,9 +73,9 @@ export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.c
   const roots = unique([
     ...(manifest?.capabilityRoots ?? []),
     ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
-    ...inferredCapabilityRoots(projectDir),
+    path.join(projectDir, 'capabilities'),
   ]);
-  return unique(roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root))));
+  return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root)));
 }
 
 export async function discoverCapabilityFiles(roots: string[]) {
@@ -155,20 +146,7 @@ export async function loadCapabilities(roots: string[]): Promise<CapabilityLoadR
     }
     capabilities.push(items[0]);
   }
-
-  const sorted = capabilities.sort((a, b) => a.name.localeCompare(b.name));
-  for (const conflict of await findHardRegistryConflicts(sorted)) {
-    const left = sorted.find((item) => item.name === conflict.left);
-    const right = sorted.find((item) => item.name === conflict.right);
-    if (!left || !right) continue;
-    errors.push({
-      name: conflict.left,
-      path: left.path,
-      message: `semantic capability conflict: ${conflict.left} vs ${conflict.right}: ${conflict.reason.join(', ')}`,
-      conflictingPaths: [left.path, right.path],
-    });
-  }
-  return { capabilities: sorted, errors };
+  return { capabilities: capabilities.sort((a, b) => a.name.localeCompare(b.name)), errors };
 }
 
 export async function resolveCapability(name: string, roots: string[]): Promise<CapabilityResolutionResult> {
@@ -220,25 +198,22 @@ export async function findAutomation(nameOrPath: string, cwd = process.cwd()) {
 export async function listManagedAutomations(cwd = process.cwd()): Promise<ManagedAutomation[]> {
   const manifests = await discoverAutomationManifests(cwd);
   const items: ManagedAutomation[] = [];
-  const seen = new Set<string>();
   for (const manifestPath of manifests) {
-    try {
-      const manifest = await loadResolvedManifest(manifestPath);
-      if (!manifest.managed || seen.has(manifest.name)) continue;
-      seen.add(manifest.name);
-      items.push({
-        name: manifest.name,
-        manifestPath,
-        runtime: manifest.runtime,
-        capabilities: unique(manifest.capabilities ?? []),
-        status: manifest.capabilities?.length ? 'capability-aware' : 'managed',
-      });
-    } catch {
-      continue;
-    }
+    const manifest = await readJson<FrameworkManifest>(manifestPath);
+    if (!manifest) continue;
+    const resolved = resolveFrameworkManifest(manifest);
+    if (!resolved.managed) continue;
+    items.push({
+      name: resolved.name,
+      manifestPath,
+      runtime: resolved.runtime,
+      capabilities: unique(resolved.capabilities ?? []),
+      status: resolved.capabilities?.length ? 'capability-aware' : 'managed',
+    });
   }
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
+
 
 export async function workspaceCapabilityRoots(cwd = process.cwd()) {
   const roots = unique([
@@ -250,14 +225,20 @@ export async function workspaceCapabilityRoots(cwd = process.cwd()) {
 
 export async function capabilityImpact(name: string, cwd = process.cwd()) {
   const manifests = await discoverAutomationManifests(cwd);
-  const consumers: Array<{ name: string; manifestPath: string }> = [];
+  const consumers: ManagedAutomation[] = [];
   for (const manifestPath of manifests) {
-    try {
-      const manifest = await loadResolvedManifest(manifestPath);
-      if ((manifest.capabilities ?? []).includes(name)) consumers.push({ name: manifest.name, manifestPath });
-    } catch {
-      continue;
-    }
+    const manifest = await readJson<FrameworkManifest>(manifestPath);
+    if (!manifest) continue;
+    const resolved = resolveFrameworkManifest(manifest);
+    if (!resolved.managed) continue;
+    if (!(resolved.capabilities ?? []).includes(name)) continue;
+    consumers.push({
+      name: resolved.name,
+      manifestPath,
+      runtime: resolved.runtime,
+      capabilities: unique(resolved.capabilities ?? []),
+      status: 'managed',
+    });
   }
   return consumers.sort((a, b) => a.name.localeCompare(b.name));
 }
