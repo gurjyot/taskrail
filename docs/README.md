@@ -14,6 +14,9 @@ This is the navigation page for maintainers, AI agents, operators, and contribut
 - `taskrail-3-reliability-architecture.md` — reliability and transactional deployment architecture.
 - `architecture/ai-development-workflow.md` — expected AI development flow and progressive disclosure.
 - `architecture/component-capability-model.md` — boundary between core components, governed capabilities, and automation-local business logic.
+- `architecture/human-intervention-control-plane.md` — generic Needs-Me, approvals, drafts, actions, permissions, audit, Hermes requests, and real-time Control Center integration architecture.
+- `architecture/human-intervention-control-plane-update.md` — implementation/status companion note for the human-intervention architecture.
+- `architecture/control-center-dashboard-contract.md` — SMG Control Center modular dashboard contract: domain modules, automations controls, real Run Now results, logs, priorities, notifications, bulk actions and pagination.
 - `platform-and-insights-contract.md` — platform/dashboard/read-model boundary.
 
 ## Security, diagnostics, and operations
