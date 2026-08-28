@@ -23,6 +23,13 @@ export {
   validateActionRequest,
 } from '../human-intervention.js';
 export {
+  canTransitionIntervention,
+  assertInterventionTransition,
+  validateInterventionItem,
+  validateApprovalRequest,
+  validateIntelligenceRequest,
+} from '../human-intervention-guards.js';
+export {
   DEFAULT_EXECUTION_GUARD_POLICY,
   RunawayExecutionGuard,
   validateExecutionGuardPolicy,
