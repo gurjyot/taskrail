@@ -6,20 +6,34 @@ import {
   canTransitionApproval,
   canTransitionDraftSet,
   canTransitionIntelligenceRequest,
+  canTransitionIntervention,
   assertActionTransition,
   assertApprovalTransition,
+  assertInterventionTransition,
   normalizeControlCenterPageSize,
   shouldNotifyPriority,
   validateActionRequest,
+  validateApprovalRequest,
   validateDraftSet,
+  validateIntelligenceRequest,
+  validateInterventionItem,
   type ActionRequest,
+  type ApprovalRequest,
   type DraftSet,
+  type IntelligenceRequest,
+  type InterventionItem,
 } from '../src/public/platform.js';
 
 const human = { kind: 'human' as const, id: 'owner' };
 const automation = { kind: 'automation' as const, id: 'daily-report' };
 
-test('approval, action, draft and intelligence lifecycles fail closed on invalid transitions', () => {
+test('intervention, approval, action, draft and intelligence lifecycles fail closed on invalid transitions', () => {
+  assert.equal(canTransitionIntervention('open', 'waiting'), true);
+  assert.equal(canTransitionIntervention('waiting', 'in_progress'), true);
+  assert.equal(canTransitionIntervention('completed', 'open'), false);
+  assert.doesNotThrow(() => assertInterventionTransition('open', 'in_progress'));
+  assert.throws(() => assertInterventionTransition('dismissed', 'open'), /invalid intervention transition/);
+
   assert.equal(canTransitionApproval('pending', 'approved'), true);
   assert.equal(canTransitionApproval('approved', 'rejected'), false);
   assert.doesNotThrow(() => assertApprovalTransition('pending', 'rejected'));
@@ -51,6 +65,51 @@ test('Control Center history defaults to 50 and rejects unbounded page sizes', (
   assert.throws(() => normalizeControlCenterPageSize(0), /page size/);
   assert.throws(() => normalizeControlCenterPageSize(201), /page size/);
   assert.throws(() => normalizeControlCenterPageSize(10.5), /page size/);
+});
+
+test('intervention records require authoritative identity and consistent dismiss state', () => {
+  const item: InterventionItem = {
+    id: 'item-1',
+    version: 1,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    category: 'ads',
+    kind: 'approval',
+    priority: 'high',
+    status: 'open',
+    title: 'Review proposed budget change',
+    source: { type: 'automation', id: 'ads-agent' },
+    contextRefs: [],
+    actionIds: ['action-1'],
+    intelligenceRequestIds: [],
+  };
+  assert.deepEqual(validateInterventionItem(item), []);
+  assert.match(validateInterventionItem({ ...item, title: '' }).join('; '), /title is required/);
+  assert.match(validateInterventionItem({ ...item, status: 'dismissed' }).join('; '), /requires dismissedAt/);
+  assert.deepEqual(validateInterventionItem({ ...item, status: 'dismissed', dismissedAt: new Date(1).toISOString() }), []);
+});
+
+test('approval records are bound to an immutable action payload and decision metadata', () => {
+  const approval: ApprovalRequest = {
+    id: 'approval-1',
+    version: 1,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    status: 'pending',
+    risk: 'high',
+    requestedBy: automation,
+    requestedActionId: 'action-1',
+    actionPayloadHash: 'sha256:abc',
+  };
+  assert.deepEqual(validateApprovalRequest(approval), []);
+  assert.match(validateApprovalRequest({ ...approval, actionPayloadHash: '' }).join('; '), /payload hash/);
+  assert.match(validateApprovalRequest({ ...approval, status: 'approved' }).join('; '), /requires decidedAt/);
+  assert.deepEqual(validateApprovalRequest({
+    ...approval,
+    status: 'approved',
+    decidedAt: new Date(1).toISOString(),
+    decidedBy: human,
+  }), []);
 });
 
 test('ready draft sets require real drafts and recommended draft must belong to the set', () => {
@@ -95,4 +154,24 @@ test('consequential actions require stable idempotency and payload identity', ()
   assert.match(validateActionRequest({ ...action, idempotencyKey: '' }).join('; '), /idempotency key/);
   assert.match(validateActionRequest({ ...action, payloadHash: '' }).join('; '), /payload hash/);
   assert.match(validateActionRequest({ ...action, attemptCount: -1 }).join('; '), /attempt count/);
+});
+
+test('intelligence requests require a declared result schema and terminal evidence', () => {
+  const request: IntelligenceRequest = {
+    id: 'intel-1',
+    version: 1,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    type: 'drafts',
+    status: 'running',
+    requestedBy: automation,
+    contextRefs: [],
+    input: { purpose: 'prepare replies' },
+    expectedSchema: 'communication-drafts@1',
+  };
+  assert.deepEqual(validateIntelligenceRequest(request), []);
+  assert.match(validateIntelligenceRequest({ ...request, expectedSchema: '' }).join('; '), /expected schema/);
+  assert.match(validateIntelligenceRequest({ ...request, status: 'completed' }).join('; '), /requires a result/);
+  assert.deepEqual(validateIntelligenceRequest({ ...request, status: 'completed', result: { drafts: [] } }), []);
+  assert.match(validateIntelligenceRequest({ ...request, status: 'failed_retryable' }).join('; '), /requires an error/);
 });
