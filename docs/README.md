@@ -14,6 +14,7 @@ This is the navigation page for maintainers, AI agents, operators, and contribut
 - `taskrail-3-reliability-architecture.md` — reliability and transactional deployment architecture.
 - `architecture/ai-development-workflow.md` — expected AI development flow and progressive disclosure.
 - `architecture/component-capability-model.md` — boundary between core components, governed capabilities, and automation-local business logic.
+- `architecture/human-intervention-control-plane.md` — generic Needs-Me, approvals, drafts, actions, permissions, audit, Hermes requests, and real-time Control Center integration architecture.
 - `platform-and-insights-contract.md` — platform/dashboard/read-model boundary.
 
 ## Security, diagnostics, and operations
