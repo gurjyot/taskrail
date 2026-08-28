@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Restored capability-root resolution for compact profile manifests that omit `sourceDir`, preventing upgrade verification from passing `undefined` into path resolution.
+- Restored inference of sibling `framework-managed/capabilities` for framework-managed automations, preserving shared capability discovery and redundant-root compaction.
+
 ## 3.1.0
 
 - Made fast automation authoring the primary TaskRail goal: conventional automations can use thin manifests while profiles supply standard runtime, layout, validation, test, health, deployment, and systemd defaults.
@@ -21,7 +26,7 @@
 
 - Fixed production preflight so a first deployment may target a new directory when its immediate parent already exists and is writable, while existing targets must still be writable directories.
 - Added regression coverage for clean first-production deploy targets and kept production preflight fail-closed without recursively creating arbitrary parent paths.
-- Synchronized the measured package footprint, MCP compatibility review, packaged skills, source version, lockfile, and platform manifest for the release.
+- Synchronized the measured package footprint, MCP compatibility review, packaged skills, source version, lockfile, and platform manifest versions.
 
 ## 3.0.6
 
