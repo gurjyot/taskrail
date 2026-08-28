@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added the first generic human-intervention contracts to `taskrail/platform` for Needs-Me items, approvals, draft sets, consequential actions/execution attempts, durable intelligence requests, audit records, priorities, and real automation-run summaries.
+- Added fail-closed lifecycle and record validation guards, default high/urgent notification interruption policy, and bounded Control Center history pagination with a 50-item default.
+- Documented the modular Control Center dashboard boundary, including TaskRail-driven automation controls, genuine production Run Now results, logs, bulk-confirmation rules, and future domain-module extensibility without making Control Center a second source of truth.
+- Kept the change contract-only: no mandatory persistence, network listener, Hermes runtime dependency, WhatsApp provider, Meta Ads mutation, or production deployment is introduced.
+
 ## 3.1.0
 
 - Made fast automation authoring the primary TaskRail goal: conventional automations can use thin manifests while profiles supply standard runtime, layout, validation, test, health, deployment, and systemd defaults.
