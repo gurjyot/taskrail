@@ -40,6 +40,10 @@ export {
   buildControlCenterReadModel,
   publishControlCenterReadModel,
 } from '../control-center-read-model.js';
+export {
+  toControlCenterNotification,
+  createControlCenterNotificationSubscription,
+} from '../control-center-notification-adapter.js';
 export type {
   PlatformRole,
   PlatformAutomationState,
@@ -111,3 +115,8 @@ export type {
   ControlCenterReadModelInput,
   ControlCenterReadModelLimits,
 } from '../control-center-read-model.js';
+export type {
+  ControlCenterNotificationSeverity,
+  ControlCenterNotificationEnvelope,
+  ControlCenterNotificationSender,
+} from '../control-center-notification-adapter.js';
