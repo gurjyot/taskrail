@@ -63,9 +63,17 @@ async function readJson<T>(file: string): Promise<T | null> {
 }
 
 export function projectDirForManifest(manifest: FrameworkManifest, cwd = process.cwd()) {
+  if (!manifest.sourceDir) return cwd;
   const resolved = path.resolve(cwd, manifest.sourceDir);
   if (manifest.sourceDir === '.' || manifest.sourceDir === './' || manifest.sourceDir === '') return resolved;
   return path.dirname(resolved);
+}
+
+function inferredCapabilityRoots(projectDir: string) {
+  const roots = [path.join(projectDir, 'capabilities')];
+  const parent = path.dirname(projectDir);
+  if (path.basename(parent) === 'framework-managed') roots.push(path.join(parent, 'capabilities'));
+  return roots;
 }
 
 export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.cwd()) {
@@ -73,9 +81,9 @@ export function capabilityRootsFor(manifest?: FrameworkManifest, cwd = process.c
   const roots = unique([
     ...(manifest?.capabilityRoots ?? []),
     ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
-    path.join(projectDir, 'capabilities'),
+    ...inferredCapabilityRoots(projectDir),
   ]);
-  return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root)));
+  return unique(roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root))));
 }
 
 export async function discoverCapabilityFiles(roots: string[]) {
@@ -213,7 +221,6 @@ export async function listManagedAutomations(cwd = process.cwd()): Promise<Manag
   }
   return items.sort((a, b) => a.name.localeCompare(b.name));
 }
-
 
 export async function workspaceCapabilityRoots(cwd = process.cwd()) {
   const roots = unique([

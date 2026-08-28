@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restored capability-root resolution for compact profile manifests that omit `sourceDir`, preventing upgrade verification from passing `undefined` into path resolution.
+- Restored inference of sibling `framework-managed/capabilities` for framework-managed automations, preserving shared capability discovery and redundant-root compaction.
 - Added the first generic human-intervention contracts to `taskrail/platform` for Needs-Me items, approvals, draft sets, consequential actions/execution attempts, durable intelligence requests, audit records, priorities, and real automation-run summaries.
 - Added fail-closed lifecycle and record validation guards, default high/urgent notification interruption policy, and bounded Control Center history pagination with a 50-item default.
 - Documented the modular Control Center dashboard boundary, including TaskRail-driven automation controls, genuine production Run Now results, logs, bulk-confirmation rules, and future domain-module extensibility without making Control Center a second source of truth.
@@ -39,7 +41,7 @@
 - Synchronized MCP with every safe default read action, including TaskRail status and privacy-safe diagnostics preview, while keeping write/control operations deny-by-default.
 - Added a public first-party ecosystem gate that validates the capability catalog and every reference automation against the exact TaskRail candidate on PRs, main pushes, and releases.
 - Added automatic private ecosystem verification for new TaskRail main SHAs, with successful-SHA caching, retry-on-failure behavior, diagnostics evidence, and non-noisy Telegram reporting.
-- Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source, lockfile, and platform manifest versions.
+- Reviewed all packaged TaskRail skills for 3.0.6 and synchronized package, source version, lockfile, and platform manifest versions.
 - Expanded update-surface self-protection so the release, MCP, ecosystem, installer, security/reliability, documentation, and compatibility gates themselves cannot be silently removed.
 
 ## 3.0.5
