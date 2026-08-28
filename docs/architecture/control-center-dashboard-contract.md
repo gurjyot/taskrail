@@ -289,6 +289,16 @@ automation/TaskRail detects ambiguity
 
 Control Center pulls/render TaskRail state. Hermes suggestions flow into TaskRail first.
 
+## Materialized V1 read model
+
+`taskrail/platform` provides the transport-neutral helpers `buildControlCenterReadModel` and `publishControlCenterReadModel` for producing the bounded dashboard document consumed by a Control Center transport.
+
+The materialized document contains the latest normalized automation summaries, notifications, interventions, ready draft sets, genuine automation-run summaries, bounded structured logs and evidence-backed Meta Ads recommendations. Default list limits are 50 and may be raised only within the bounded maximum of 200.
+
+The publisher writes atomically with private file permissions. The output is a **read model only**. It must never become an independent source of automation truth, and a transport service must not scrape systemd, cron or provider state to fill gaps independently.
+
+The read model may expose only data already approved for the Control Center boundary. Secrets, unrestricted credentials and raw provider tokens are forbidden.
+
 ## Performance
 
 The dashboard must feel immediate even when intelligence work is slow.
