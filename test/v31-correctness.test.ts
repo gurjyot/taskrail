@@ -18,7 +18,7 @@ test('three-field-style profile manifest is visible across fleet metadata after 
     const created = await scaffoldAutomation({ name: 'thin-report', profile: 'portable-node@1', root });
     const raw = JSON.parse(await readFile(path.join(created.path, 'automation.json'), 'utf8'));
     assert.equal(Object.keys(raw).length, 4);
-    assert.equal(raw.taskrailCompatibility, '3.1.x');
+    assert.equal(raw.taskrailCompatibility, '3.2.x');
     const listed = await listManagedAutomations(root);
     assert.equal(listed.some((item) => item.name === 'thin-report'), true);
     const graph = await buildUsageGraph(root);

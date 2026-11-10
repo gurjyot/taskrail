@@ -130,3 +130,9 @@
 - Regenerated the package lockfile from `package.json`.
 - Added YAML frontmatter to `skills/taskrail/SKILL.md`.
 - Removed unused `LifecycleStep`.
+
+## 3.2.0
+
+- Consistent workspace capability discovery and visible registry errors.
+- Installed version/build identity, bounded GitHub release/source checks, and cached recurring notices.
+- Optional checks preserve offline CLI operation and explicit unknown/stale results.

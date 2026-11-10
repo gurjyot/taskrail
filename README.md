@@ -333,3 +333,15 @@ TaskRail optimizes first for **automation author speed**, then for **production 
 Automation authors should write business logic and declare only what cannot be inferred. TaskRail should own repeated infrastructure concerns once: deployment, runtime verification, retries, timeouts, state, logging, rollback, drift handling, compatibility and production certification. While the ecosystem is still small, coordinated migrations are preferred over preserving unnecessary legacy complexity indefinitely.
 
 A new core component should be added only when repeated real-world automation work demonstrates a stable vendor-neutral primitive that cannot be cleanly expressed with existing components and capabilities. A new control-plane feature should stay independently testable and remain outside the ordinary automation hot path unless runtime execution genuinely requires it.
+
+## Version and update awareness
+
+`taskrail version` (aliases `--version`, `-v`) reports installed version and build revision. `taskrail version --json` emits machine-readable identity. `taskrail check-updates` explicitly queries the public GitHub stable release and compares installed source against `main`. It distinguishes a published upgrade from newer source requiring review and certification. It never installs automatically.
+
+Checks have a shared 10-second network timeout and return exit 1 with `status=unknown` when GitHub is unavailable or metadata is invalid. Missing revision falls back to comparison against the latest release tag. Build provenance is stamped during `npm run build`; source archives may report a null revision.
+
+The check atomically saves a small non-secret result under `$TASKRAIL_HOME/update-status.json` (default `~/.taskrail`). Subsequent CLI commands print pending release/source notices to stderr without network access. Unknown results and results older than 48 hours prompt a refresh. `TASKRAIL_UPDATE_NOTICES=0` suppresses notices for machine consumers. Schedule `check-updates` through an existing host scheduler to keep notices fresh. JSON stdout remains usable.
+
+Discovery reads both workspace `capabilities/` and `framework-managed/capabilities/`, plus explicit/environment roots. Duplicate or malformed contracts remain visible failures. `status --json` includes registry errors and exits nonzero when registry validation fails.
+
+Hosts may share cached notices with `TASKRAIL_UPDATE_STATUS_FILE` pointing to a host-managed readable status file. Only the scheduled checker needs write access.

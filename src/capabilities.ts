@@ -70,7 +70,7 @@ export function projectDirForManifest(manifest: FrameworkManifest, cwd = process
 }
 
 function inferredCapabilityRoots(projectDir: string) {
-  const roots = [path.join(projectDir, 'capabilities')];
+  const roots = [path.join(projectDir, 'capabilities'), path.join(projectDir, 'framework-managed', 'capabilities')];
   const parent = path.dirname(projectDir);
   if (path.basename(parent) === 'framework-managed') roots.push(path.join(parent, 'capabilities'));
   return roots;
@@ -225,7 +225,7 @@ export async function listManagedAutomations(cwd = process.cwd()): Promise<Manag
 export async function workspaceCapabilityRoots(cwd = process.cwd()) {
   const roots = unique([
     ...(process.env.TASKRAIL_CAPABILITY_ROOTS?.split(path.delimiter) ?? []),
-    path.join(cwd, 'capabilities'),
+    ...inferredCapabilityRoots(cwd),
   ]);
   return roots.map((root) => (path.isAbsolute(root) ? path.normalize(root) : path.resolve(cwd, root)));
 }

@@ -145,3 +145,13 @@ TaskRail includes:
 Add to core or the component catalog only when a real repeated generic problem cannot be solved cleanly with the existing component surface, a governed capability, or automation-local logic. Components evolve more slowly than capabilities.
 
 Do not add caches, indexes, daemons, or new fleet-wide coordination merely for theoretical scale. Introduce an in-memory workspace inventory or capability-governance optimization only when measured repository-scale profiling shows discovery/governance work is materially affecting a real invocation.
+
+## Version and update awareness
+
+`taskrail version` (aliases `--version`, `-v`) reports installed version and build revision. `taskrail version --json` emits machine-readable identity. `taskrail check-updates` explicitly queries the public GitHub stable release and compares installed source against `main`. It distinguishes a published upgrade from newer source requiring review and certification. It never installs automatically.
+
+Checks have a shared 10-second network timeout and return exit 1 with `status=unknown` when GitHub is unavailable or metadata is invalid. Missing revision falls back to comparison against the latest release tag. Build provenance is stamped during `npm run build`; source archives may report a null revision.
+
+The check atomically saves a small non-secret result under `$TASKRAIL_HOME/update-status.json` (default `~/.taskrail`). Subsequent CLI commands print pending release/source notices to stderr without network access. Unknown results and results older than 48 hours prompt a refresh. `TASKRAIL_UPDATE_NOTICES=0` suppresses notices for machine consumers. Schedule `check-updates` through an existing host scheduler to keep notices fresh. JSON stdout remains usable.
+
+Discovery reads both workspace `capabilities/` and `framework-managed/capabilities/`, plus explicit/environment roots. Duplicate or malformed contracts remain visible failures. `status --json` includes registry errors and exits nonzero when registry validation fails.

@@ -21,7 +21,7 @@ function parseVersion(input: string): [number, number, number] | null {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const av = parseVersion(a);
   const bv = parseVersion(b);
   if (!av || !bv) return a.localeCompare(b);

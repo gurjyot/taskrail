@@ -1,6 +1,6 @@
 {
   "name": "taskrail",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": false,
   "type": "module",
   "description": "Lightweight automation framework for fast authoring with robust production deployment, verification, rollback, and reusable capabilities.",
@@ -26,7 +26,7 @@
   },
   "bin": {"taskrail":"./dist/src/taskrail-cli.js","taskrail-supervise":"./dist/src/supervise-cli.js","taskrail-heartbeat":"./dist/src/heartbeat-cli.js","taskrail-systemd-sync":"./dist/src/systemd-cli.js","taskrail-platform-bootstrap":"./dist/src/platform-bootstrap-cli.js"},
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/stamp-build.mjs",
     "build:install-release": "npm run build && npm run build:install-release:built",
     "build:install-release:built": "node scripts/build-install-release.mjs",
     "release:readiness": "node scripts/release-readiness.mjs",

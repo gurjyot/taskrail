@@ -168,11 +168,13 @@ async function commandStatus(json = false) {
   for (const automation of automations) for (const capability of automation.capabilities) consumers.set(capability, [...(consumers.get(capability) ?? []), automation.name]);
   const payload = {
     version: TASKRAIL_VERSION,
+    errors: registry.errors,
     automations: automations.map((automation) => ({ name: automation.name, manifestPath: automation.manifestPath, runtime: automation.runtime, capabilities: automation.capabilities, status: automation.status })),
     capabilities: registry.capabilities.map((capability) => ({ name: capability.name, version: capability.version, description: capability.description, canonicalPath: capability.canonicalPath, consumers: consumers.get(capability.name) ?? [] })),
   };
+  if (registry.errors.length) process.exitCode = 1;
   if (json) return output(payload);
-  compact([`STATUS: PASS`, `VERSION: ${payload.version}`, `AUTOMATIONS: ${payload.automations.length}`, `CAPABILITIES: ${payload.capabilities.length}`]);
+  compact([`STATUS: ${registry.errors.length ? 'FAIL' : 'PASS'}`, `VERSION: ${payload.version}`, `AUTOMATIONS: ${payload.automations.length}`, `CAPABILITIES: ${payload.capabilities.length}`]);
 }
 
 async function commandCapabilities(manifest: FrameworkManifest, cwd: string) {
@@ -354,7 +356,7 @@ async function main() {
   const { target, rest } = targetCommands.has(cmd) ? takeTarget(incoming) : { target: undefined, rest: incoming };
 
   if (cmd === '--help' || cmd === 'help') {
-    console.log('taskrail env|paths|bootstrap|repair|upgrade|check|plan|doctor|drift|reconcile|test|deploy|health|rollback|gate|verify-change|ship|explain|list|status|inspect|capabilities|capability|impact');
+    console.log('taskrail env|paths|bootstrap|repair|upgrade|check|plan|doctor|drift|reconcile|test|deploy|health|rollback|gate|verify-change|ship|explain|list|status|inspect|capabilities|capability|impact|version|check-updates');
     return;
   }
 

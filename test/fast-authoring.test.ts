@@ -53,7 +53,7 @@ test('scaffold writes a thin manifest with explicit compatibility and convention
     assert.deepEqual(manifest, {
       name: 'quick-report',
       profile: 'private-node-timer@1',
-      taskrailCompatibility: '3.1.x',
+      taskrailCompatibility: '3.2.x',
       capabilities: [],
     });
     assert.match(entry, /export async function run/);

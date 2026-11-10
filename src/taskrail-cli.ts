@@ -1,9 +1,21 @@
 #!/usr/bin/env node
 
 const command = process.argv[2] || '--help';
+if (!['check-updates', '--version', '-v', 'version'].includes(command)) {
+  const { printUpdateNotice } = await import('./update-check.js');
+  await printUpdateNotice();
+}
+
 const compositionCommands = new Set(['components', 'component', 'capability-find', 'capability-check', 'usage', 'update-plan', 'isolation-audit', 'conformance', 'init']);
 
-if (command === 'platform') {
+if (command === '--version' || command === 'version' || command === '-v') {
+  const { installedBuild } = await import('./update-check.js');
+  const build = await installedBuild();
+  console.log(process.argv.includes('--json') ? JSON.stringify(build, null, 2) : `TaskRail ${build.version}${build.revision ? ` (${build.revision.slice(0, 12)})` : ''}`);
+} else if (command === 'check-updates') {
+  const { runUpdateCheck } = await import('./update-check.js');
+  await runUpdateCheck();
+} else if (command === 'platform') {
   const subcommand = process.argv[3] || 'status';
   const { installPlatformAdapter, platformAdapterIsInstalled, readInstalledPlatform } = await import('./platform-bootstrap.js');
   const { TASKRAIL_VERSION } = await import('./version.js');
