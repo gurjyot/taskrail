@@ -78,6 +78,9 @@ export async function readUpdateStatus(): Promise<UpdateStatus | null> {
     const value = JSON.parse(await readFile(cacheFile(), 'utf8'));
     if (value.schema !== 1 || !['ok', 'unknown'].includes(value.status) || !Number.isFinite(Date.parse(value.checkedAt))) return null;
     if (value.latestVersion !== null && !/^\d+\.\d+\.\d+$/.test(value.latestVersion)) return null;
+    if (!/^\d+\.\d+\.\d+$/.test(value.installed?.version) || typeof value.releaseAvailable !== 'boolean' || typeof value.sourceChangesAvailable !== 'boolean') return null;
+    if (value.installed.revision !== null && !/^[a-f0-9]{40}$/.test(value.installed.revision)) return null;
+    if (value.sourceRevision !== null && !/^[a-f0-9]{40}$/.test(value.sourceRevision)) return null;
     return value;
   } catch { return null; }
 }
@@ -107,10 +110,15 @@ export async function printUpdateNotice() {
 export async function runUpdateCheck() {
   const status = await checkUpdates({ installed: await installedBuild() });
   const file = cacheFile();
-  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(status, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, file);
+  try {
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(status, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, file);
+  } catch {
+    console.error('TaskRail update check completed; cache could not be saved. Check cache-directory permissions.');
+    process.exitCode = 1;
+  }
   console.log(JSON.stringify(status, null, 2));
   if (status.status === 'unknown') process.exitCode = 1;
 }

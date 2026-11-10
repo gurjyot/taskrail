@@ -35,3 +35,21 @@ test('network failure and invalid remote metadata remain unknown', async () => {
     assert.ok(!JSON.stringify(result).includes('private transport detail'));
   }
 });
+
+test('malformed cached status is ignored', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { readUpdateStatus } = await import('../src/update-check.js');
+  const root = await mkdtemp(path.join(tmpdir(), 'taskrail-cache-'));
+  const old = process.env.TASKRAIL_UPDATE_STATUS_FILE;
+  process.env.TASKRAIL_UPDATE_STATUS_FILE = path.join(root, 'status.json');
+  try {
+    await writeFile(process.env.TASKRAIL_UPDATE_STATUS_FILE, JSON.stringify({ schema: 1, status: 'ok', checkedAt: new Date().toISOString(), latestVersion: '3.2.1' }));
+    assert.equal(await readUpdateStatus(), null);
+  } finally {
+    if (old === undefined) delete process.env.TASKRAIL_UPDATE_STATUS_FILE;
+    else process.env.TASKRAIL_UPDATE_STATUS_FILE = old;
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -132,3 +132,5 @@ Checks have a shared 10-second network timeout and return exit 1 with `status=un
 The check atomically saves a small non-secret result under `$TASKRAIL_HOME/update-status.json` (default `~/.taskrail`). Subsequent CLI commands print pending release/source notices to stderr without network access. Unknown results and results older than 48 hours prompt a refresh. `TASKRAIL_UPDATE_NOTICES=0` suppresses notices for machine consumers. Schedule `check-updates` through an existing host scheduler to keep notices fresh. JSON stdout remains usable.
 
 Discovery reads both workspace `capabilities/` and `framework-managed/capabilities/`, plus explicit/environment roots. Duplicate or malformed contracts remain visible failures. `status --json` includes registry errors and exits nonzero when registry validation fails.
+
+Malformed update cache records are ignored. An explicit check still prints its remote result if the selected cache is unwritable, with a permission notice and nonzero exit. Shared caches need a writable scheduled-check identity.
