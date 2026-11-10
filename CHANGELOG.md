@@ -136,3 +136,7 @@
 - Consistent workspace capability discovery and visible registry errors.
 - Installed version/build identity, bounded GitHub release/source checks, and cached recurring notices.
 - Optional checks preserve offline CLI operation and explicit unknown/stale results.
+
+## 3.2.1
+
+Synchronize published package footprint documentation and release metadata after adding update awareness.

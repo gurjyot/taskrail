@@ -1,6 +1,6 @@
 {
   "name": "taskrail",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "private": false,
   "type": "module",
   "description": "Lightweight automation framework for fast authoring with robust production deployment, verification, rollback, and reusable capabilities.",
