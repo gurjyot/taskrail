@@ -16,7 +16,7 @@ export function inspectGitState(cwd = process.cwd()): GitState {
   }
   const repoRoot = root.stdout.trim();
   const sha = runGit(['rev-parse', 'HEAD'], cwd);
-  const status = runGit(['status', '--porcelain'], cwd);
+  const status = runGit(['status', '--porcelain', '--untracked-files=all'], cwd);
   const changedFiles = status.status === 0
     ? status.stdout.split(/\r?\n/).map((line) => line.replace(/^[ MADRCU?!]{1,2}\s+/, '').trim()).filter(Boolean)
       .filter((file) => !isIgnoredGeneratedPath(file))

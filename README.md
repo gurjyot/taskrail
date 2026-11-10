@@ -13,7 +13,7 @@
 </p>
 
 <!-- taskrail-size:start -->
-<p align="center"><strong>⚡ Tiny framework footprint: ~257 KiB compressed / ~1346 KiB unpacked, with zero runtime npm dependencies.</strong></p>
+<p align="center"><strong>⚡ Tiny framework footprint: ~261 KiB compressed / ~1363 KiB unpacked, with zero runtime npm dependencies.</strong></p>
 <!-- taskrail-size:end -->
 
 ## Primary goal
@@ -291,7 +291,7 @@ Internal implementation files can evolve without turning every source path into 
 ## Framework footprint
 
 <!-- taskrail-footprint:start -->
-**Current TaskRail package footprint: ~257 KiB compressed / ~1346 KiB unpacked. Runtime npm dependencies: 0.**
+**Current TaskRail package footprint: ~261 KiB compressed / ~1363 KiB unpacked. Runtime npm dependencies: 0.**
 
 Measured automatically from the actual `npm pack` artifact. The CI size-check fails whenever these README figures drift, and the Golden Path release gate enforces an unpacked size budget.
 <!-- taskrail-footprint:end -->
@@ -345,3 +345,9 @@ The check atomically saves a small non-secret result under `$TASKRAIL_HOME/updat
 Discovery reads both workspace `capabilities/` and `framework-managed/capabilities/`, plus explicit/environment roots. Duplicate or malformed contracts remain visible failures. `status --json` includes registry errors and exits nonzero when registry validation fails.
 
 Hosts may share cached notices with `TASKRAIL_UPDATE_STATUS_FILE` pointing to a host-managed readable status file. Only the scheduled checker needs write access.
+
+## Detailed checks and scoped deployment identity
+
+`taskrail check --json`, `doctor --json` and `health --json` emit machine-readable results and preserve nonzero failure exits. Human-readable check failures name each failed check. Missing shared paths distinguish permission-denied execution contexts from unavailable paths. Runtime health and deployment readiness remain separate concepts for fleet consumers.
+
+`taskrail status --json` adds an optional deployment record from `$TASKRAIL_DEPLOYMENT_RECEIPT_FILE` or `.taskrail/deployment.json`. Schema 1 contains `repository`, `revision`, `deployedAt`, a relative `files` SHA-256 map and optional `preservedPaths`. TaskRail verifies deployed file hashes, reports source/check-out revisions, distinguishes expected deployed changes from acknowledged existing work, and identifies unexpected changes. A receipt is local provenance, with no implied remote signature or clean deployment permission. Existing deployment gates still require their normal clean source contracts.

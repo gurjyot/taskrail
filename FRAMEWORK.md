@@ -155,3 +155,9 @@ Checks have a shared 10-second network timeout and return exit 1 with `status=un
 The check atomically saves a small non-secret result under `$TASKRAIL_HOME/update-status.json` (default `~/.taskrail`). Subsequent CLI commands print pending release/source notices to stderr without network access. Unknown results and results older than 48 hours prompt a refresh. `TASKRAIL_UPDATE_NOTICES=0` suppresses notices for machine consumers. Schedule `check-updates` through an existing host scheduler to keep notices fresh. JSON stdout remains usable.
 
 Discovery reads both workspace `capabilities/` and `framework-managed/capabilities/`, plus explicit/environment roots. Duplicate or malformed contracts remain visible failures. `status --json` includes registry errors and exits nonzero when registry validation fails.
+
+## Detailed checks and scoped deployment identity
+
+`taskrail check --json`, `doctor --json` and `health --json` emit machine-readable results and preserve nonzero failure exits. Human-readable check failures name each failed check. Missing shared paths distinguish permission-denied execution contexts from unavailable paths. Runtime health and deployment readiness remain separate concepts for fleet consumers.
+
+`taskrail status --json` adds an optional deployment record from `$TASKRAIL_DEPLOYMENT_RECEIPT_FILE` or `.taskrail/deployment.json`. Schema 1 contains `repository`, `revision`, `deployedAt`, a relative `files` SHA-256 map and optional `preservedPaths`. TaskRail verifies deployed file hashes, reports source/check-out revisions, distinguishes expected deployed changes from acknowledged existing work, and identifies unexpected changes. A receipt is local provenance, with no implied remote signature or clean deployment permission. Existing deployment gates still require their normal clean source contracts.

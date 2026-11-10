@@ -46,7 +46,12 @@ export async function preflight(manifest: FrameworkManifest, cwd = process.cwd()
       continue;
     }
     const mode = item.mode === 'writable' ? constants.W_OK : constants.F_OK;
-    push(`shared:${item.path}`, await access(item.path, mode).then(() => true, () => false));
+    let detail: string | undefined;
+    const accessible = await access(item.path, mode).then(() => true, error => {
+      detail = error.code === 'EACCES' || error.code === 'EPERM' ? 'Permission denied for this execution identity; verify service user and sandbox access' : 'Required path is unavailable';
+      return false;
+    });
+    push(`shared:${item.path}`, accessible, detail);
   }
   for (const envName of manifest.requiredEnv ?? []) push(`env:${envName}`, Boolean(process.env[envName]));
   const roots = capabilityRootsFor(manifest, cwd);

@@ -140,3 +140,7 @@
 ## 3.2.1
 
 Synchronize published package footprint documentation and release metadata after adding update awareness.
+
+## 3.3.0
+
+Detailed failure JSON with correct exit status, permission-aware shared-path errors and hash-verified scoped deployment identity.

@@ -166,15 +166,18 @@ async function commandStatus(json = false) {
   const registry = await loadCapabilities(roots);
   const consumers = new Map<string, string[]>();
   for (const automation of automations) for (const capability of automation.capabilities) consumers.set(capability, [...(consumers.get(capability) ?? []), automation.name]);
+  const { inspectWorkspaceDeployment } = await import('./workspace-deployment.js');
+  const deployment = await inspectWorkspaceDeployment();
   const payload = {
     version: TASKRAIL_VERSION,
+    deployment,
     errors: registry.errors,
     automations: automations.map((automation) => ({ name: automation.name, manifestPath: automation.manifestPath, runtime: automation.runtime, capabilities: automation.capabilities, status: automation.status })),
     capabilities: registry.capabilities.map((capability) => ({ name: capability.name, version: capability.version, description: capability.description, canonicalPath: capability.canonicalPath, consumers: consumers.get(capability.name) ?? [] })),
   };
   if (registry.errors.length) process.exitCode = 1;
   if (json) return output(payload);
-  compact([`STATUS: ${registry.errors.length ? 'FAIL' : 'PASS'}`, `VERSION: ${payload.version}`, `AUTOMATIONS: ${payload.automations.length}`, `CAPABILITIES: ${payload.capabilities.length}`]);
+  compact([`STATUS: ${registry.errors.length ? 'FAIL' : 'PASS'}`, `VERSION: ${payload.version}`, `AUTOMATIONS: ${payload.automations.length}`, `CAPABILITIES: ${payload.capabilities.length}`, deployment ? `DEPLOYMENT: ${deployment.status}` : undefined, deployment && 'sourceRevision' in deployment ? `SOURCE: ${deployment.sourceRevision}` : undefined]);
 }
 
 async function commandCapabilities(manifest: FrameworkManifest, cwd: string) {
@@ -381,13 +384,17 @@ async function main() {
 
   if (cmd === 'check') {
     const result = await frameworkCheck(manifest, { cwd });
-    compact([`STATUS: ${passLine(result.ok)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CHECKS: ${result.checks.filter((check) => check.ok).length}/${result.checks.length}`, `NEXT: ${result.ok ? 'taskrail test' : 'taskrail explain check'}`]);
     if (!result.ok) process.exitCode = 1;
+    if (rest.includes('--json')) return output(result);
+    compact([`STATUS: ${passLine(result.ok)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `CHECKS: ${result.checks.filter((check) => check.ok).length}/${result.checks.length}`,
+      ...result.checks.filter(check => !check.ok).map(check => `FAILED: ${check.name}${check.message ? ` - ${check.message}` : ''}`),
+      `NEXT: ${result.ok ? 'taskrail test' : 'Inspect failed checks above. Verify service-user access and required configuration.'}`]);
     return;
   }
 
   if (cmd === 'gate') {
     const result = await runGate(manifest, cwd, await loadPlugins(manifest, cwd));
+    if (result.verdict !== 'PASS') process.exitCode = 1;
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${result.verdict}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `DEPLOYABLE: ${result.deployAllowed ? 'yes' : 'no'}`, `NEXT: ${result.deployAllowed ? 'taskrail ship' : 'taskrail explain gate'}`]);
     if (result.verdict !== 'PASS') process.exitCode = 1;
@@ -396,6 +403,7 @@ async function main() {
 
   if (cmd === 'verify-change') {
     const result = await inspectChange(manifest, cwd, await loadPlugins(manifest, cwd));
+    if (!result.deployAllowed) process.exitCode = 1;
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${passLine(result.deployAllowed)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `RISK: ${result.risk}`, `CHANGED: ${result.changedFiles.length}`, `NEXT: ${result.deployAllowed ? 'taskrail ship' : 'inspect protected changes'}`]);
     if (!result.deployAllowed) process.exitCode = 1;
@@ -411,6 +419,7 @@ async function main() {
 
   if (cmd === 'doctor') {
     const result = await frameworkDoctor(manifest, { cwd });
+    if (!result.compatible || !result.manifestValid || !result.deployable) process.exitCode = 1;
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${passLine(result.deployable && result.compatible && result.manifestValid)}`, `ENV: ${result.environment.name}`, `SHA: ${result.git.sha || 'unknown'}`, `DRIFT: ${result.drift?.drifted ? result.drift.files.join(', ') : 'none'}`, `DEPLOYABLE: ${result.deployable ? 'yes' : 'no'}`, `NEXT: ${result.deployable ? 'taskrail ship' : 'taskrail explain doctor'}`]);
     if (!result.compatible || !result.manifestValid || !result.deployable) process.exitCode = 1;
@@ -425,6 +434,7 @@ async function main() {
       return;
     }
     const result = await safeDeploy(manifest, plugin, { sourceRevision: inspectGitState(cwd).sha, projectRoot: cwd });
+    if (!result.deployed) process.exitCode = 1;
     if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${passLine(result.deployed)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `SHA: ${result.sha || 'unknown'}`, `RELEASE: ${result.releaseId || 'unknown'}`, `NEXT: ${result.deployed ? 'taskrail health' : 'taskrail explain deploy'}`]);
     if (!result.deployed) process.exitCode = 1;
@@ -433,6 +443,8 @@ async function main() {
 
   if (cmd === 'health') {
     const result = await runHealthCheck(manifest.healthChecks?.length ? manifest.healthChecks : manifest.healthCheck, resolvePaths(manifest, cwd).deployDir, plugin, manifest.healthCommand || manifest.runtimeHealthCommand);
+    if (!result.ok) process.exitCode = 1;
+    if (rest.includes('--json')) return output(result);
     compact([`STATUS: ${passLine(result.ok)}`, `ENV: ${detectEnvironment(manifest, cwd).name}`, `HEALTH: ${result.details || 'ok'}`, `NEXT: ${result.ok ? 'done' : 'taskrail explain health'}`]);
     if (!result.ok) process.exitCode = 1;
     return;
