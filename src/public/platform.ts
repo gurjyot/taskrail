@@ -35,17 +35,8 @@ export {
   validateExecutionGuardPolicy,
   journalExecutionGuardTrip,
 } from '../execution-guardrails.js';
-export {
-  DEFAULT_CONTROL_CENTER_READ_MODEL_LIMITS,
-  buildControlCenterReadModel,
-  publishControlCenterReadModel,
-} from '../control-center-read-model.js';
-export {
-  toControlCenterNotification,
-  createControlCenterNotificationSubscription,
-} from '../control-center-notification-adapter.js';
 export type {
-  PlatformRole,
+ PlatformRole,
   PlatformAutomationState,
   PlatformHealth,
   PlatformNotificationSeverity,
@@ -66,7 +57,7 @@ export type {
   PlatformEventDelivery,
 } from '../platform-contract.js';
 export type {
-  JsonPrimitive,
+ JsonPrimitive,
   JsonValue,
   PlatformPriority,
   ActorKind,
@@ -104,19 +95,3 @@ export type {
   ExecutionGuardStatus,
   GuardrailJournalRecord,
 } from '../execution-guardrails.js';
-export type {
-  ControlCenterLogLevel,
-  ControlCenterLogEntry,
-  MetaAdsRecommendationKind,
-  MetaAdsRecommendationStatus,
-  MetaAdsRecommendation,
-  ControlCenterAutomationSummary,
-  ControlCenterReadModel,
-  ControlCenterReadModelInput,
-  ControlCenterReadModelLimits,
-} from '../control-center-read-model.js';
-export type {
-  ControlCenterNotificationSeverity,
-  ControlCenterNotificationEnvelope,
-  ControlCenterNotificationSender,
-} from '../control-center-notification-adapter.js';

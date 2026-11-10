@@ -4,7 +4,6 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { loadManifest } from '../src/config.js';
 import { inferProfile, resolveFrameworkManifest } from '../src/framework.js';
 
 const cli = path.resolve('dist/src/cli.js');
@@ -22,11 +21,10 @@ async function writeFixture(base: string, files: Record<string, string>) {
 }
 
 test('profile resolution keeps manifests small and deterministic', async () => {
-  const root = path.resolve('examples/private');
-  const twenty = resolveFrameworkManifest(await loadManifest(path.join(root, 'twenty-followup-reminder', 'automation.json')));
-  const ads = resolveFrameworkManifest(await loadManifest(path.join(root, 'ads-agent', 'automation.json')));
+const twenty = resolveFrameworkManifest({ name: 'timer-demo', profile: 'private-node-timer@1', runtime: 'node', managed: true, sourceDir: '.', deployDir: '/opt/taskrail-automations/automations/timer-demo' });
+const ads = resolveFrameworkManifest({ name: 'ads-demo', profile: 'private-node-timer@1', runtime: 'node', managed: true, sourceDir: '.', deployDir: '/opt/taskrail-automations/automations/ads-demo', dependencyManager: { tool: 'npm' }, serviceManager: { type: 'systemd', units: [{ name: 'one', kind: 'timer' }, { name: 'two', kind: 'timer' }, { name: 'three', kind: 'timer' }, { name: 'four', kind: 'timer' }] } });
   assert.equal(twenty.profile, 'private-node-timer@1');
-  assert.equal(twenty.deployDir, '/opt/taskrail-automations/automations/twenty-followup-reminder');
+  assert.equal(twenty.deployDir, '/opt/taskrail-automations/automations/timer-demo');
   assert.equal(ads.profile, 'private-node-timer@1');
   assert.equal(ads.dependencyManager?.tool, 'npm');
   assert.equal(ads.serviceManager?.units.length, 4);
